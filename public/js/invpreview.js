@@ -22,8 +22,10 @@ export class InvPreview {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(26, this.canvas.width / this.canvas.height, 0.1, 20);
-    this.camera.position.set(0, 1.0, -4.0);
-    this.camera.lookAt(0, 0.92, 0);
+    this.camera.position.set(0, 0.95, -4.4);
+    this.camera.lookAt(0, 0.9, 0);
+    // hologram look, like a PDA equipment display
+    this.scene.overrideMaterial = new THREE.MeshLambertMaterial({ color: 0x7fe0ff, emissive: 0x0b3a5a, transparent: true, opacity: 0.88, flatShading: true });
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x5a4a3a, 1.6));
     const key = new THREE.DirectionalLight(0xfff2e0, 2.4); key.position.set(-2, 3, -3); this.scene.add(key);
     const rim = new THREE.DirectionalLight(0xa8c4ff, 1.0); rim.position.set(3, 2, 2); this.scene.add(rim);

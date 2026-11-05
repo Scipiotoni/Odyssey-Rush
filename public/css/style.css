@@ -206,74 +206,100 @@ details summary { cursor: pointer; opacity: .8; }
 .islot .emo { font-size: 30px; }
 @media (max-width: 760px) { .swatches { grid-template-columns: repeat(4, 40px); } .decals { grid-template-columns: repeat(4, 76px); } }
 
-/* ================= Minecraft-style inventory ================= */
-:root { --mc-font: 'Pixelify Sans', 'Segoe UI', monospace; --mc-panel: #c6c6c6; --mc-slot: #8b8b8b; --mc-dark: #373737; --mc-text: #3f3f3f; }
-.mcscreen { align-items: center; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 24px; background: rgba(8,8,10,.62); }
-.mcpanel {
-  background: var(--mc-panel); color: var(--mc-text); font-family: var(--mc-font); padding: 12px 14px 14px;
-  border: 3px solid; border-color: #fff #555 #555 #fff; border-radius: 6px;
-  box-shadow: 0 0 0 2px #000, 0 10px 30px rgba(0,0,0,.5); image-rendering: pixelated;
-}
-.mclbl { font-size: 15px; font-weight: 600; color: var(--mc-text); margin: 8px 0 4px 2px; }
-.mclbl small { font-weight: 400; opacity: .75; }
-.mcscreen .slot {
-  width: 52px; height: 52px; background: var(--mc-slot); border: 2px solid; border-color: var(--mc-dark) #fff #fff var(--mc-dark);
-  border-radius: 0; box-sizing: content-box; cursor: pointer;
-}
-.mcscreen .slot:hover, .mcscreen .slot.hover { background: #a9a9a9; }
-.mcscreen .slot .ico { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 rgba(0,0,0,.28)); }
-.mcscreen .slot .ico.emo { font-size: 28px; }
-.mcscreen .slot .n, #hotbar .slot .n { font-family: var(--mc-font); font-size: 16px; font-weight: 600; color: #fff; text-shadow: 2px 2px 0 #3f3f3f; right: 3px; bottom: 0; }
-.mcscreen .slot .k { color: #4a4a4a; opacity: .9; font-family: var(--mc-font); font-size: 11px; }
-.mcscreen .slot .lbl { color: #5a5a5a; opacity: .9; text-transform: capitalize; font-family: var(--mc-font); bottom: 2px; }
-.mcscreen .slot .ghost { font-size: 26px; filter: grayscale(1) brightness(1.6); opacity: .35; }
-.mcscreen .grid { gap: 0; grid-template-columns: repeat(6, 56px); }
-.mcscreen .grid.belt { margin-top: 10px; }
-.mcscreen .grid.armor { grid-template-columns: 56px; align-content: start; }
-.mctop { display: flex; gap: 10px; align-items: stretch; margin-bottom: 4px; }
-.mcpreview { width: 150px; height: 168px; background: #000; border: 2px solid; border-color: var(--mc-dark) #fff #fff var(--mc-dark); overflow: hidden; }
-.mcpreview canvas { width: 150px; height: 177px; display: block; }
-.mcinfo { flex: 1; min-width: 96px; font-size: 13px; line-height: 1.25; padding: 2px 0; }
-.mcinfo .nm { font-size: 16px; font-weight: 600; color: #2a2a2a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mcinfo .lv { color: #3d8a1e; font-weight: 600; margin-top: 2px; }
-.mcinfo .row { margin-top: 5px; }
-.mcinfo .row.small { font-size: 11px; opacity: .8; }
-.mcbar { height: 7px; background: #3a3a3a; border: 1px solid #222; margin-top: 2px; }
-.mcbar > div { height: 100%; }
-.mcbar.xp > div { background: #7ee03a; } .mcbar.hp > div { background: #d8352b; } .mcbar.food > div { background: #c98a2e; } .mcbar.water > div { background: #3a86d8; }
-#contpanel .grid { grid-template-columns: repeat(6, 56px); }
-#craftpanel.mcpanel { width: 372px; }
-.mcscreen #craftsearch { width: 100%; box-sizing: border-box; background: #000; color: #e0e0e0; border: 2px solid #a0a0a0; font-family: var(--mc-font); font-size: 14px; padding: 5px 7px; border-radius: 0; }
-.mcscreen #craftlist { max-height: 38vh; display: block; padding: 0; margin-top: 4px; }
-.mcscreen .rgroup { opacity: 1; font-family: var(--mc-font); font-size: 12px; color: #4a4a4a; margin: 8px 0 3px 2px; background: none; padding: 0; text-transform: none; letter-spacing: 0; }
-.rgrid { display: grid; grid-template-columns: repeat(6, 56px); }
-.mcscreen .rslot.no { background: #a47a7a; }
-.mcscreen .rslot.no:hover { background: #b88e8e; }
-.mcscreen .rslot.no .ico { opacity: .7; }
-.mcscreen .rslot.locked { background: #707070; } .mcscreen .rslot.locked .ico { opacity: .4; filter: grayscale(1); }
-.mcscreen .rslot.sel { background: #c2d8a0; box-shadow: inset 0 0 0 2px #fff; }
-.mcscreen .rslot.queue .tm { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 12px; color: #fff; text-shadow: 1px 1px 0 #000; background: rgba(0,0,0,.35); font-family: var(--mc-font); }
-.mcscreen #craftdetail { background: #b0b0b0; color: #2e2e2e; border: 2px solid; border-color: var(--mc-dark) #fff #fff var(--mc-dark); font-family: var(--mc-font); font-size: 13px; margin-top: 8px; }
-.mcscreen #craftdetail .cost span.miss { color: #b01e14; }
-.mcscreen #craftdetail .hint { color: #444; opacity: 1; }
-.mcscreen button, .mcbtn {
-  font-family: var(--mc-font); font-size: 15px; color: #fff; text-shadow: 2px 2px 0 #3f3f3f; padding: 6px 18px; cursor: pointer;
-  background: linear-gradient(#9a9a9a, #6f6f6f); border: 2px solid #000; box-shadow: inset 2px 2px 0 rgba(255,255,255,.35), inset -2px -2px 0 rgba(0,0,0,.35); border-radius: 0;
-}
-.mcscreen button:hover { background: linear-gradient(#8fa4df, #5f72b0); }
-.mcscreen button.alt { background: linear-gradient(#7d7d7d, #585858); }
-.mchint { width: 100%; text-align: center; font-family: var(--mc-font); font-size: 13px; color: #d8d8d8; text-shadow: 1px 1px 0 #000; }
-/* tooltip */
-#itemtip { background: rgba(16,0,16,.94); border: 2px solid #2a0a5c; box-shadow: 0 0 0 2px rgba(16,0,16,.94); border-radius: 2px; font-family: var(--mc-font); font-size: 13px; color: #e8e8e8; padding: 6px 9px; max-width: 260px; }
-#itemtip b { color: #fff; font-size: 15px; font-weight: 600; }
-#itemtip .sub { color: #a8a8a8; }
-#itemtip .bigico { display: none; }
-#dragghost img { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 rgba(0,0,0,.3)); }
-/* hotbar HUD to match */
-#hotbar { gap: 0; padding: 2px; background: rgba(20,20,20,.55); border: 2px solid #8b8b8b; box-shadow: 0 0 0 2px rgba(0,0,0,.8); }
-#hotbar .slot { width: 56px; height: 56px; background: transparent; border: 2px solid rgba(120,120,120,.55); }
-#hotbar .slot.sel { background: rgba(255,255,255,.08); border: 2px solid #fff; box-shadow: 0 0 0 3px #1a1a1a, inset 0 0 0 2px #9a9a9a; z-index: 1; }
-#hotbar .slot .ico { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 rgba(0,0,0,.45)); }
-#hotbar .slot .k { font-family: var(--mc-font); color: #ddd; opacity: .8; }
-@media (max-width: 900px) { #craftpanel.mcpanel { width: auto; } }
 body.invopen #hotbar, body.invopen #ammo { visibility: hidden; }
+
+/* ================= Subnautica-style PDA inventory ================= */
+:root { --pda-font: 'Nunito Sans', 'Segoe UI', sans-serif; --pda-cyan: #5fd8ff; --pda-cyan2: #a8ecff; --pda-line: rgba(110, 210, 255, .38); --pda-slot: rgba(20, 70, 105, .55); }
+.pdascreen { align-items: center; justify-content: center; padding: 18px; background: radial-gradient(ellipse at center, rgba(0,20,35,.55), rgba(0,4,10,.82)); }
+.pda {
+  position: relative; font-family: var(--pda-font); color: #dff6ff; border-radius: 26px; padding: 0 22px 14px; max-width: 98vw; max-height: 94vh; overflow: auto;
+  background:
+    repeating-linear-gradient(0deg, rgba(120,220,255,.035) 0 1px, transparent 1px 4px),
+    radial-gradient(ellipse at 30% 0%, rgba(40,120,170,.45), transparent 60%),
+    linear-gradient(160deg, rgba(8,38,62,.94), rgba(4,18,32,.96));
+  border: 2px solid rgba(95,216,255,.55);
+  box-shadow: 0 0 0 6px rgba(10,30,45,.85), 0 0 0 8px rgba(95,216,255,.25), 0 0 40px rgba(60,190,255,.25), inset 0 0 40px rgba(60,190,255,.12);
+}
+.pdahead { display: flex; align-items: center; justify-content: space-between; margin: 0 -22px 10px; padding: 10px 26px 0; border-bottom: 1px solid var(--pda-line); }
+.pdatabs { display: flex; gap: 4px; }
+.pdatabs .tab { padding: 8px 22px 9px; font-weight: 800; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: rgba(190,235,255,.55); border-radius: 12px 12px 0 0; cursor: pointer; }
+.pdatabs .tab:hover { color: #fff; background: rgba(95,216,255,.08); }
+.pdatabs .tab.on { color: #fff; background: linear-gradient(rgba(95,216,255,.28), rgba(95,216,255,.08)); box-shadow: inset 0 2px 0 var(--pda-cyan); cursor: default; text-shadow: 0 0 10px rgba(95,216,255,.8); }
+.pdaclock { font-weight: 800; letter-spacing: 2px; color: var(--pda-cyan2); opacity: .8; }
+.pdabody { display: flex; gap: 22px; align-items: flex-start; }
+.pdacol { display: flex; flex-direction: column; }
+.pdacol.right { width: 380px; }
+.pdalbl { font-size: 12px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: var(--pda-cyan); margin: 8px 0 6px 2px; text-shadow: 0 0 8px rgba(95,216,255,.5); }
+.pdalbl small { letter-spacing: 1px; text-transform: none; color: rgba(200,240,255,.6); font-weight: 600; }
+.pdafoot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--pda-line); text-align: center; font-size: 12px; color: rgba(190,235,255,.55); }
+/* slots */
+.pdascreen .slot {
+  width: 56px; height: 56px; border-radius: 9px; cursor: pointer;
+  background: linear-gradient(180deg, rgba(40,110,150,.55), var(--pda-slot)); border: 1px solid var(--pda-line);
+  box-shadow: inset 0 1px 0 rgba(170,235,255,.18), inset 0 -8px 14px rgba(0,10,20,.25);
+}
+.pdascreen .slot:hover, .pdascreen .slot.hover { border-color: var(--pda-cyan); background: linear-gradient(180deg, rgba(70,160,205,.6), rgba(30,95,135,.6)); box-shadow: 0 0 12px rgba(95,216,255,.45), inset 0 1px 0 rgba(200,245,255,.3); }
+.pdascreen .slot .ico { width: 44px; height: 44px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)); }
+.pdascreen .slot .ico.emo { font-size: 28px; }
+.pdascreen .slot .n, #hotbar .slot .n { font-family: var(--pda-font); font-weight: 800; font-size: 12px; color: #fff; right: 5px; bottom: 2px; text-shadow: 0 1px 2px #000; }
+.pdascreen .slot .k { color: var(--pda-cyan2); opacity: .7; font-family: var(--pda-font); font-weight: 800; font-size: 10px; left: 5px; top: 3px; }
+.pdascreen .slot .lbl { color: rgba(170,230,255,.6); text-transform: uppercase; letter-spacing: 1px; font-family: var(--pda-font); font-weight: 800; font-size: 8px; bottom: 3px; }
+.pdascreen .slot .ghost { font-size: 24px; filter: grayscale(1) brightness(1.8) sepia(1) hue-rotate(160deg) saturate(3); opacity: .35; }
+.pdascreen .grid { gap: 6px; grid-template-columns: repeat(6, 56px); }
+/* equipment hologram */
+.equipwrap { position: relative; width: 270px; height: 270px; border-radius: 16px; background: radial-gradient(circle at 50% 55%, rgba(95,216,255,.16), transparent 62%); border: 1px solid rgba(95,216,255,.15); }
+.equipwrap::before { content: ''; position: absolute; left: 50%; bottom: 18px; width: 130px; height: 22px; transform: translateX(-50%); border-radius: 50%; border: 1px solid rgba(95,216,255,.45); box-shadow: 0 0 16px rgba(95,216,255,.35); }
+.equipwrap canvas { position: absolute; left: 45px; top: 4px; width: 180px; height: 260px; filter: drop-shadow(0 0 8px rgba(95,216,255,.55)); }
+.equipwrap::after { content: ''; position: absolute; inset: 0; border-radius: 16px; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(95,216,255,.06) 0 1px, transparent 1px 3px); }
+#invscreen #armorslots { position: absolute; inset: 0; display: block; }
+#invscreen #armorslots .slot { position: absolute; }
+#invscreen #armorslots .slot:nth-child(1) { left: 4px; top: 22px; }
+#invscreen #armorslots .slot:nth-child(2) { right: 4px; top: 96px; }
+#invscreen #armorslots .slot:nth-child(3) { left: 4px; top: 176px; }
+#invscreen #armorslots .slot::after { content: ''; position: absolute; top: 50%; height: 1px; width: 44px; background: linear-gradient(90deg, var(--pda-cyan), transparent); opacity: .6; }
+#invscreen #armorslots .slot:nth-child(odd)::after { left: 100%; }
+#invscreen #armorslots .slot:nth-child(2)::after { right: 100%; background: linear-gradient(270deg, var(--pda-cyan), transparent); }
+.pdainfo { margin-top: 10px; width: 270px; font-size: 13px; }
+.pdainfo .nm { font-weight: 800; font-size: 15px; color: #fff; }
+.pdainfo .lv { font-size: 11px; letter-spacing: 1.5px; color: var(--pda-cyan); margin-left: 6px; }
+.pdainfo .row { margin-top: 6px; font-weight: 600; color: rgba(220,245,255,.85); }
+.pdainfo .row.small { font-size: 11px; color: rgba(190,235,255,.55); }
+.pdainfo .mcbar { height: 6px; border-radius: 4px; background: rgba(0,20,35,.8); border: 1px solid rgba(95,216,255,.25); margin-top: 3px; overflow: hidden; }
+.pdainfo .mcbar > div { height: 100%; border-radius: 4px; }
+.mcbar.xp > div { background: linear-gradient(90deg, #39c0ff, #a8ecff); } .mcbar.hp > div { background: linear-gradient(90deg, #ff4f5e, #ff8a7a); }
+.mcbar.food > div { background: linear-gradient(90deg, #ffb03a, #ffd27a); } .mcbar.water > div { background: linear-gradient(90deg, #2f8cff, #7ac4ff); }
+/* storage + fabrication */
+#contpanel .grid { grid-template-columns: repeat(6, 56px); }
+.pdascreen #craftsearch { width: 100%; box-sizing: border-box; background: rgba(0,18,32,.8); color: #e8f8ff; border: 1px solid var(--pda-line); border-radius: 18px; font-family: var(--pda-font); font-size: 13px; padding: 7px 14px; outline: none; }
+.pdascreen #craftsearch:focus { border-color: var(--pda-cyan); box-shadow: 0 0 10px rgba(95,216,255,.35); }
+.pdascreen #craftlist { max-height: 36vh; display: block; padding: 0 8px 0 0; overflow-x: hidden; margin-top: 4px; }
+.pdascreen .rgroup { opacity: 1; font-family: var(--pda-font); font-size: 11px; font-weight: 600; color: rgba(190,235,255,.6); margin: 8px 0 4px 2px; text-transform: none; letter-spacing: 0; }
+.rgrid { display: grid; grid-template-columns: repeat(6, 56px); gap: 6px; }
+.pdascreen .rslot { border-radius: 50%; }
+.pdascreen .rslot.no { background: radial-gradient(circle, rgba(60,60,70,.55), rgba(25,30,40,.6)); border-color: rgba(150,160,175,.25); }
+.pdascreen .rslot.no .ico { opacity: .45; filter: grayscale(.8); }
+.pdascreen .rslot.locked { background: rgba(20,25,32,.6); border-color: rgba(120,130,140,.2); } .pdascreen .rslot.locked .ico { opacity: .3; filter: grayscale(1); }
+.pdascreen .rslot.sel { border-color: #fff; box-shadow: 0 0 0 2px var(--pda-cyan), 0 0 14px rgba(95,216,255,.7); }
+.pdascreen .rslot.queue .tm { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 11px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px #000; font-family: var(--pda-font); }
+.pdascreen #craftdetail { background: rgba(0,20,35,.6); border: 1px solid var(--pda-line); border-radius: 12px; color: #dff6ff; font-family: var(--pda-font); font-size: 13px; margin-top: 10px; }
+.pdascreen #craftdetail .cost span.miss { color: #ff8a7a; }
+.pdascreen #craftdetail .hint { color: rgba(190,235,255,.6); opacity: 1; }
+.pdascreen button {
+  font-family: var(--pda-font); font-weight: 800; letter-spacing: 1px; font-size: 13px; color: #04131f; padding: 7px 20px; cursor: pointer; border: none; border-radius: 16px;
+  background: linear-gradient(#a8ecff, #4fc8f5); box-shadow: 0 0 12px rgba(95,216,255,.45);
+}
+.pdascreen button:hover { background: linear-gradient(#d8f6ff, #7fdaff); }
+.pdascreen button.alt { background: rgba(95,216,255,.15); color: #dff6ff; box-shadow: inset 0 0 0 1px var(--pda-line); }
+/* tooltip */
+#itemtip { background: linear-gradient(rgba(10,44,70,.96), rgba(4,20,34,.96)); border: 1px solid rgba(95,216,255,.6); border-radius: 10px; box-shadow: 0 0 16px rgba(60,190,255,.35); font-family: var(--pda-font); font-size: 12px; color: rgba(220,245,255,.85); padding: 8px 12px; max-width: 260px; }
+#itemtip b { color: #fff; font-size: 14px; font-weight: 800; }
+#itemtip .sub { color: rgba(190,235,255,.6); }
+#itemtip .bigico { display: none; }
+#dragghost img { width: 46px; height: 46px; filter: drop-shadow(0 0 8px rgba(95,216,255,.8)); }
+/* HUD quick slots */
+#hotbar { gap: 6px; padding: 6px 8px; border-radius: 16px; background: rgba(4,24,40,.55); border: 1px solid rgba(95,216,255,.35); box-shadow: 0 0 14px rgba(60,190,255,.18); }
+#hotbar .slot { width: 54px; height: 54px; border-radius: 10px; background: linear-gradient(180deg, rgba(40,110,150,.45), rgba(15,55,85,.5)); border: 1px solid rgba(110,210,255,.3); }
+#hotbar .slot.sel { border-color: #fff; background: linear-gradient(180deg, rgba(80,180,225,.55), rgba(30,100,140,.55)); box-shadow: 0 0 0 2px var(--pda-cyan), 0 0 16px rgba(95,216,255,.7); }
+#hotbar .slot .ico { width: 42px; height: 42px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+#hotbar .slot .k { font-family: var(--pda-font); font-weight: 800; color: var(--pda-cyan2); opacity: .7; }
+@media (max-width: 1100px) { .pdabody { flex-wrap: wrap; justify-content: center; } }

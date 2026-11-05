@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Odyssey Rush</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;800&display=swap" />
   <link rel="stylesheet" href="/css/style.css" />
   <script type="importmap">
     { "imports": { "three": "/lib/three/three.module.js", "three/addons/": "/lib/three/addons/" } }
@@ -41,25 +41,39 @@
   </div>
 
   <!-- Inventory / crafting / container -->
-  <div id="invscreen" class="hidden panelscreen mcscreen">
-    <div class="mcpanel" id="invpanel">
-      <div class="mctop">
-        <div id="armorslots" class="grid armor"></div>
-        <div class="mcpreview"><canvas id="invpreview" width="200" height="236"></canvas></div>
-        <div class="mcinfo" id="invinfo"></div>
+  <div id="invscreen" class="hidden panelscreen pdascreen">
+    <div class="pda">
+      <div class="pdahead">
+        <div class="pdatabs"><span class="tab on">Inventory</span><span class="tab" data-go="map">Map</span><span class="tab" data-go="clan">Clan</span></div>
+        <div class="pdaclock" id="pdaclock"></div>
       </div>
-      <div id="contpanel" class="hidden"><div class="mclbl" id="conttitle">Container</div><div id="contgrid" class="grid"></div></div>
-      <div class="mclbl">Inventory</div>
-      <div id="invgrid" class="grid"></div>
-      <div id="beltgrid" class="grid belt"></div>
+      <div class="pdabody">
+        <div class="pdacol equip">
+          <div class="pdalbl">Equipment</div>
+          <div class="equipwrap">
+            <canvas id="invpreview" width="180" height="260"></canvas>
+            <div id="armorslots"></div>
+          </div>
+          <div class="pdainfo" id="invinfo"></div>
+        </div>
+        <div class="pdacol invc">
+          <div class="pdalbl">Inventory</div>
+          <div id="invgrid" class="grid"></div>
+          <div class="pdalbl">Quick slots</div>
+          <div id="beltgrid" class="grid belt"></div>
+        </div>
+        <div class="pdacol right">
+          <div id="contpanel" class="hidden"><div class="pdalbl" id="conttitle">Storage</div><div id="contgrid" class="grid"></div></div>
+          <div id="craftpanel">
+            <div class="pdalbl">Fabrication <small id="craftstation"></small></div>
+            <input id="craftsearch" placeholder="Search blueprints…" />
+            <div id="craftlist"></div>
+            <div id="craftdetail"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pdafoot">Drag to move · Shift+click quick-move · Ctrl+drag half a stack · Right-click use / equip · Drag outside to drop · Tab or Esc to close</div>
     </div>
-    <div class="mcpanel" id="craftpanel">
-      <div class="mclbl">Crafting <small id="craftstation"></small></div>
-      <input id="craftsearch" placeholder="Search recipes…" />
-      <div id="craftlist"></div>
-      <div id="craftdetail"></div>
-    </div>
-    <div class="mchint">Drag to move · Shift+click quick-move · Ctrl+drag half a stack · Right-click use / equip · Drag outside to drop · Tab or Esc to close</div>
     <div id="itemtip" class="hidden"></div>
   </div>
 

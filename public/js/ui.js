@@ -198,6 +198,7 @@ export class UI {
     };
     this.armorEls = ARMOR_SLOTS.map((s) => mk($('armorslots'), 'a', s));
     this.preview = new InvPreview(this.game, $('invpreview'));
+    document.querySelectorAll('.pdatabs [data-go]').forEach((el) => el.addEventListener('click', () => { audio.click(); this.show(el.dataset.go); }));
     this.invEls = [];
     for (let i = HOTBAR; i < INV_SIZE; i++) this.invEls[i] = mk($('invgrid'), 'p', i);
     for (let i = 0; i < HOTBAR; i++) this.invEls[i] = mk($('beltgrid'), 'p', i, i + 1);
@@ -220,7 +221,7 @@ export class UI {
     const st = this.lastStats;
     if (st) {
       const bar = (v, m, cls) => `<div class="mcbar ${cls}"><div style="width:${Math.max(0, Math.min(100, (v / m) * 100))}%"></div></div>`;
-      $('invinfo').innerHTML = `<div class="nm">${(g.name || 'Survivor').replace(/[<>&]/g, '')}</div><div class="lv">Level ${st.lvl}</div>${bar(st.xp % 100, 100, 'xp')}
+      $('invinfo').innerHTML = `<div class="nm">${(g.name || 'Survivor').replace(/[<>&]/g, '')} <span class="lv">LV ${st.lvl}</span></div>${bar(st.xp % 100, 100, 'xp')}
         <div class="row">❤ ${Math.ceil(st.hp)}</div>${bar(st.hp, st.maxhp, 'hp')}<div class="row">🍖 ${Math.ceil(st.food)}</div>${bar(st.food, 100, 'food')}<div class="row">💧 ${Math.ceil(st.water)}</div>${bar(st.water, 100, 'water')}
         <div class="row small">${st.kills || 0} kills · ${st.deaths || 0} deaths</div>`;
     }
@@ -493,6 +494,7 @@ export class UI {
     const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') { this.renderInventory(); this.preview.start(); }
+    if (which === 'inv') { const d = this.game.day ?? 0.5, h = Math.floor(d * 24), m = Math.floor((d * 24 - h) * 60); $('pdaclock').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
     document.body.classList.toggle('invopen', which === 'inv');
     if (which === 'map') this.renderMap();
     if (which === 'build') this.renderBuildMenu();
