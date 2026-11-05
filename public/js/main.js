@@ -265,7 +265,7 @@ class Game {
         this.effects.burst(end, { count: 3, color: 0xccbb99, speed: 2, size: 0.05, life: 0.4 });
       }
       if (m.w !== 'bow') this.effects.flash(o, 3);
-      if (p) p.swingT = 0.1;
+      if (p) p.shotT = 0.12;
     } else if (m.k === 'swing') { const p = this.entities.players.get(m.pid); if (p) p.swingT = 0.45; }
     else if (m.k === 'expl') {
       const pos = new THREE.Vector3(...m.p);
@@ -436,7 +436,7 @@ class Game {
     const def = VEHICLES[v.view.type], s = def.seats[v.seat] || [0, 0.5, 0];
     a.position.copy(new THREE.Vector3(s[0], s[1] - 0.45, s[2]).applyQuaternion(v.view.q).add(v.view.pos));
     a.quaternion.copy(v.view.q);
-    poseHumanoid(a.userData, { mode: 'sit' });
+    poseHumanoid(a.userData, { mode: v.seat === 0 ? 'drive' : 'sit', turn: (v.sim ? v.sim.steer : v.view.steer) * 4, t: performance.now() / 1000 }, 1 / 60);
   }
 
   // ------------------------------------------------------------------ interaction

@@ -1,155 +1,206 @@
-// Customisable humanoid: jointed limbs, face, hair styles, facial hair, clothing and armour.
+// Customisable humanoid: sculpted body, detailed face, hair, clothing & armour, plus a
+// procedural animation system with smooth pose blending (walk/run/strafe/crouch/jump/aim/swing/sit/sleep).
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { LOOK_FIELDS, DEFAULT_LOOK, lookColor } from '/shared/look.js';
+import { DEFAULT_LOOK, lookColor } from '/shared/look.js';
 import { ITEMS } from '/shared/items.js';
 import { bakeVertexColors } from './bake.js';
 
-const VC = new THREE.MeshLambertMaterial({ vertexColors: true });
-
+const VC = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02 });
 const HEIGHTS = [0.92, 0.96, 1.0, 1.04, 1.08];
 const geoCache = new Map();
 const G = (key, fn) => { if (!geoCache.has(key)) geoCache.set(key, fn()); return geoCache.get(key); };
 const rbox = (w, h, d, r) => G(`rb${w}_${h}_${d}_${r}`, () => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2.05, h / 2.05, d / 2.05)));
-const caps = (r, len) => G(`cp${r}_${len}`, () => new THREE.CapsuleGeometry(r, len, 4, 10));
-const sph = (r) => G(`sp${r}`, () => new THREE.SphereGeometry(r, 12, 9));
-const cyl = (rt, rb, h) => G(`cy${rt}_${rb}_${h}`, () => new THREE.CylinderGeometry(rt, rb, h, 12));
-const lam = (color) => new THREE.MeshLambertMaterial({ color });
+const sph = (r, ws = 14, hs = 10) => G(`sp${r}_${ws}`, () => new THREE.SphereGeometry(r, ws, hs));
+const cap = (r, coverage, tilt) => G(`cap${r}_${coverage}_${tilt}`, () => { const g = new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI * coverage); g.rotateX(tilt); return g; });
+const taper = (r0, r1, len) => G(`tp${r0}_${r1}_${len}`, () => { const g = new THREE.CylinderGeometry(r1, r0, len, 12, 1); g.translate(0, -len / 2, 0); return g; }); // hangs down from origin
+const capsule = (r, len) => G(`cs${r}_${len}`, () => new THREE.CapsuleGeometry(r, len, 4, 10));
+const lathe = (key, pts, zs = 0.62) => G(key, () => { const g = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 20); g.scale(1, 1, zs); return g; });
+const lam = (color, opacity = 1) => { const m = new THREE.MeshLambertMaterial({ color }); if (opacity < 1) { m.transparent = true; m.opacity = opacity; } return m; };
 const shade = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
+const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
 
-function mk(geo, mat, x = 0, y = 0, z = 0, parent) {
-  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-  if (parent) parent.add(m);
+function mk(geo, mat, parent, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.scale.set(sx, sy, sz);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m);
   return m;
 }
+const joint = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
 
 export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   const L = { ...DEFAULT_LOOK, ...look };
   const fem = L.body === 1;
+  const [armHead, armChest, armLegs] = armorIds || [];
   const root = new THREE.Group();
-  const rig = new THREE.Group(); rig.scale.setScalar(HEIGHTS[L.height] ?? 1); root.add(rig);
-  const skinC = lookColor(L, 'skin'), hairC = lookColor(L, 'hairColor'), topC = lookColor(L, 'topColor'), pantsC = lookColor(L, 'pantsColor'), shoeC = lookColor(L, 'shoes');
-  const mats = { skin: lam(skinC), hair: lam(hairC), top: lam(topC), topDark: lam(shade(topC, 0.75)), pants: lam(pantsC), pantsDark: lam(shade(pantsC, 0.75)), shoe: lam(shoeC), sole: lam(0x222222), lip: lam(shade(skinC, 0.7)), nose: lam(shade(skinC, 0.93)),
-    eyeW: new THREE.MeshBasicMaterial({ color: 0xf2f2ee }), iris: new THREE.MeshBasicMaterial({ color: lookColor(L, 'eyes') }), stubble: new THREE.MeshLambertMaterial({ color: shade(hairC, 1), transparent: true, opacity: 0.45 }) };
-  const sleeveUpper = L.top === 3 ? mats.skin : mats.top;          // tank top: bare arms
-  const sleeveLower = L.top === 1 || L.top === 2 || L.top === 4 ? mats.top : mats.skin;
-  const legLower = L.pants === 2 ? mats.skin : mats.pants;
-
-  // hips / pelvis
-  const hips = new THREE.Group(); hips.position.y = 0.92; rig.add(hips);
-  const pw = fem ? 0.36 : 0.33;
-  mk(rbox(pw, 0.17, 0.21, 0.05), mats.pants, 0, 0.02, 0, hips);
-  // torso
-  const spine = new THREE.Group(); spine.position.y = 0.08; hips.add(spine);
-  const tw = fem ? 0.36 : 0.42;
-  const torso = mk(rbox(tw, 0.46, 0.23, 0.07), mats.top, 0, 0.25, 0, spine);
-  if (fem) mk(rbox(0.3, 0.12, 0.07, 0.035), mats.top, 0, 0.33, -0.11, spine);
-  mk(rbox(tw * 0.92, 0.07, 0.235, 0.03), mats.topDark, 0, 0.04, 0, spine); // hem
-  if (L.top === 2) { mk(rbox(0.28, 0.14, 0.1, 0.05), mats.top, 0, 0.47, 0.12, spine); mk(rbox(0.2, 0.1, 0.03, 0.015), mats.topDark, 0, 0.17, -0.12, spine); }
-  if (L.top === 4) { mk(rbox(0.02, 0.4, 0.01, 0.005), mats.sole, 0, 0.25, -0.118, spine); mk(rbox(0.3, 0.06, 0.2, 0.03), mats.topDark, 0, 0.47, 0.02, spine); }
-  if (L.top === 0 || L.top === 3) mk(rbox(0.12, 0.03, 0.02, 0.01), mats.skin, 0, 0.47, -0.112, spine); // neckline
-  // neck + head
-  mk(cyl(0.052, 0.058, 0.1), mats.skin, 0, 0.51, 0, spine);
-  const head = new THREE.Group(); head.position.y = 0.55; spine.add(head);
-  mk(rbox(0.22, 0.25, 0.23, 0.08), mats.skin, 0, 0.125, 0, head);
-  mk(rbox(0.16, 0.07, 0.04, 0.02), mats.skin, 0, 0.03, -0.1, head); // jaw
-  for (const sx of [-1, 1]) {
-    mk(rbox(0.045, 0.028, 0.012, 0.006), mats.eyeW, sx * 0.05, 0.14, -0.116, head);
-    mk(rbox(0.022, 0.024, 0.012, 0.005), mats.iris, sx * 0.05, 0.14, -0.121, head);
-    if (L.hair !== 0 || true) mk(rbox(0.055, 0.012, 0.014, 0.005), mats.hair, sx * 0.05, 0.175, -0.117, head);
-    mk(rbox(0.022, 0.06, 0.04, 0.01), mats.skin, sx * 0.113, 0.12, 0.0, head); // ears
-  }
-  mk(rbox(0.032, 0.055, 0.035, 0.012), mats.nose, 0, 0.1, -0.124, head);
-  mk(rbox(0.065, 0.012, 0.01, 0.005), mats.lip, 0, 0.055, -0.118, head);
-  // hair
-  const hairG = new THREE.Group(); head.add(hairG);
-  const H = (w, h, d, x, y, z, r = 0.03) => mk(rbox(w, h, d, r), mats.hair, x, y, z, hairG);
-  if (L.hair >= 1) {
-    // cap wraps the top/back of the skull; its front edge sits behind the forehead
-    const thick = L.hair === 1 ? 0.012 : 0.03;
-    H(0.22 + thick * 2, 0.1 + thick, 0.24 + thick, 0, 0.205 + thick / 2, 0.012 + thick / 2, 0.06);
-    H(0.22 + thick * 2, 0.12, 0.05, 0, 0.13, 0.1 + thick * 0.6, 0.02);
-    for (const sx of [-1, 1]) H(0.02, 0.07, 0.1, sx * (0.11 + thick * 0.6), 0.17, 0.03, 0.008);
-    if (L.hair >= 2) H(0.2, 0.04, 0.05, 0.01, 0.245, -0.095, 0.02); // fringe
-  }
-  if (L.hair === 3) for (let i = 0; i < 7; i++) H(0.06, 0.05, 0.06, Math.sin(i * 2.3) * 0.08, 0.28 + (i % 2) * 0.015, Math.cos(i * 1.7) * 0.08, 0.02);
-  if (L.hair === 4) { H(0.24, 0.36, 0.06, 0, 0.06, 0.12, 0.03); for (const sx of [-1, 1]) H(0.035, 0.28, 0.16, sx * 0.118, 0.07, 0.04, 0.015); }
-  if (L.hair === 5) { const t = mk(caps(0.035, 0.2), mats.hair, 0, 0.06, 0.16, hairG); t.rotation.x = 0.35; mk(sph(0.045), mats.hair, 0, 0.21, 0.13, hairG); }
-  if (L.hair === 6) { hairG.clear(); for (let i = 0; i < 5; i++) H(0.04, 0.1, 0.06, 0, 0.27 + Math.sin(i) * 0.01, -0.09 + i * 0.05, 0.015); }
-  if (L.hair === 7) mk(sph(0.07), mats.hair, 0, 0.29, 0.07, hairG);
-  // facial hair
-  if (L.beard === 1) mk(rbox(0.2, 0.09, 0.03, 0.02), mats.stubble, 0, 0.05, -0.108, head);
-  if (L.beard === 2) { mk(rbox(0.21, 0.11, 0.07, 0.035), mats.hair, 0, 0.04, -0.095, head); mk(rbox(0.08, 0.015, 0.012, 0.005), mats.lip, 0, 0.06, -0.133, head); }
-  if (L.beard === 3) mk(rbox(0.09, 0.022, 0.02, 0.008), mats.hair, 0, 0.074, -0.128, head);
-  if (L.beard === 4) { mk(rbox(0.06, 0.06, 0.03, 0.012), mats.hair, 0, 0.02, -0.12, head); mk(rbox(0.07, 0.018, 0.015, 0.006), mats.hair, 0, 0.074, -0.127, head); }
-  // arms
-  const arm = (sx) => {
-    const sh = new THREE.Group(); sh.position.set(sx * (tw / 2 + 0.045), 0.42, 0); spine.add(sh);
-    mk(sph(0.065), sleeveUpper, 0, 0, 0, sh);
-    mk(caps(0.054, 0.2), sleeveUpper, 0, -0.14, 0, sh);
-    if (L.top === 0) mk(cyl(0.062, 0.062, 0.05), mats.topDark, 0, -0.17, 0, sh);
-    const el = new THREE.Group(); el.position.y = -0.28; sh.add(el);
-    mk(sph(0.053), sleeveLower === mats.top ? mats.top : sleeveUpper, 0, 0, 0, el);
-    mk(caps(0.047, 0.19), sleeveLower, 0, -0.12, 0, el);
-    if (sleeveLower === mats.top) mk(cyl(0.052, 0.052, 0.04), mats.topDark, 0, -0.23, 0, el);
-    const hand = new THREE.Group(); hand.position.y = -0.29; el.add(hand);
-    mk(rbox(0.075, 0.1, 0.05, 0.02), mats.skin, 0, -0.02, 0, hand);
-    mk(rbox(0.03, 0.05, 0.03, 0.012), mats.skin, sx * -0.035, 0.0, -0.03, hand);
-    return { sh, el, hand };
+  const rig = joint(root, 0, 0, 0); rig.scale.setScalar(HEIGHTS[L.height] ?? 1);
+  const skinC = lookColor(L, 'skin'), hairC = lookColor(L, 'hairColor'), topC = lookColor(L, 'topColor');
+  const pantsC = armLegs ? ITEMS[armLegs]?.armor?.color ?? lookColor(L, 'pantsColor') : lookColor(L, 'pantsColor');
+  const shoeC = lookColor(L, 'shoes');
+  const M = {
+    skin: lam(skinC), skinD: lam(shade(skinC, 0.86)), lip: lam(mix(skinC, 0x8a3030, 0.35)), hair: lam(hairC), brow: lam(shade(hairC, 0.85)),
+    top: lam(topC), topD: lam(shade(topC, 0.72)), topL: lam(mix(topC, 0xffffff, 0.15)), pants: lam(pantsC), pantsD: lam(shade(pantsC, 0.7)), seam: lam(mix(pantsC, 0xd8b060, 0.35)),
+    shoe: lam(shoeC), sole: lam(mix(shoeC, 0x202020, 0.7)), lace: lam(mix(shoeC, 0xffffff, 0.6)), belt: lam(0x2a2018), metal: lam(0xb8b0a0),
+    white: lam(0xf4f2ee), iris: lam(lookColor(L, 'eyes')), pupil: lam(0x0a0a0a), stubble: lam(hairC, 0.4),
   };
-  const aL = arm(-1), aR = arm(1);
-  // legs
+  const sleeveLong = L.top === 1 || L.top === 2 || L.top === 4;
+  const bareArms = L.top === 3;
+  const shorts = L.pants === 2;
+
+  // ---------------- pelvis & legs
+  const hips = joint(rig, 0, 0.94, 0);
+  const hw = fem ? 0.155 : 0.142;
+  mk(lathe(`pelvis${fem}`, [[0.001, -0.11], [hw * 0.8, -0.1], [hw, -0.05], [hw * 0.98, 0.04], [hw * 0.93, 0.08], [0.001, 0.08]], 0.66), M.pants, hips);
+  mk(G('belt' + fem, () => { const g = new THREE.TorusGeometry(hw * 0.95, 0.016, 6, 24); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.66); return g; }), M.belt, hips, 0, 0.065, 0);
+  mk(rbox(0.045, 0.032, 0.01, 0.005), M.metal, hips, 0, 0.065, -hw * 0.66 - 0.006);
   const leg = (sx) => {
-    const hp = new THREE.Group(); hp.position.set(sx * (pw / 2 - 0.07), -0.02, 0); hips.add(hp);
-    mk(caps(0.075, 0.28), mats.pants, 0, -0.2, 0, hp);
-    if (L.pants === 1) mk(rbox(0.05, 0.12, 0.1, 0.02), mats.pantsDark, sx * 0.075, -0.24, 0, hp);
-    const kn = new THREE.Group(); kn.position.y = -0.43; hp.add(kn);
-    mk(sph(0.07), mats.pants, 0, 0, 0, kn);
-    mk(sph(0.077), mats.pants, 0, 0.43, 0, kn);
-    mk(caps(0.062, 0.27), legLower, 0, -0.2, 0, kn);
-    if (L.pants === 2) mk(cyl(0.08, 0.08, 0.06), mats.pantsDark, 0, 0.02, 0, kn);
-    if (L.pants === 3) mk(cyl(0.066, 0.066, 0.05), mats.pantsDark, 0, -0.36, 0, kn);
-    const ft = new THREE.Group(); ft.position.y = -0.42; kn.add(ft);
-    mk(sph(0.06), L.pants === 2 ? mats.skin : mats.pants, 0, 0.03, 0, ft);
-    mk(rbox(0.11, 0.08, 0.25, 0.035), mats.shoe, 0, -0.03, -0.04, ft);
-    mk(rbox(0.115, 0.025, 0.26, 0.01), mats.sole, 0, -0.068, -0.04, ft);
-    return { hp, kn, ft };
+    const hp = joint(hips, sx * 0.082, -0.045, 0);
+    mk(sph(0.074), M.pants, hp, 0, 0, 0);
+    mk(taper(0.08, 0.058, 0.42), M.pants, hp, 0, 0, 0);
+    if (L.pants === 1) mk(rbox(0.04, 0.11, 0.09, 0.015), M.pantsD, hp, sx * 0.07, -0.22, 0);
+    if (L.pants === 0) mk(rbox(0.004, 0.36, 0.006, 0.002), M.seam, hp, sx * 0.07, -0.2, 0);
+    if (shorts) mk(taper(0.086, 0.07, 0.06), M.pantsD, hp, 0, -0.27, 0);
+    const kn = joint(hp, 0, -0.43, 0);
+    mk(sph(0.06), shorts ? M.skin : M.pants, kn);
+    mk(taper(0.06, 0.042, 0.41), shorts ? M.skin : M.pants, kn);
+    mk(capsule(0.05, 0.12), shorts ? M.skin : M.pants, kn, 0, -0.14, 0.014); // calf
+    if (L.pants === 3) mk(taper(0.052, 0.052, 0.05), M.pantsD, kn, 0, -0.36, 0);
+    const an = joint(kn, 0, -0.42, 0);
+    mk(sph(0.045), shorts || L.pants === 3 ? M.skin : M.pants, an);
+    // shoe: toe, upper, heel, sole, laces
+    mk(rbox(0.1, 0.075, 0.2, 0.035), M.shoe, an, 0, -0.03, -0.045);
+    mk(rbox(0.095, 0.09, 0.09, 0.035), M.shoe, an, 0, -0.01, 0.03);
+    mk(rbox(0.106, 0.022, 0.27, 0.01), M.sole, an, 0, -0.066, -0.03);
+    mk(rbox(0.05, 0.008, 0.08, 0.003), M.lace, an, 0, 0.008, -0.06, 0.35);
+    return { hp, kn, an };
   };
   const lL = leg(-1), lR = leg(1);
-  const armor = new THREE.Group(); spine.add(armor);
-  const helmet = new THREE.Group(); head.add(helmet);
-  root.userData = { rig, hips, spine, torso, head, hairG, helmet, armor, armL: aL.sh, armR: aR.sh, elbowL: aL.el, elbowR: aR.el, legL: lL.hp, legR: lR.hp, kneeL: lL.kn, kneeR: lR.kn, hand: aR.hand, mats, look: L, eyes: null };
-  if (armorIds && armorIds.some(Boolean)) setHumanoidArmor(root, armorIds);
-  if (!root.userData.hairG.visible) root.userData.hairG.clear();
-  // merge every joint's parts into a single vertex-coloured mesh (~16 draw calls per character)
+
+  // ---------------- torso
+  const spine = joint(hips, 0, 0.07, 0);
+  const waist = fem ? 0.125 : 0.142;
+  mk(lathe(`abd${fem}`, [[0.001, -0.02], [hw * 0.93, -0.02], [waist, 0.08], [waist * 1.03, 0.2], [0.001, 0.2]], 0.62), M.top, spine);
+  const chest = joint(spine, 0, 0.19, 0);
+  const sh = fem ? 0.155 : 0.185;
+  const chestPts = fem
+    ? [[0.001, -0.02], [waist * 1.03, -0.02], [0.14, 0.1], [0.15, 0.18], [sh, 0.25], [sh * 0.8, 0.3], [0.06, 0.335], [0.001, 0.335]]
+    : [[0.001, -0.02], [waist * 1.03, -0.02], [0.165, 0.1], [0.18, 0.19], [sh, 0.25], [sh * 0.82, 0.305], [0.065, 0.34], [0.001, 0.34]];
+  mk(lathe(`chest${fem}`, chestPts, 0.62), M.top, chest);
+  if (fem) for (const sx of [-1, 1]) mk(sph(0.05), M.top, chest, sx * 0.052, 0.165, -0.06, 0, 0, 0, 1, 0.85, 0.55);
+  else mk(sph(0.11), M.top, chest, 0, 0.18, -0.03, 0, 0, 0, 1.45, 0.8, 0.62); // broad chest
+  // clothing details
+  if (L.top === 0 || L.top === 3) mk(G('collar', () => { const g = new THREE.TorusGeometry(0.06, 0.009, 6, 18); g.rotateX(Math.PI / 2 - 0.25); return g; }), M.topD, chest, 0, 0.325, -0.01);
+  if (L.top === 3) for (const sx of [-1, 1]) mk(rbox(0.035, 0.012, 0.18, 0.005), M.topD, chest, sx * 0.1, 0.305, 0, 0, 0, sx * 0.2);
+  if (L.top === 2) {
+    mk(G('hood', () => { const g = new THREE.SphereGeometry(0.12, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55); g.rotateX(-1.9); return g; }), M.topD, chest, 0, 0.35, 0.06, 0, 0, 0, 1.05, 0.7, 0.8);
+    mk(rbox(0.16, 0.08, 0.02, 0.01), M.topD, spine, 0, 0.1, -waist * 0.64 - 0.008);
+    for (const sx of [-1, 1]) mk(capsule(0.004, 0.09), M.white, chest, sx * 0.03, 0.24, -0.11);
+  }
+  if (L.top === 4) {
+    mk(rbox(0.008, 0.33, 0.006, 0.003), M.metal, chest, 0, 0.13, -0.112);
+    mk(rbox(0.008, 0.2, 0.006, 0.003), M.metal, spine, 0, 0.09, -waist * 0.64 - 0.004);
+    for (const sx of [-1, 1]) mk(rbox(0.06, 0.12, 0.012, 0.005), M.topD, chest, sx * 0.05, 0.27, -0.1, -0.2, 0, sx * 0.35);
+    mk(G('jcollar', () => { const g = new THREE.TorusGeometry(0.075, 0.018, 6, 18, Math.PI * 1.4); g.rotateX(Math.PI / 2); g.rotateY(Math.PI * 0.8); return g; }), M.topD, chest, 0, 0.32, 0.0);
+  }
+  // hem
+  mk(G('hem' + fem, () => { const g = new THREE.TorusGeometry(hw * 0.95, 0.012, 5, 24); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.64); return g; }), M.topD, spine, 0, -0.01, 0);
+
+  // ---------------- neck & head
+  const neck = joint(chest, 0, 0.33, 0);
+  mk(taper(0.05, 0.048, 0.09), M.skin, neck, 0, 0.09, 0);
+  const head = joint(neck, 0, 0.08, 0);
+  mk(sph(0.108, 20, 16), M.skin, head, 0, 0.125, 0, 0, 0, 0, 0.94, 1.1, 1.02);                // skull
+  mk(sph(0.075, 16, 12), M.skin, head, 0, 0.05, -0.028, 0, 0, 0, fem ? 1.0 : 1.12, 0.82, 0.95); // jaw
+  for (const sx of [-1, 1]) {
+    mk(sph(0.017, 10, 8), M.white, head, sx * 0.04, 0.135, -0.091);
+    mk(sph(0.011, 10, 8), M.iris, head, sx * 0.04, 0.135, -0.1);
+    mk(sph(0.0055, 8, 6), M.pupil, head, sx * 0.04, 0.135, -0.108);
+    mk(sph(0.019, 10, 8), M.skinD, head, sx * 0.04, 0.142, -0.088, 0, 0, 0, 1.05, 0.5, 1); // upper lid
+    mk(rbox(0.042, 0.01, 0.014, 0.004), M.brow, head, sx * 0.043, 0.163, -0.1, 0, 0, sx * (fem ? -0.12 : -0.05));
+    mk(sph(0.026, 10, 8), M.skin, head, sx * 0.1, 0.12, 0.008, 0, 0, 0, 0.4, 1, 0.75);        // ears
+  }
+  mk(rbox(0.024, 0.05, 0.03, 0.01), M.skin, head, 0, 0.108, -0.11, -0.15);
+  mk(sph(0.016, 10, 8), M.skinD, head, 0, 0.087, -0.118, 0, 0, 0, 1.3, 0.7, 0.9);             // nose tip
+  mk(capsule(0.007, 0.03), M.lip, head, 0, 0.064, -0.1, 0, 0, Math.PI / 2);
+  mk(capsule(0.006, 0.026), M.lip, head, 0, 0.055, -0.098, 0, 0, Math.PI / 2);
+
+  // ---------------- hair
+  const hairG = joint(head, 0, 0, 0);
+  const helmeted = armHead === 'metal_mask' || armHead === 'cloth_hood';
+  if (!helmeted && L.hair >= 1) {
+    const r = L.hair === 1 ? 0.112 : 0.118;
+    mk(cap(r, 0.5, 0.55), M.hair, hairG, 0, 0.13, 0.008, 0, 0, 0, 0.97, 1.08, 1.04);
+    if (L.hair >= 2 && L.hair !== 6) mk(capsule(0.018, 0.13), M.hair, hairG, 0.012, 0.2, -0.085, 0.5, 0, Math.PI / 2 + 0.12, 1, 1, 0.8);   // fringe
+    for (const sx of [-1, 1]) mk(rbox(0.01, 0.04, 0.025, 0.004), M.hair, hairG, sx * 0.093, 0.125, -0.02);
+  }
+  if (!helmeted) {
+    if (L.hair === 3) for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; mk(G('spike', () => new THREE.ConeGeometry(0.03, 0.07, 6)), M.hair, hairG, Math.cos(a) * 0.06, 0.24, Math.sin(a) * 0.06 + 0.01, Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); }
+    if (L.hair === 4) { mk(capsule(0.08, 0.16), M.hair, hairG, 0, 0.04, 0.07, 0.15, 0, 0, 1.25, 1, 0.55); for (const sx of [-1, 1]) mk(capsule(0.025, 0.16), M.hair, hairG, sx * 0.095, 0.05, -0.01, 0, 0, sx * 0.08); }
+    if (L.hair === 5) { mk(sph(0.03), M.belt, hairG, 0, 0.13, 0.115); mk(capsule(0.03, 0.18), M.hair, hairG, 0, 0.02, 0.14, 0.35); }
+    if (L.hair === 6) { for (let i = 0; i < 6; i++) mk(G('mo', () => new THREE.ConeGeometry(0.022, 0.09, 6)), M.hair, hairG, 0, 0.245 - Math.abs(i - 2.5) * 0.012, -0.08 + i * 0.035, -0.3 + i * 0.12); mk(cap(0.111, 0.5, 0.55), M.stubble, hairG, 0, 0.13, 0.008, 0, 0, 0, 0.97, 1.08, 1.04); }
+    if (L.hair === 7) mk(sph(0.055), M.hair, hairG, 0, 0.24, 0.06);
+  }
+  // facial hair
+  const beardGeo = G('beard', () => { const g = new THREE.SphereGeometry(0.08, 16, 10, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5); g.rotateX(0.35); return g; });
+  if (L.beard === 1) mk(beardGeo, M.stubble, head, 0, 0.075, -0.03, 0, 0, 0, 1.12, 0.95, 1.0);
+  if (L.beard === 2) { mk(beardGeo, M.hair, head, 0, 0.07, -0.034, 0, 0, 0, 1.18, 1.15, 1.05); mk(capsule(0.009, 0.04), M.hair, head, 0, 0.074, -0.105, 0, 0, Math.PI / 2); }
+  if (L.beard === 3) mk(capsule(0.009, 0.045), M.hair, head, 0, 0.074, -0.106, 0, 0, Math.PI / 2);
+  if (L.beard === 4) { mk(sph(0.028), M.hair, head, 0, 0.022, -0.085, 0, 0, 0, 1, 1.1, 0.8); mk(capsule(0.008, 0.04), M.hair, head, 0, 0.074, -0.106, 0, 0, Math.PI / 2); }
+
+  // ---------------- arms
+  const arm = (sx) => {
+    const shJ = joint(chest, sx * (sh - 0.01), 0.245, 0.005);
+    mk(sph(0.058), bareArms ? M.skin : M.top, shJ, 0, -0.01, 0, 0, 0, 0, 1.0, 1, 0.95);           // deltoid
+    mk(taper(0.058, 0.046, 0.28), bareArms ? M.skin : M.top, shJ);
+    if (!sleeveLong && !bareArms) { mk(taper(0.064, 0.06, 0.15), M.top, shJ); mk(G('cuffS', () => { const g = new THREE.TorusGeometry(0.061, 0.008, 5, 16); g.rotateX(Math.PI / 2); return g; }), M.topD, shJ, 0, -0.15, 0); }
+    if (!sleeveLong) mk(taper(0.05, 0.046, 0.14), M.skin, shJ, 0, -0.14, 0);
+    const el = joint(shJ, 0, -0.275, 0);
+    mk(sph(0.047), sleeveLong ? M.top : M.skin, el);
+    mk(taper(0.047, 0.034, 0.25), sleeveLong ? M.top : M.skin, el);
+    if (sleeveLong) mk(G('cuffL', () => { const g = new THREE.TorusGeometry(0.038, 0.009, 5, 16); g.rotateX(Math.PI / 2); return g; }), M.topD, el, 0, -0.23, 0);
+    const wr = joint(el, 0, -0.25, 0);
+    mk(sph(0.033), M.skin, wr);
+    mk(rbox(0.07, 0.08, 0.032, 0.014), M.skin, wr, 0, -0.045, 0);                        // palm
+    mk(rbox(0.066, 0.05, 0.03, 0.013), M.skin, wr, 0, -0.1, -0.01, 0.45);               // fingers (curled)
+    mk(capsule(0.012, 0.03), M.skin, wr, sx * -0.038, -0.045, -0.02, 0.4, 0, sx * 0.5); // thumb
+    const grip = joint(wr, 0, -0.085, -0.02);
+    return { sh: shJ, el, wr, grip };
+  };
+  const aL = arm(-1), aR = arm(1);
+
+  // ---------------- armour
+  const armor = joint(chest, 0, 0, 0);
+  const helmet = joint(head, 0, 0, 0);
+  const acol = (id) => ITEMS[id]?.armor?.color ?? 0x888888;
+  if (armHead) {
+    const m = lam(acol(armHead));
+    if (armHead === 'metal_mask') {
+      mk(sph(0.122, 18, 14), m, helmet, 0, 0.12, 0, 0, 0, 0, 0.98, 1.12, 1.05);
+      mk(rbox(0.12, 0.018, 0.02, 0.006), M.pupil, helmet, 0, 0.135, -0.122);
+      for (const sx of [-1, 1]) mk(sph(0.008), M.metal, helmet, sx * 0.07, 0.19, -0.105);
+    } else if (armHead === 'cloth_hood') {
+      mk(sph(0.125, 16, 12), m, helmet, 0, 0.125, 0.005, 0, 0, 0, 1, 1.15, 1.05);
+      for (const sx of [-1, 1]) mk(rbox(0.03, 0.02, 0.012, 0.005), M.pupil, helmet, sx * 0.04, 0.135, -0.125);
+      mk(G('rope', () => { const g = new THREE.TorusGeometry(0.075, 0.01, 6, 16); g.rotateX(Math.PI / 2); return g; }), M.belt, helmet, 0, 0.01, -0.01);
+    } else {
+      mk(cap(0.122, 0.5, 0.25), m, helmet, 0, 0.14, 0.005, 0, 0, 0, 1, 1.05, 1.05);
+      mk(G('brim', () => new THREE.CylinderGeometry(0.17, 0.17, 0.012, 20)), m, helmet, 0, 0.17, 0.0);
+    }
+  }
+  if (armChest) {
+    const m = lam(acol(armChest));
+    if (armChest === 'metal_chest') {
+      mk(rbox(0.32, 0.26, 0.05, 0.03), m, armor, 0, 0.16, -0.1, 0.05);
+      mk(rbox(0.3, 0.22, 0.04, 0.03), m, armor, 0, 0.16, 0.1);
+      for (const sx of [-1, 1]) mk(sph(0.075), m, armor, sx * (sh - 0.01), 0.26, 0, 0, 0, 0, 1.1, 0.7, 1);
+    } else mk(lathe(`vest${fem}`, chestPts.map(([r, y]) => [r === 0.001 ? r : r + 0.012, y]).slice(0, -2).concat([[0.001, 0.3]]), 0.66), m, armor);
+  }
+  if (armLegs === 'metal_legs') for (const sx of [-1, 0, 1]) mk(rbox(0.1, 0.2, 0.012, 0.005), lam(acol(armLegs)), hips, sx * 0.09, -0.12, -0.11 + Math.abs(sx) * 0.02, 0, sx * 0.4, 0);
+
+  root.userData = { rig, hips, spine, chest, neck, head, hand: aR.grip, handL: aL.grip, armL: aL.sh, armR: aR.sh, elbowL: aL.el, elbowR: aR.el, wristL: aL.wr, wristR: aR.wr, legL: lL.hp, legR: lR.hp, kneeL: lL.kn, kneeR: lR.kn, ankleL: lL.an, ankleR: lR.an, look: L, pose: null };
   bakeVertexColors(root, VC, new THREE.Color(skinC));
   return root;
-}
-
-// Armour: tints clothing and adds plates / helmets.
-function setHumanoidArmor(h, armorIds) {
-  const ud = h.userData;
-  const [head, chest, legs] = armorIds;
-  ud.helmet.clear(); ud.armor.clear();
-  ud.hairG.visible = true;
-  const col = (id) => ITEMS[id]?.armor?.color ?? 0x888888;
-  if (head) {
-    const m = lam(col(head));
-    if (head === 'metal_mask') {
-      mk(rbox(0.26, 0.29, 0.27, 0.06), m, 0, 0.13, 0, ud.helmet);
-      mk(rbox(0.16, 0.025, 0.02, 0.008), new THREE.MeshBasicMaterial({ color: 0x111111 }), 0, 0.145, -0.136, ud.helmet);
-      ud.hairG.visible = false;
-    } else if (head === 'cloth_hood') { mk(rbox(0.27, 0.3, 0.28, 0.1), m, 0, 0.15, 0.01, ud.helmet); ud.hairG.visible = false; mk(rbox(0.12, 0.05, 0.02, 0.01), new THREE.MeshBasicMaterial({ color: 0x111111 }), 0, 0.14, -0.138, ud.helmet); }
-    else { mk(rbox(0.26, 0.1, 0.27, 0.04), m, 0, 0.26, 0.005, ud.helmet); mk(rbox(0.34, 0.02, 0.34, 0.01), m, 0, 0.22, 0, ud.helmet); }
-  }
-  if (chest) {
-    const m = lam(col(chest));
-    const metal = chest === 'metal_chest';
-    mk(rbox(metal ? 0.46 : 0.45, metal ? 0.36 : 0.42, 0.27, 0.06), m, 0, 0.28, 0, ud.armor);
-    if (metal) for (const sx of [-1, 1]) mk(rbox(0.13, 0.08, 0.16, 0.03), m, sx * 0.25, 0.44, 0, ud.armor);
-  }
-  ud.mats.pants.color.set(legs ? col(legs) : lookColor(ud.look, 'pantsColor'));
-  if (legs === 'metal_legs') mk(rbox(0.4, 0.22, 0.26, 0.04), lam(col(legs)), 0, -0.12, 0, ud.armor);
 }
 
 // First-person arm (sleeve + hand) matching the character look
@@ -157,79 +208,114 @@ export function makeFPArm(look = DEFAULT_LOOK) {
   const L = { ...DEFAULT_LOOK, ...look };
   const g = new THREE.Group();
   const sleeve = L.top === 1 || L.top === 2 || L.top === 4;
-  const skin = lam(lookColor(L, 'skin'));
-  const arm = new THREE.Mesh(caps(0.045, 0.34), sleeve ? lam(lookColor(L, 'topColor')) : skin);
-  arm.rotation.x = Math.PI / 2; arm.position.set(0.04, -0.1, 0.22); g.add(arm);
-  if (sleeve) { const cuff = new THREE.Mesh(cyl(0.05, 0.05, 0.04), lam(shade(lookColor(L, 'topColor'), 0.75))); cuff.rotation.x = Math.PI / 2; cuff.position.set(0.04, -0.1, 0.03); g.add(cuff); }
-  const hand = new THREE.Mesh(rbox(0.075, 0.09, 0.11, 0.025), skin); hand.position.set(0.04, -0.09, -0.02); g.add(hand);
-  const thumb = new THREE.Mesh(rbox(0.03, 0.03, 0.06, 0.01), skin); thumb.position.set(0.0, -0.06, -0.04); g.add(thumb);
+  const skin = lam(lookColor(L, 'skin')), top = lam(lookColor(L, 'topColor'));
+  const arm = mk(taper(0.034, 0.046, 0.36), sleeve ? top : skin, g, 0.04, -0.1, -0.03, -Math.PI / 2);
+  if (sleeve) mk(G('fpcuff', () => { const t = new THREE.TorusGeometry(0.04, 0.01, 6, 16); return t; }), lam(shade(lookColor(L, 'topColor'), 0.72)), g, 0.04, -0.1, 0.0);
+  mk(rbox(0.075, 0.07, 0.09, 0.02), skin, g, 0.04, -0.09, -0.05);
+  mk(rbox(0.07, 0.05, 0.06, 0.018), skin, g, 0.04, -0.105, -0.1, 0.6);
+  mk(capsule(0.013, 0.035), skin, g, 0.0, -0.07, -0.07, -1.0, 0, 0.6);
+  arm.castShadow = false;
   return g;
 }
 
-// Pose the rig. st: {mode:'stand'|'sit'|'sleep', walk, amt (0..1 stride), crouch, held, pitch, swing (0..1), t}
-export function poseHumanoid(ud, st) {
-  const { hips, spine, head, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR } = ud;
-  hips.rotation.set(0, 0, 0); spine.rotation.set(0, 0, 0); head.rotation.set(0, 0, 0);
-  for (const j of [armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR]) j.rotation.set(0, 0, 0);
-  hips.position.y = 0.92;
-  armL.rotation.z = -0.08; armR.rotation.z = 0.08;
+// ---------------------------------------------------------------- animation
+const JOINTS = ['hips', 'spine', 'chest', 'neck', 'head', 'armL', 'armR', 'elbowL', 'elbowR', 'wristL', 'wristR', 'legL', 'legR', 'kneeL', 'kneeR', 'ankleL', 'ankleR'];
+const ease = (t) => t * t * (3 - 2 * t);
+
+// st: {mode:'stand'|'sit'|'drive'|'sleep', walk (phase), amt (0..1 locomotion blend), fwd, side (local move dir),
+//      run, air, vy, crouch, held, gun, pitch, swing (0..1), shot (0..1), turn (rad/s), land (0..1), t}
+// dt: when given, joints blend smoothly toward the pose; otherwise they snap.
+export function poseHumanoid(ud, st, dt) {
+  const T = {};
+  for (const j of JOINTS) T[j] = [0, 0, 0];
+  let hipY = 0.94;
+  const t = st.t || 0, pitch = st.pitch || 0;
   if (st.mode === 'sleep') {
-    hips.rotation.x = -Math.PI / 2; hips.position.y = 0.16;
-    armL.rotation.z = -0.15; armR.rotation.z = 0.15; kneeL.rotation.x = -0.15; legL.rotation.x = 0.1;
-    return;
-  }
-  if (st.mode === 'sit') {
-    hips.position.y = 0.45;
-    legL.rotation.x = legR.rotation.x = 1.45; kneeL.rotation.x = kneeR.rotation.x = -1.35;
-    armL.rotation.x = armR.rotation.x = 0.9; elbowL.rotation.x = elbowR.rotation.x = 0.55;
-    head.rotation.x = (st.pitch || 0) * 0.4;
-    return;
-  }
-  const w = st.walk || 0, a = st.amt || 0, run = st.run ? 1 : 0;
-  const s = Math.sin(w), c = Math.cos(w);
-  const stride = 0.7 + run * 0.35;
-  const t = st.t || 0;
-  if (st.air) {
-    // jumping / falling: knees tucked, arms out for balance
-    legL.rotation.x = 0.7; legR.rotation.x = -0.15; kneeL.rotation.x = -1.2; kneeR.rotation.x = -0.5;
-    armL.rotation.x = 0.4; armR.rotation.x = 0.4; armL.rotation.z = -0.6; armR.rotation.z = 0.6; elbowL.rotation.x = elbowR.rotation.x = 0.5;
-    spine.rotation.x = 0.12;
+    T.hips = [0, 0, Math.PI / 2]; hipY = 0.17;
+    T.legL = [0.75, 0, 0]; T.legR = [0.55, 0, 0]; T.kneeL = [-1.1, 0, 0]; T.kneeR = [-0.9, 0, 0];
+    T.armL = [0.9, 0, 0.25]; T.armR = [0.7, 0, -0.1]; T.elbowL = [1.3, 0, 0]; T.elbowR = [1.1, 0, 0];
+    T.spine = [-0.25 + Math.sin(t * 0.9) * 0.02, 0, 0]; T.neck = [-0.2, 0, 0]; T.ankleL = T.ankleR = [0.4, 0, 0];
+  } else if (st.mode === 'sit' || st.mode === 'drive') {
+    hipY = 0.45;
+    T.legL = T.legR = [1.45, 0, 0]; T.kneeL = T.kneeR = [-1.35, 0, 0]; T.ankleL = T.ankleR = [0.1, 0, 0];
+    T.spine = [0.06, 0, 0]; T.head = [pitch * 0.4, 0, 0];
+    if (st.mode === 'drive') { T.armL = [1.15, 0, 0.22]; T.armR = [1.15, 0, -0.22]; T.elbowL = T.elbowR = [0.55, 0, 0]; T.spine[2] = -(st.turn || 0) * 0.05; }
+    else { T.armL = [0.4, 0, 0.05]; T.armR = [0.4, 0, -0.05]; T.elbowL = T.elbowR = [0.95, 0, 0]; }
   } else {
-    legL.rotation.x = s * stride * a; legR.rotation.x = -s * stride * a;
-    kneeL.rotation.x = -Math.max(0, -c) * (1.1 + run * 0.6) * a - 0.05 - run * 0.2 * a;
-    kneeR.rotation.x = -Math.max(0, c) * (1.1 + run * 0.6) * a - 0.05 - run * 0.2 * a;
-    hips.position.y = 0.92 - Math.abs(c) * (0.03 + run * 0.04) * a;
-    spine.rotation.y = s * (0.08 + run * 0.06) * a; spine.rotation.x = (0.04 + run * 0.22) * a;
-    armL.rotation.x = -s * (0.55 + run * 0.4) * a; elbowL.rotation.x = 0.25 + run * 0.9 * a + Math.max(0, -s) * 0.4 * a;
-    armR.rotation.x = s * (0.55 + run * 0.4) * a; elbowR.rotation.x = 0.25 + run * 0.9 * a + Math.max(0, s) * 0.4 * a;
-    // idle breathing / weight shift
-    const idle = 1 - Math.min(1, a * 3);
-    spine.rotation.x += Math.sin(t * 1.7) * 0.02 * idle;
-    hips.rotation.z = Math.sin(t * 0.6) * 0.025 * idle;
-    armL.rotation.z -= Math.sin(t * 1.7) * 0.03 * idle; armR.rotation.z += Math.sin(t * 1.7) * 0.03 * idle;
-  }
-  if (st.crouch) {
-    hips.position.y = 0.62; legL.rotation.x += 1.0; legR.rotation.x += 1.0; kneeL.rotation.x -= 1.7; kneeR.rotation.x -= 1.7;
-    spine.rotation.x = 0.35; head.rotation.x = -0.3;
-  }
-  if (st.held) {
-    const pitch = st.pitch || 0;
+    const w = st.walk || 0, a = st.amt || 0, run = st.run && !st.crouch ? 1 : 0;
+    const back = (st.fwd ?? 1) < -0.3 ? -1 : 1, side = st.side || 0;
+    const fwdAmt = Math.max(0.25, Math.abs(st.fwd ?? 1));
+    const s = Math.sin(w), c = Math.cos(w);
+    const legA = (0.5 + run * 0.4) * a * fwdAmt * (st.crouch ? 0.6 : 1);
+    const kneeA = (0.85 + run * 0.75) * a;
+    // legs: swing + knee lift on the forward swing + foot roll
+    T.legL = [s * legA * back, 0, -side * Math.max(0, s) * 0.25 * a - 0.03];
+    T.legR = [-s * legA * back, 0, side * Math.max(0, -s) * 0.25 * a + 0.03];
+    T.kneeL = [-(0.08 + Math.max(0, c * back) * kneeA + run * 0.25 * a), 0, 0];
+    T.kneeR = [-(0.08 + Math.max(0, -c * back) * kneeA + run * 0.25 * a), 0, 0];
+    T.ankleL = [Math.max(0, -s) * 0.35 * a - T.legL[0] * 0.2, 0, 0];
+    T.ankleR = [Math.max(0, s) * 0.35 * a - T.legR[0] * 0.2, 0, 0];
+    // pelvis: double bounce, sway and twist; torso counter-twist and lean
+    hipY = 0.94 - (0.5 + 0.5 * Math.cos(2 * w)) * (0.025 + run * 0.05) * a;
+    T.hips = [0, s * (0.1 + run * 0.06) * a, s * 0.04 * a - (st.turn || 0) * 0.03];
+    T.spine = [-((0.03 + run * 0.2) * a * back + Math.max(-0.1, Math.min(0.15, (st.accel || 0) * 0.04))), -s * 0.08 * a, -(st.turn || 0) * 0.04];
+    T.chest = [-run * 0.06 * a, -s * (0.1 + run * 0.08) * a, 0];
+    T.neck = [(0.03 + run * 0.2) * a, s * 0.12 * a, 0];
+    // arms: counter swing with elbow pump
+    const armA = (0.42 + run * 0.6) * a;
+    T.armL = [-s * armA * back, 0, -0.1 - run * 0.1]; T.armR = [s * armA * back, 0, 0.1 + run * 0.1];
+    T.elbowL = [0.18 + run * 1.15 * a + Math.max(0, -s) * 0.3 * a, 0, 0]; T.elbowR = [0.18 + run * 1.15 * a + Math.max(0, s) * 0.3 * a, 0, 0];
+    // idle: breathing, weight shift, looking around
+    const idle = 1 - Math.min(1, a * 2.5);
+    if (idle > 0) {
+      const br = Math.sin(t * 1.55);
+      T.chest[0] -= br * 0.02 * idle; T.armL[2] -= (0.04 + br * 0.02) * idle; T.armR[2] += (0.04 + br * 0.02) * idle;
+      T.hips[2] += Math.sin(t * 0.45) * 0.035 * idle; hipY -= (0.5 + 0.5 * Math.sin(t * 0.45)) * 0.008 * idle;
+      T.legL[2] -= Math.sin(t * 0.45) * 0.03 * idle; T.legR[2] -= Math.sin(t * 0.45) * 0.03 * idle;
+      T.kneeL[0] -= (0.5 + 0.5 * Math.sin(t * 0.45)) * 0.12 * idle;
+      T.head[1] += (Math.sin(t * 0.31) * 0.35 + Math.sin(t * 0.83) * 0.1) * idle * (st.held ? 0.3 : 1);
+      T.elbowL[0] += 0.06 * idle; T.elbowR[0] += 0.06 * idle;
+    }
+    if (st.crouch) {
+      hipY -= 0.33;
+      T.legL[0] += 1.15; T.legR[0] += 1.15; T.kneeL[0] -= 1.95; T.kneeR[0] -= 1.95; T.ankleL[0] += 0.75; T.ankleR[0] += 0.75;
+      T.spine[0] -= 0.45; T.neck[0] += 0.3;
+    }
+    if (st.air) {
+      const up = (st.vy || 0) > 0;
+      T.legL = [up ? 0.9 : 0.45, 0, -0.05]; T.legR = [up ? 0.1 : 0.25, 0, 0.05];
+      T.kneeL = [up ? -1.3 : -0.7, 0, 0]; T.kneeR = [up ? -0.5 : -0.6, 0, 0]; T.ankleL = [0.3, 0, 0]; T.ankleR = [0.2, 0, 0];
+      T.armL = [0.5, 0, -0.55]; T.armR = [0.5, 0, 0.55]; T.elbowL = T.elbowR = [0.6, 0, 0];
+      T.spine[0] = -0.12; hipY = 0.94;
+    }
+    if (st.land > 0) { const l = ease(st.land); hipY -= 0.14 * l; T.kneeL[0] -= 0.7 * l; T.kneeR[0] -= 0.7 * l; T.legL[0] += 0.35 * l; T.legR[0] += 0.35 * l; T.spine[0] -= 0.25 * l; }
+    // held items
     if (st.gun) {
-      // two-handed aim
-      armR.rotation.set(1.35 + pitch * 0.9, 0, 0.1); elbowR.rotation.x = 0.35;
-      armL.rotation.set(1.45 + pitch * 0.9, 0.0, 0.55); elbowL.rotation.x = 0.75;
-      spine.rotation.y += 0.15;
-    } else {
-      let lift = 0, fwd = 0;
+      const kick = (st.shot || 0) * 0.3;
+      T.armR = [1.32 + pitch * 0.9 + kick, 0, 0.08]; T.elbowR = [0.45 - kick * 0.5, 0, 0]; T.wristR = [-0.15, 0, 0];
+      T.armL = [1.42 + pitch * 0.9 + kick, 0, 0.62]; T.elbowL = [0.7, 0, 0]; T.wristL = [0, 0, -0.3];
+      T.chest[1] += 0.22; T.neck[1] -= 0.18; T.spine[0] += pitch * 0.2;
+      if (!st.air) { T.armR[0] += Math.sin(w) * 0.03 * a; T.armL[0] += Math.sin(w) * 0.03 * a; }
+    } else if (st.held) {
+      // carry the tool in front, swing it overhead with a body twist
+      let ax = 0.55 + pitch * 0.4, ex = 0.75, tw = 0, lean = 0;
       if (st.swing) {
         const p = st.swing;
-        if (p < 0.3) lift = Math.sin((p / 0.3) * Math.PI / 2) * 1.2;            // wind up overhead
-        else if (p < 0.5) { const q = (p - 0.3) / 0.2; lift = 1.2 * (1 - q) - 1.0 * q; fwd = q; }   // strike down
-        else { const q = (p - 0.5) / 0.5; lift = -1.0 * (1 - q); fwd = 1 - q; }  // recover
+        if (p < 0.32) { const q = ease(p / 0.32); ax = ax + (2.6 - ax) * q; ex = 0.75 + 0.6 * q; tw = -0.35 * q; }
+        else if (p < 0.5) { const q = (p - 0.32) / 0.18; ax = 2.6 - 2.5 * q; ex = 1.35 - 1.1 * q; tw = -0.35 + 0.75 * q; lean = 0.25 * q; }
+        else { const q = ease((p - 0.5) / 0.5); ax = 0.1 + (0.55 + pitch * 0.4 - 0.1) * q; ex = 0.25 + 0.5 * q; tw = 0.4 * (1 - q); lean = 0.25 * (1 - q); }
+        T.armL = [0.5 + lean, 0, -0.2]; T.elbowL = [0.6, 0, 0];
       }
-      armR.rotation.x = 1.0 + pitch * 0.7 + lift; elbowR.rotation.x = 0.35 + (lift > 0 ? lift * 0.5 : 0);
-      spine.rotation.y -= fwd * 0.35; spine.rotation.x += fwd * 0.15;
+      T.armR = [ax, 0, 0.12]; T.elbowR = [ex, 0, 0];
+      T.chest[1] += tw; T.spine[0] -= lean;
     }
+    T.head[0] += pitch * 0.5; T.neck[0] += pitch * 0.15;
   }
-  head.rotation.x += (st.pitch || 0) * 0.5;
+  // apply (smoothed)
+  const k = dt ? 1 - Math.exp(-dt * 16) : 1;
+  for (const j of JOINTS) {
+    const o = ud[j], r = T[j];
+    o.rotation.x += (r[0] - o.rotation.x) * k; o.rotation.y += (r[1] - o.rotation.y) * k; o.rotation.z += (r[2] - o.rotation.z) * k;
+  }
+  ud.hips.position.y += (hipY - ud.hips.position.y) * k;
 }

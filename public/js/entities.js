@@ -64,12 +64,24 @@ export class Entities {
     for (const p of this.players.values()) {
       const ud = p.model.userData;
       const sleeping = p.flags & 2, inVeh = p.flags & 4, crouch = p.flags & 1;
-      const before = p.pos.clone();
+      const before = p.pos.clone(), yaw0 = p.yaw;
       if (p.interp.sample(performance.now() - INTERP_DELAY, _o)) { p.pos.set(_o.x, _o.y, _o.z); p.yaw = _o.yaw; }
-      const speed = before.distanceTo(p.pos) / Math.max(dt, 1e-3);
+      const vx = (p.pos.x - before.x) / Math.max(dt, 1e-3), vz = (p.pos.z - before.z) / Math.max(dt, 1e-3), vy = (p.pos.y - before.y) / Math.max(dt, 1e-3);
+      const speed = Math.min(12, Math.hypot(vx, vz));
+      // smoothed velocity in the player's local frame (forward = -Z)
+      p.sv = p.sv || { x: 0, z: 0, s: 0, turn: 0, vy: 0 };
+      const ks = Math.min(1, dt * 8);
+      p.sv.x += (vx - p.sv.x) * ks; p.sv.z += (vz - p.sv.z) * ks; p.sv.vy += (vy - p.sv.vy) * ks;
+      const prevS = p.sv.s; p.sv.s += (speed - p.sv.s) * ks;
+      let dyaw = p.yaw - yaw0; while (dyaw > Math.PI) dyaw -= 2 * Math.PI; while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+      p.sv.turn += (Math.max(-6, Math.min(6, dyaw / Math.max(dt, 1e-3))) - p.sv.turn) * ks;
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
+      const sl = Math.max(0.3, Math.hypot(p.sv.x, p.sv.z));
+      const fwd = (p.sv.x * fx + p.sv.z * fz) / sl, side = (p.sv.x * rx + p.sv.z * rz) / sl;
       p.model.position.copy(p.pos);
       p.model.rotation.set(0, p.yaw, 0);
-      if (sleeping) poseHumanoid(ud, { mode: 'sleep' });
+      p.t = (p.t || 0) + dt;
+      if (sleeping) poseHumanoid(ud, { mode: 'sleep', t: p.t }, dt);
       else if (inVeh) {
         const v = vehicleViews.get(p.vid);
         if (v && p.seat >= 0) {
@@ -77,13 +89,18 @@ export class Entities {
           _v.set(s[0], s[1] - 0.45, s[2]).applyQuaternion(v.q).add(v.pos);
           p.model.position.copy(_v); p.model.quaternion.copy(v.q);
         }
-        poseHumanoid(ud, { mode: 'sit', pitch: p.pitch });
+        poseHumanoid(ud, { mode: p.seat === 0 ? 'drive' : 'sit', pitch: p.pitch, turn: v ? v.steer * 4 : 0, t: p.t }, dt);
       } else {
         const run = !!(p.flags & 16), air = !!(p.flags & 8);
-        p.walk += Math.min(speed, 9) * dt * (run ? 1.25 : 1.55);
-        p.amt = (p.amt || 0) + (Math.min(1, speed / 4) - (p.amt || 0)) * Math.min(1, dt * 10);
-        p.t = (p.t || 0) + dt;
-        poseHumanoid(ud, { mode: 'stand', walk: p.walk, amt: p.amt, run, air, t: p.t, crouch: !!crouch, held: !!p.held, gun: !!ITEMDEFS[p.heldId]?.gun, pitch: p.pitch, swing: p.swingT > 0 ? 1 - p.swingT / 0.45 : 0 });
+        if (p.wasAir && !air) p.land = 1;
+        p.wasAir = air;
+        p.land = Math.max(0, (p.land || 0) - dt * 4);
+        // stride: ~1.5 m per walk cycle, ~2.4 m per run cycle
+        p.walk += p.sv.s * dt * (Math.PI * 2) / (run ? 2.4 : crouch ? 1.1 : 1.5);
+        p.amt = (p.amt || 0) + (Math.min(1, p.sv.s / 3.5) - (p.amt || 0)) * Math.min(1, dt * 8);
+        const d = ITEMDEFS[p.heldId];
+        poseHumanoid(ud, { mode: 'stand', walk: p.walk, amt: p.amt, fwd, side, run, air, vy: p.sv.vy, land: p.land, accel: (p.sv.s - prevS) / Math.max(dt, 1e-3) * 0.1, turn: p.sv.turn, t: p.t, crouch: !!crouch, held: !!p.held, gun: !!d?.gun, pitch: p.pitch, swing: p.swingT > 0 ? 1 - p.swingT / 0.45 : 0, shot: Math.max(0, p.shotT || 0) / 0.12 }, dt);
+        p.shotT = (p.shotT || 0) - dt;
       }
       if (p.swingT > 0) p.swingT -= dt;
       const dist = camPos.distanceTo(p.pos), mate = !!(p.flags & 32);

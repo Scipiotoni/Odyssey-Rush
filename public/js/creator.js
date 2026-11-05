@@ -72,10 +72,7 @@ export class Creator {
     this.t += 1 / 60;
     if (this.drag === null) this.yaw += 0.004;
     this.model.rotation.y = this.yaw;
-    poseHumanoid(this.model.userData, { mode: 'stand', walk: 0, amt: 0 });
-    this.model.userData.spine.rotation.x = Math.sin(this.t * 1.6) * 0.015;
-    this.model.userData.armL.rotation.z = -0.12 - Math.sin(this.t * 1.6) * 0.02;
-    this.model.userData.armR.rotation.z = 0.12 + Math.sin(this.t * 1.6) * 0.02;
+    poseHumanoid(this.model.userData, { mode: 'stand', walk: 0, amt: 0, t: this.t }, 1 / 60);
     this.renderer.render(this.scene, this.camera);
   }
   dispose() { this.running = false; this.renderer.dispose(); }
