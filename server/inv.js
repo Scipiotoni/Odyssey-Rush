@@ -38,7 +38,7 @@ export function add(slots, id, n, preferHotbar = false, template = null) {
     }
   }
   const order = [];
-  if (preferHotbar || ITEMS[id].cat === 'tool' || ITEMS[id].cat === 'weapon') for (let i = 0; i < slots.length; i++) order.push(i);
+  if (preferHotbar || slots.length !== 30 || ITEMS[id].cat === 'tool' || ITEMS[id].cat === 'weapon') for (let i = 0; i < slots.length; i++) order.push(i);
   else { for (let i = 6; i < slots.length; i++) order.push(i); for (let i = 0; i < Math.min(6, slots.length); i++) order.push(i); }
   for (const i of order) {
     if (n <= 0) break;

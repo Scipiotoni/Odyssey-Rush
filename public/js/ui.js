@@ -1,5 +1,5 @@
 // DOM user interface: HUD, inventory, crafting, containers, map, chat, menus.
-import { ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_SLOTS, HOTBAR, INV_SIZE } from '/shared/items.js';
+import { ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_SLOTS, HOTBAR, INV_SIZE, stationRecipes } from '/shared/items.js';
 import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
 import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
 import { audio } from './audio.js';
@@ -213,9 +213,10 @@ export class UI {
     for (let i = 0; i < INV_SIZE; i++) this.invEls[i].innerHTML = this.slotHTML(g.inv[i], i < HOTBAR ? i + 1 : null);
     const c = g.container;
     $('contpanel').classList.toggle('hidden', !c);
-    $('craftpanel').classList.toggle('hidden', !!c);
+    $('craftpanel').classList.toggle('hidden', !!c && !c.station);
+    if (c && c.station) this.renderCrafting();
     if (c) {
-      $('conttitle').textContent = c.title;
+      $('conttitle').textContent = c.station ? `${c.title} — output (finished items stay here until you take them)` : c.title;
       const grid = $('contgrid');
       if (this.contEls.length !== c.slots.length) {
         grid.innerHTML = ''; this.contEls = [];
@@ -306,45 +307,116 @@ export class UI {
   }
   renderCrafting() {
     const g = this.game;
-    const near = this.stationsNear();
-    $('craftstation').textContent = near.size ? '— near ' + [...near].map((s) => STATION_NAMES[s]).join(', ') : '';
+    const c = g.container, station = c && c.station;
     const q = $('craftsearch').value.trim().toLowerCase();
-    const groups = [[null, 'Basic'], ['campfire', 'Camp Fire'], ['furnace', 'Furnace'], ['wb1', 'Workbench Level 1'], ['wb2', 'Workbench Level 2'], ['wb3', 'Workbench Level 3']];
+    const recipes = station ? stationRecipes(station) : RECIPES.filter((r) => !r.station);
+    $('craftstation').textContent = station ? `— ${ITEMS[station].name}` : '— by hand';
     let html = '';
-    for (const [st, title] of groups) {
-      const list = RECIPES.filter((r) => (r.station || null) === st && (!q || ITEMS[r.out].name.toLowerCase().includes(q)));
-      if (!list.length) continue;
-      html += `<div class="rgroup">${title}${st && !near.has(st) ? ' (not nearby)' : ''}</div>`;
-      for (const r of list) {
-        const can = (!r.station || near.has(r.station)) && affordable(g.inv, r.cost);
-        const locked = r.station && !near.has(r.station);
-        html += `<div class="recipe ${can ? 'can' : ''} ${locked ? 'locked' : ''} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}"><span class="ic">${iconHTML(r.out, 'rico')}</span><span class="nm">${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</span><span class="st">${r.time}s</span></div>`;
-      }
+    if (station && c.queue && c.queue.length) {
+      const now = performance.now();
+      html += `<div class="rgroup">Crafting here (${c.queue.length})</div>` + c.queue.map((e, i) => {
+        const left = Math.max(0, e.left - (now - c.recv) / 1000 - (i ? 0 : 0));
+        return `<div class="recipe can" data-cancel="${i}"><span class="ic">${iconHTML(RECIPES[e.r].out, 'rico')}</span><span class="nm">${ITEMS[RECIPES[e.r].out].name}</span><span class="st">${Math.ceil(left)}s ✕</span></div>`;
+      }).join('');
+    }
+    html += `<div class="rgroup">${station ? `${ITEMS[station].name} recipes` : 'Hand crafting — press E on a camp fire, furnace or workbench for more'}</div>`;
+    for (const r of recipes.filter((r) => !q || ITEMS[r.out].name.toLowerCase().includes(q))) {
+      const can = affordable(g.inv, r.cost);
+      html += `<div class="recipe ${can ? 'can' : ''} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}"><span class="ic">${iconHTML(r.out, 'rico')}</span><span class="nm">${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</span><span class="st">${r.time}s</span></div>`;
+    }
+    if (!station) {
+      const locked = RECIPES.filter((r) => r.station && (!q || ITEMS[r.out].name.toLowerCase().includes(q)));
+      if (q && locked.length) html += `<div class="rgroup">Needs a station</div>` + locked.map((r) => `<div class="recipe locked"><span class="ic">${iconHTML(r.out, 'rico')}</span><span class="nm">${ITEMS[r.out].name}</span><span class="st">${STATION_NAMES[r.station]}</span></div>`).join('');
     }
     const list = $('craftlist');
     const scroll = list.scrollTop;
     list.innerHTML = html;
     list.scrollTop = scroll;
-    list.querySelectorAll('.recipe').forEach((el) => el.addEventListener('click', () => { this.selRecipe = +el.dataset.r; audio.click(); this.renderCrafting(); }));
+    list.querySelectorAll('.recipe[data-r]').forEach((el) => el.addEventListener('click', () => { this.selRecipe = +el.dataset.r; audio.click(); this.renderCrafting(); }));
+    list.querySelectorAll('.recipe[data-cancel]').forEach((el) => el.addEventListener('click', () => { g.net.send({ t: 'ccancel', i: +el.dataset.cancel, st: c.id }); audio.click(); }));
     const det = $('craftdetail');
     const r = RECIPES[this.selRecipe];
-    if (!r) { det.innerHTML = '<span class="hint">Select a recipe. Stand near a workbench, camp fire or furnace to unlock more.</span>'; return; }
+    if (!r || !recipes.includes(r)) { det.innerHTML = `<span class="hint">${station ? 'Select a recipe. Crafted items appear in the output slots above — drag them to your inventory.' : 'Select a recipe. Workbench, furnace and camp fire items are made at the station itself: walk up to it and press E.'}</span>`; return; }
     const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${countItem(g.inv, k) < v ? 'miss' : ''}">${iconHTML(k, 'gico')} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
     det.innerHTML = `<div class="bigico">${iconHTML(r.out, 'bico')}</div><b>${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Requires ' + STATION_NAMES[r.station] : ''}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
-    $('c1').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 1 }); audio.click(); };
-    $('c5').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 5 }); audio.click(); };
+    const st = station ? c.id : undefined;
+    $('c1').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 1, st }); audio.click(); };
+    $('c5').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 5, st }); audio.click(); };
   }
 
   // ------------------------------------------------------------------ build menu
   buildMenus() {
-    const bg = $('buildgrid');
-    bg.innerHTML = PIECE_ORDER.map((t) => { const c = pieceCost(t, 0); return `<div class="bpiece" data-t="${t}"><div class="ic">${PIECES[t].icon}</div>${PIECES[t].name}<small>${Object.entries(c).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')}</small></div>`; }).join('');
-    bg.querySelectorAll('.bpiece').forEach((el) => el.addEventListener('click', () => { this.game.building.piece = el.dataset.t; audio.click(); this.close(); }));
+    $('buildmenu').addEventListener('contextmenu', (e) => { e.preventDefault(); this.close(); });
     const ctl = CONTROLS.map(([k, v]) => `<div><kbd>${k}</kbd> ${v}</div>`).join('');
     $('controls').innerHTML = ctl; $('menucontrols').innerHTML = ctl;
   }
-  renderBuildMenu() {
-    document.querySelectorAll('.bpiece').forEach((el) => el.classList.toggle('sel', el.dataset.t === this.game.building.piece));
+  // Radial build wheel: centre = material, middle ring = category, outer ring = pieces / furniture
+  renderBuildMenu(hover = null) {
+    if (!hover) this._wheelHover = null;
+    const g = this.game, b = g.building;
+    const C = 300, TAU = Math.PI * 2;
+    const pt = (r, a) => [C + Math.sin(a) * r, C - Math.cos(a) * r];
+    const sector = (r0, r1, a0, a1) => {
+      const [x0, y0] = pt(r1, a0), [x1, y1] = pt(r1, a1), [x2, y2] = pt(r0, a1), [x3, y3] = pt(r0, a0);
+      const large = a1 - a0 > Math.PI ? 1 : 0;
+      if (r0 <= 0) return `M${C},${C} L${x0},${y0} A${r1},${r1} 0 ${large} 1 ${x1},${y1} Z`;
+      return `M${x0},${y0} A${r1},${r1} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${r0},${r0} 0 ${large} 0 ${x3},${y3} Z`;
+    };
+    const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+    const costTxt = (c) => Object.entries(c).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ');
+    let svg = `<svg viewBox="0 0 600 600">`;
+    // outer ring
+    const furnIds = Object.keys(ITEMS).filter((id) => ITEMS[id].deploy || ITEMS[id].door);
+    const items = b.cat === 'construction' ? PIECE_ORDER.map((t) => ({ key: t, label: PIECES[t].name, icon: PIECES[t].icon, ok: true, sel: !b.furn && b.piece === t }))
+      : furnIds.map((id) => { const n = countItem(g.inv, id); return { key: id, label: ITEMS[id].name.replace('Workbench Level', 'Workbench'), img: icons.get(id), icon: ITEMS[id].icon, n, ok: n > 0, sel: b.furn === id }; });
+    const n = items.length, gap = 0.012;
+    items.forEach((it, i) => {
+      const a0 = (i / n) * TAU + gap, a1 = ((i + 1) / n) * TAU - gap, am = (a0 + a1) / 2;
+      const fill = it.sel ? '#a8582e' : hover === 'o' + i ? '#5a4a3a' : 'rgba(30,30,30,.88)';
+      svg += `<path class="seg ${it.ok ? '' : 'dis'}" data-o="${i}" d="${sector(178, 292, a0, a1)}" fill="${fill}" stroke="rgba(255,255,255,.15)"/>`;
+      const [ix, iy] = pt(254, am), [tx, ty] = pt(200, am);
+      if (it.img) svg += `<image href="${it.img}" x="${ix - 21}" y="${iy - 21}" width="42" height="42" opacity="${it.ok ? 1 : 0.4}"/>`;
+      else svg += `<text x="${ix}" y="${iy}" font-size="30">${it.icon}</text>`;
+      svg += `<text x="${tx}" y="${ty}" font-size="${n > 10 ? 10 : 12}">${esc(it.label)}${it.n !== undefined ? ` (${it.n})` : ''}</text>`;
+    });
+    // middle ring: categories
+    const cats = [['construction', 'Construction', '🧱'], ['furniture', 'Furniture', '🪑']];
+    cats.forEach(([k, label, ic], i) => {
+      const a0 = i * Math.PI + 0.02, a1 = (i + 1) * Math.PI - 0.02, am = (a0 + a1) / 2;
+      svg += `<path class="seg" data-c="${k}" d="${sector(112, 172, a0, a1)}" fill="${b.cat === k ? '#3d5a3a' : 'rgba(45,45,45,.92)'}" stroke="rgba(255,255,255,.15)"/>`;
+      const [x, y] = pt(142, am);
+      svg += `<text x="${x}" y="${y}" font-size="15" font-weight="700">${ic} ${label}</text>`;
+    });
+    // centre: material toggle
+    TIERS.forEach((t, i) => {
+      const a0 = (i / TIERS.length) * TAU + 0.02, a1 = ((i + 1) / TIERS.length) * TAU - 0.02, am = (a0 + a1) / 2;
+      const on = b.tier === i;
+      svg += `<path class="seg" data-t="${i}" d="${sector(36, 106, a0, a1)}" fill="${hex(t.color)}" opacity="${on ? 1 : 0.55}" stroke="${on ? '#fff' : 'rgba(0,0,0,.4)'}" stroke-width="${on ? 3 : 1}"/>`;
+      const [x, y] = pt(74, am);
+      svg += `<text x="${x}" y="${y}" font-size="10.5" font-weight="700" style="paint-order:stroke;stroke:#000;stroke-width:2px">${t.name.replace('Sheet ', '')}</text>`;
+    });
+    svg += `<circle cx="${C}" cy="${C}" r="33" fill="rgba(15,15,15,.95)" stroke="rgba(255,255,255,.2)"/>`;
+    // centre info
+    const hv = hover && hover[0] === 'o' ? items[+hover.slice(1)] : items.find((x) => x.sel);
+    let info = '';
+    if (b.cat === 'construction' && hv) info = costTxt(pieceCost(hv.key, b.tier));
+    else if (hv && b.cat === 'furniture') info = hv.ok ? `You have ${hv.n}` : 'Craft it first';
+    svg += `<text x="${C}" y="${C - 7}" font-size="11" font-weight="700">${esc(hv ? hv.label : '')}</text><text x="${C}" y="${C + 9}" font-size="8.5" opacity=".8">${esc(info).slice(0, 40)}</text>`;
+    svg += `</svg>`;
+    const box = $('buildwheel');
+    box.innerHTML = svg;
+    box.querySelectorAll('[data-o]').forEach((el) => {
+      const it = items[+el.dataset.o];
+      el.addEventListener('mouseenter', () => { if (this._wheelHover !== 'o' + el.dataset.o) { this._wheelHover = 'o' + el.dataset.o; this.renderBuildMenu(this._wheelHover); } });
+      el.addEventListener('click', () => {
+        if (!it.ok) return;
+        audio.click();
+        if (b.cat === 'construction') { b.piece = it.key; b.furn = null; } else b.furn = it.key;
+        this.close();
+      });
+    });
+    box.querySelectorAll('[data-c]').forEach((el) => el.addEventListener('click', () => { b.cat = el.dataset.c; audio.click(); this.renderBuildMenu(); }));
+    box.querySelectorAll('[data-t]').forEach((el) => el.addEventListener('click', () => { b.tier = +el.dataset.t; b.furn = null; b.cat = 'construction'; audio.click(); this.renderBuildMenu(); }));
   }
 
   // ------------------------------------------------------------------ panels
@@ -471,7 +543,7 @@ export function itemDesc(st, short) {
   else if (d.explosive) s += `Raiding explosive · ${d.explosive.dmg} structure damage · ${d.explosive.fuse}s fuse. LMB to place/throw.`;
   else if (d.cat === 'food') s += `Food +${d.food} · Water +${d.water}${d.heal ? ' · Health ' + (d.heal > 0 ? '+' : '') + d.heal : ''} · LMB to eat`;
   else if (d.cat === 'medical') s += `Heals ${d.heal} · LMB to use`;
-  else if (d.deploy) s += { campfire: 'Cook food, make charcoal & fuel. Keeps you warm.', furnace: 'Smelt ore into metal & sulfur.', workbench1: 'Unlocks tier 1 crafting.', workbench2: 'Unlocks tier 2 crafting.', workbench3: 'Unlocks tier 3 crafting.', small_box: 'Store 12 stacks.', large_box: 'Store 30 stacks.', sleeping_bag: 'Respawn point.', tool_cupboard: 'Claim a 30m building privilege. Authorize friends. Locks doors to authorized players.' }[d.deploy.kind] || '';
+  else if (d.deploy) s += { campfire: 'Press E on it to cook food and make charcoal & fuel. Keeps you warm.', furnace: 'Press E on it to smelt ore into metal & sulfur.', workbench1: 'Press E on it to craft tier 1 items.', workbench2: 'Press E on it to craft tier 1-2 items.', workbench3: 'Press E on it to craft tier 1-3 items.', small_box: 'Store 12 stacks.', large_box: 'Store 30 stacks.', sleeping_bag: 'Respawn point.', tool_cupboard: 'Claim a 30m building privilege. Authorize friends. Locks doors to authorized players.' }[d.deploy.kind] || '';
   else if (d.door) s += `Place in a doorway. ${d.door.hp} HP. Locked to tool cupboard authorized players.`;
   else if (st.id === 'wheel' || st.id === 'engine_parts') s += 'Used to repair broken vehicles.';
   else if (st.id === 'fuel') s += 'Fuel for vehicles. Press E on a vehicle while holding fuel in inventory to refuel.';

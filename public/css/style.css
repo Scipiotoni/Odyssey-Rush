@@ -176,3 +176,11 @@ details summary { cursor: pointer; opacity: .8; }
 #clanbox button { padding: 5px 12px; font-size: 13px; }
 #clanbox .list { max-height: 34vh; overflow-y: auto; }
 #chatlog div.clanmsg { color: #9ae08a; }
+
+/* ---------- build wheel ---------- */
+#buildmenu { background: radial-gradient(circle, rgba(0,0,0,.55) 0, rgba(0,0,0,.25) 60%, transparent 100%); }
+#buildwheel svg { width: min(620px, 92vw, 80vh); height: auto; display: block; user-select: none; }
+#buildwheel .seg { cursor: pointer; transition: fill .08s; }
+#buildwheel .seg:hover { filter: brightness(1.35); }
+#buildwheel text { pointer-events: none; fill: #f2ece0; font-family: inherit; text-anchor: middle; dominant-baseline: middle; }
+#buildwheel .dis { opacity: .35; cursor: default; }

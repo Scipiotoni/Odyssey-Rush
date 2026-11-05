@@ -1,7 +1,7 @@
 // Authoritative game simulation: players, inventory, crafting, building, raiding,
 // loot, animals, vehicles and persistence.
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
-import { FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
+import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
 import { TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, restHeight } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
@@ -42,6 +42,7 @@ export class Game {
     this.explosives = new Map();
     this.nodeState = new Map(); // nodeId -> {hp, until}
     this.regions = new Map();   // key -> {s:Set, l:Set, d:Set}
+    this.activeStations = new Set();
     this.clans = new Map();     // id -> {id, name, tag, leader, members:[pid], invites:[pid]}
     this.spawned = new Set();   // POI ids / wreck cells that have spawned their content
     this.nextId = 1;
@@ -69,7 +70,7 @@ export class Game {
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
       for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.players.set(p.token, p); this.byPid.set(p.pid, p); }
       for (const b of d.buildings || []) this.buildings.set(b.id, b);
-      for (const s of d.structs || []) { this.structs.set(s.id, s); this.region(rkey(s.x, s.z)).s.add(s.id); }
+      for (const s of d.structs || []) { this.structs.set(s.id, s); this.region(rkey(s.x, s.z)).s.add(s.id); if (s.queue?.length) this.activeStations.add(s.id); }
       for (const l of d.loot || []) { this.loot.set(l.id, l); this.region(rkey(l.x, l.z)).l.add(l.id); }
       for (const v of d.vehicles || []) { v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); this.vehicles.set(v.id, v); }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
@@ -615,7 +616,21 @@ export class Game {
     const r = RECIPES[num(m.r, -1)];
     const n = Math.max(1, Math.min(20, num(m.n, 1) | 0));
     if (!r || !p.alive) return;
-    if (!this.nearStation(p, r.station)) return this.toast(p, 'You need to be near the right crafting station');
+    if (r.station) {
+      // station recipes are crafted *in* the station (press E on it); the result stays there until collected
+      const st = this.structs.get(String(m.st || ''));
+      if (!st || !STATION_KINDS.includes(st.type) || dist3(st, p) > STATION_RANGE + 1.5) return this.toast(p, 'Open the right crafting station (press E on it) to make this');
+      if (!stationRecipes(st.type).includes(r)) return this.toast(p, `A ${ITEMS[st.type].name} can't make that`);
+      if (!Inv.hasAll(p.inv, r.cost, n)) return this.toast(p, 'Not enough resources');
+      this.ensureStation(st);
+      if (st.queue.length + n > 20) return this.toast(p, 'This station is busy (20 jobs max)');
+      Inv.removeAll(p.inv, r.cost, n);
+      let end = Math.max(now(), st.queue.length ? st.queue[st.queue.length - 1].end : 0);
+      for (let i = 0; i < n; i++) { end += r.time; st.queue.push({ r: r.id, end, by: p.pid }); }
+      this.activeStations.add(st.id);
+      this.sendInv(p); this.pushContainer(st.id);
+      return;
+    }
     if (!Inv.hasAll(p.inv, r.cost, n)) return this.toast(p, 'Not enough resources');
     if (p.queue.length >= 12) return this.toast(p, 'Craft queue is full');
     Inv.removeAll(p.inv, r.cost, n);
@@ -623,18 +638,29 @@ export class Game {
     for (let i = 0; i < n; i++) { end += r.time; p.queue.push({ r: r.id, end }); }
     this.sendInv(p); this.sendQueue(p);
   }
+  ensureStation(st) {
+    if (!st.slots) st.slots = Inv.emptySlots(STATION_OUTPUT_SLOTS);
+    if (!st.queue) st.queue = [];
+  }
   onCraftCancel(p, m) {
     const i = num(m.i, -1) | 0;
-    const q = p.queue[i];
+    let queue = p.queue, st = null;
+    if (m.st) {
+      st = this.structs.get(String(m.st));
+      if (!st || !st.queue || dist3(st, p) > STATION_RANGE + 1.5) return;
+      queue = st.queue;
+    }
+    const q = queue[i];
     if (!q) return;
-    p.queue.splice(i, 1);
+    queue.splice(i, 1);
     const r = RECIPES[q.r];
     for (const k in r.cost) this.give(p, k, r.cost[k], false);
-    // shift remaining
     let t = now();
-    for (const e of p.queue) { t += RECIPES[e.r].time; e.end = t; }
-    this.sendInv(p); this.sendQueue(p);
+    for (const e of queue) { t += RECIPES[e.r].time; e.end = t; }
+    this.sendInv(p);
+    if (st) this.pushContainer(st.id); else this.sendQueue(p);
   }
+  stationQueue(st) { const t = now(); return (st.queue || []).map((q) => ({ r: q.r, left: Math.max(0, q.end - t), total: RECIPES[q.r].time })); }
   tickCrafting() {
     const t = now();
     for (const p of this.players.values()) {
@@ -648,6 +674,23 @@ export class Game {
         changed = true;
       }
       if (changed) { this.sendInv(p); this.sendQueue(p); }
+    }
+    // station jobs finish into the station's output slots
+    for (const id of [...this.activeStations]) {
+      const st = this.structs.get(id);
+      if (!st || !st.queue || !st.queue.length) { this.activeStations.delete(id); continue; }
+      let changed = false;
+      while (st.queue.length && st.queue[0].end <= t) {
+        const r = RECIPES[st.queue[0].r];
+        const probe = st.slots.map((x) => (x ? { ...x } : null));
+        if (Inv.add(probe, r.out, r.n) > 0) { for (const e of st.queue) e.end += 2; break; } // output full: wait
+        const q = st.queue.shift();
+        Inv.add(st.slots, r.out, r.n);
+        const by = this.byPid.get(q.by);
+        if (by) this.addXp(by, Math.ceil(r.time / 2));
+        changed = true;
+      }
+      if (changed) this.pushContainer(id);
     }
   }
 
@@ -672,7 +715,8 @@ export class Game {
     if (!PIECES[type]) return;
     const plan = p.inv[p.sel];
     if (!plan || plan.id !== 'building_plan') return this.toast(p, 'Equip a building plan');
-    const cost = pieceCost(type, 0);
+    const tier = Math.max(0, Math.min(TIERS.length - 1, num(m.tier, 0) | 0));
+    const cost = pieceCost(type, tier);
     if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     let b, gx = num(m.gx) | 0, gz = num(m.gz) | 0, level = num(m.level) | 0;
     let isNew = false;
@@ -694,7 +738,7 @@ export class Game {
     if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz); if (ge) return this.toast(p, ge); }
     if (isNew) this.buildings.set(b.id, b);
     Inv.removeAll(p.inv, cost);
-    const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier: 0, hp: TIERS[0].hp, mhp: TIERS[0].hp, bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
+    const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, hp: TIERS[tier].hp, mhp: TIERS[tier].hp, bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
     this.addStruct(s);
     this.sendInv(p);
     this.addXp(p, 1);
@@ -746,7 +790,9 @@ export class Game {
 
   onDeploy(p, m) {
     if (!p.alive) return;
-    const sel = num(m.sel) | 0;
+    let sel = num(m.sel) | 0;
+    if (m.id && p.inv[sel]?.id !== m.id) sel = p.inv.findIndex((x) => x && x.id === m.id);
+    if (sel < 0) return this.toast(p, "You don't have that item");
     const st = p.inv[sel];
     if (!st) return;
     const def = ITEMS[st.id];
@@ -905,6 +951,7 @@ export class Game {
 
   getContainer(id) {
     const s = this.structs.get(id);
+    if (s && STATION_KINDS.includes(s.type)) { this.ensureStation(s); return { obj: s, title: ITEMS[s.type].name, slots: s.slots, station: s.type }; }
     if (s && s.slots) return { obj: s, title: ITEMS[s.type]?.name || 'Box', slots: s.slots };
     const l = this.loot.get(id);
     if (l) return { obj: l, title: l.kind === 'crate' ? ['', 'Supply Crate', 'Military Crate', 'Elite Crate'][l.tier] : l.kind === 'corpse' ? `${ANIMALS[l.an]?.name || 'Animal'} Corpse` : 'Backpack', slots: l.slots };
@@ -915,7 +962,7 @@ export class Game {
     const c = this.getContainer(id);
     if (!c || !p.alive || dist3(c.obj, p) > 4.5) return;
     p.openCont = id;
-    this.send(p, { t: 'cont', id, title: c.title, slots: c.slots });
+    this.send(p, { t: 'cont', id, title: c.title, slots: c.slots, station: c.station, queue: c.station ? this.stationQueue(c.obj) : undefined });
   }
   // pick up everything from a dropped bag / item
   onTake(p, m) {
@@ -934,7 +981,7 @@ export class Game {
   }
   pushContainer(id) {
     const c = this.getContainer(id);
-    for (const p of this.players.values()) if (p.online && p.openCont === id) this.send(p, { t: 'cont', id, title: c ? c.title : '', slots: c ? c.slots : null });
+    for (const p of this.players.values()) if (p.online && p.openCont === id) this.send(p, { t: 'cont', id, title: c ? c.title : '', slots: c ? c.slots : null, station: c?.station, queue: c?.station ? this.stationQueue(c.obj) : undefined });
   }
   afterContainerChange(id) {
     const l = this.loot.get(id);

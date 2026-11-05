@@ -13,6 +13,9 @@ export class Builder {
   constructor(game) {
     this.game = game;
     this.piece = 'foundation';
+    this.tier = 0;        // material chosen in the build wheel
+    this.cat = 'construction';
+    this.furn = null;     // furniture item id when placing furniture with the plan
     this.rot = 0;
     this.ghost = new THREE.Mesh(new THREE.BufferGeometry(), OK);
     this.ghost.visible = false;
@@ -58,7 +61,7 @@ export class Builder {
       let gx, gz, level;
       if (PIECES[type].slot === 'cell') {
         gx = 2 * Math.round(fx); gz = 2 * Math.round(fz);
-        level = type === 'foundation' ? 0 : type === 'floor' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
+        level = type === 'foundation' ? 0 : type === 'floor' || type === 'roof' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
       } else {
         const i = Math.round(fx), j = Math.round(fz), dx = fx - i, dz = fz - j;
         if (Math.abs(dx) > Math.abs(dz)) { gx = 2 * i + Math.sign(dx || 1); gz = 2 * j; } else { gx = 2 * i; gz = 2 * j + Math.sign(dz || 1); }
@@ -77,28 +80,29 @@ export class Builder {
       if (!err) err = this.foundationGround(nb, 0, 0);
       plan = { type, x: nb.x, y: nb.y, z: nb.z, yaw, t: { x: nb.x, y: nb.y, z: nb.z, yaw } };
     } else err = 'Place a foundation first';
-    if (plan && !err) { const cost = pieceCost(type, 0); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
+    if (plan && !err) { const cost = pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
     this.plan = plan; this.err = err;
     if (plan) {
-      this.setGhost('p:' + type, () => pieceGeometry(type));
+      this.setGhost('p:' + type, () => pieceGeometry(type, 1));
       this.ghost.material = err ? BAD : OK;
       this.ghost.position.set(plan.t.x, plan.t.y, plan.t.z); this.ghost.rotation.set(0, plan.t.yaw, 0);
       this.ghost.visible = true;
     } else this.ghost.visible = false;
-    const cost = pieceCost(type, 0);
-    g.ui.prompt(`<b>${PIECES[type].name}</b> (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> pieces · <kbd>R</kbd> rotate</small>`);
+    const cost = pieceCost(type, this.tier);
+    g.ui.prompt(`<b>${TIERS[this.tier].name} ${PIECES[type].name}</b> (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> build wheel · <kbd>R</kbd> rotate</small>`);
   }
   placePlan() {
     const p = this.plan;
     if (!p) return;
     if (this.err) { this.game.ui.toast(this.err); return; }
-    if (p.bid) this.game.net.send({ t: 'build', type: p.type, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
-    else this.game.net.send({ t: 'build', type: p.type, x: p.x, y: p.y, z: p.z, yaw: p.yaw });
+    if (p.bid) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
+    else this.game.net.send({ t: 'build', type: p.type, tier: this.tier, x: p.x, y: p.y, z: p.z, yaw: p.yaw });
   }
 
   // ------------------------------------------------------------ deployables & doors
   updateDeploy(itemId) {
     const g = this.game, d = ITEMS[itemId];
+    this.deployId = itemId;
     const { hit } = this.aim(5);
     let err = null, plan = null;
     if (d.door) {
@@ -133,8 +137,9 @@ export class Builder {
     const p = this.plan;
     if (!p) return;
     if (this.err) { this.game.ui.toast(this.err); return; }
-    if (p.door) this.game.net.send({ t: 'deploy', sel: this.game.sel, door: p.door });
-    else this.game.net.send({ t: 'deploy', sel: this.game.sel, x: p.t.x, y: p.t.y, z: p.t.z, yaw: p.t.yaw });
+    const id = this.deployId;
+    if (p.door) this.game.net.send({ t: 'deploy', sel: this.game.sel, id, door: p.door });
+    else this.game.net.send({ t: 'deploy', sel: this.game.sel, id, x: p.t.x, y: p.t.y, z: p.t.z, yaw: p.t.yaw });
   }
 
   // ------------------------------------------------------------ hammer

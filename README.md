@@ -70,10 +70,13 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    Hit trees for wood and rocks for stone, metal ore and sulfur ore (orange / yellow speckled rocks).
    Press E on hemp for cloth and on bushes for berries. Smash blue barrels for scrap and parts.
 2. **Craft.** Stone hatchet & pickaxe first, then a building plan, hammer, camp fire, furnace, sleeping bag and boxes.
-   Stand near stations to unlock recipes: **Camp Fire** (cooking, charcoal, fuel), **Furnace** (smelting),
-   **Workbench Lv1 → Lv2 → Lv3** (better tools, guns, armor, vehicle parts, explosives).
-3. **Build.** Equip the building plan: foundations, walls, doorways, windows, low walls, floors and stairs snap to
-   a 3 m grid. Everything starts as Twig; use the hammer to upgrade to **Wood → Stone → Sheet Metal → Armored**.
+   Basic items are crafted by hand (Tab). Everything else is made **at the station**: walk up to a **Camp Fire**
+   (cooking, charcoal, fuel), **Furnace** (smelting) or **Workbench Lv1 → Lv2 → Lv3** and press E. Each station
+   only makes its own items, keeps working while you're away, and finished items wait in its output slots.
+3. **Build.** Equip the building plan and right-click for the **build wheel**: the outer ring has the pieces
+   (foundations, walls, doorways, windows, low walls, floors, roofs, stairs) or your furniture, the middle ring
+   switches Construction / Furniture, and the centre picks the material (Twig, Wood, Stone, Sheet Metal, Armored).
+   Pieces snap to a 3 m grid; you can also use the hammer to upgrade to **Wood → Stone → Sheet Metal → Armored**.
    Put a door in the doorway and a **Tool Cupboard** inside: it locks your doors to authorized players and stops
    anyone else building within 30 m. Pieces need support — blow out a wall and the floor above can collapse.
 4. **Hide.** Bases are only streamed to players within ~300 m, and the map shows no other players. The island is

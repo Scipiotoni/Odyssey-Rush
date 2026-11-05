@@ -262,6 +262,10 @@ export function pieceGeometry(type, tier = 1) {
       }
     }
     if (type === 'foundation' && tier > 0) parts.push(part(box(3.06, 0.12, 3.06), dk, { y: -0.06 }));
+    if (type === 'roof') {
+      parts.push(part(new THREE.ConeGeometry(2.13, 1.15, 4, 1), tier === 0 ? 0x9a7a4a : col, { y: 0.575, ry: Math.PI / 4 }, 0.05));
+      parts.push(part(new THREE.ConeGeometry(0.12, 0.3, 4), dk, { y: 1.2, ry: Math.PI / 4 }));
+    }
     return merge(parts);
   });
 }

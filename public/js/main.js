@@ -197,7 +197,7 @@ class Game {
     n.on('shit', (m) => { this.lastStructHit = { ...m, t: performance.now() }; this.ui.hitmarker(false); });
     n.on('cont', (m) => {
       if (!m.slots) { this.container = null; if (this.ui.open === 'inv') this.ui.renderInventory(); return; }
-      this.container = { id: m.id, title: m.title, slots: m.slots };
+      this.container = { id: m.id, title: m.title, slots: m.slots, station: m.station, queue: m.queue, recv: performance.now() };
       if (this.ui.open !== 'inv') this.ui.show('inv'); else this.ui.renderInventory();
     });
     n.on('hurt', (m) => {
@@ -475,7 +475,8 @@ class Game {
           else if (s.type === 'small_box' || s.type === 'large_box') { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.type === 'tool_cupboard') { const authed = s.auth?.includes(this.pid); text = `<kbd>E</kbd> ${authed ? 'Deauthorize' : 'Authorize'} at Tool Cupboard <small>(${s.auth?.length || 0} authorized)</small>`; if (E) this.net.send({ t: 'use', id: s.id }); }
           else if (s.type === 'sleeping_bag') { text = s.o === this.pid ? 'Your sleeping bag' : '<kbd>E</kbd> Claim sleeping bag'; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
-          else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name} — <kbd>Tab</kbd> to craft here`; }
+          else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
+          else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name}`; }
           else if (s.k === 'piece') target = `${TIERS[s.tier].name} ${PIECES[s.type].name}<div class="tbar"><div style="width:${(s.hp / s.mhp) * 100}%"></div></div>`;
         }
       } else if (hit.kind === 'v') {
@@ -596,7 +597,7 @@ class Game {
       this.timers.reveal = 1;
       this.ui.reveal(cp.x, cp.z);
       if (this.ui.open === 'map') this.ui.renderMap();
-      if (this.ui.open === 'inv' && !this.container) this.ui.renderCrafting();
+      if (this.ui.open === 'inv' && (!this.container || this.container.station)) this.ui.renderCrafting();
       const b = this.world.biome(cp.x, cp.z);
       const np = this.world.nearestPOI(cp.x, cp.z);
       const h = this.day * 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60);

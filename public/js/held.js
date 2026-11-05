@@ -58,7 +58,7 @@ export class Held {
     const d = ITEMS[id];
     this.isGun = !!d.gun; this.gun = d.gun || null;
     if (d.gun) { this.vmItem.rotation.set(0, 0, 0); this.vmItem.scale.setScalar(1); this.vmItem.position.set(0, 0, 0); }
-    else if (d.tool || d.cat === 'weapon') { this.vmItem.rotation.set(0.35, -0.3, 0.1); this.vmItem.scale.setScalar(0.62); this.vmItem.position.set(0.02, -0.06, 0); }
+    else if (d.tool || d.cat === 'weapon' || d.cat === 'tool') { this.vmItem.rotation.set(0.35, -0.3, 0.1); this.vmItem.scale.setScalar(0.62); this.vmItem.position.set(0.02, -0.06, 0); }
     else { this.vmItem.rotation.set(0.4, 0.6, 0); this.vmItem.scale.setScalar(1.1); this.vmItem.position.set(0.0, 0.0, -0.08); }
   }
 
@@ -175,8 +175,10 @@ export class Held {
     }
     const L = input.mouse.left, LP = input.mouse.leftPressed;
     if (d.plan) {
-      g.builder.updatePlan();
-      if (LP) { g.builder.placePlan(); this.swingAnim(0.3); }
+      const b = g.builder;
+      if (b.furn && countItem(g.inv, b.furn) <= 0) b.furn = null; // ran out of that furniture
+      if (b.furn) { b.updateDeploy(b.furn); if (LP) { b.placeDeploy(); this.swingAnim(0.3); } }
+      else { b.updatePlan(); if (LP) { b.placePlan(); this.swingAnim(0.3); } }
       if (input.mouse.rightPressed) g.ui.show('build');
       if (input.hit('KeyR')) g.builder.rot = (g.builder.rot + 1) & 3;
       return;

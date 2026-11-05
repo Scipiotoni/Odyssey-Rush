@@ -186,10 +186,14 @@ export const STATION_PROVIDERS = {
   wb1: ['workbench1', 'workbench2', 'workbench3'],
   wb2: ['workbench2', 'workbench3'],
   wb3: ['workbench3'],
-  campfire: ['campfire', 'furnace'],
+  campfire: ['campfire'],
   furnace: ['furnace'],
 };
 export const STATION_RANGE = 4.5;
+export const STATION_KINDS = ['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'];
+export const STATION_OUTPUT_SLOTS = 12;
+// Recipes a given station (deployable kind) can make. Hand recipes (no station) are made from the inventory.
+export function stationRecipes(kind) { return RECIPES.filter((r) => r.station && STATION_PROVIDERS[r.station].includes(kind)); }
 
 // Gathering: per node type
 export const NODES = {
@@ -238,8 +242,8 @@ export function newStack(id, n = 1) {
 
 // Animal definitions
 export const ANIMALS = {
-  deer: { name: 'Deer', hp: 80, speed: 9, aggro: false, dmg: 0, drops: { raw_meat: 4, leather: 18, animal_fat: 4, bone: 8 }, color: 0x9b6a3c, size: 1 },
-  boar: { name: 'Boar', hp: 120, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
-  wolf: { name: 'Wolf', hp: 55, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
-  bear: { name: 'Bear', hp: 350, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
+  deer: { name: 'Deer', hp: 40, speed: 9, aggro: false, dmg: 0, drops: { raw_meat: 4, leather: 18, animal_fat: 4, bone: 8 }, color: 0x9b6a3c, size: 1 },
+  boar: { name: 'Boar', hp: 60, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
+  wolf: { name: 'Wolf', hp: 35, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
+  bear: { name: 'Bear', hp: 160, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
 };

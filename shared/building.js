@@ -24,8 +24,9 @@ export const PIECES = {
   window: { name: 'Window', slot: 'edge', costMul: 0.7, icon: '🪟' },
   half_wall: { name: 'Low Wall', slot: 'edge', costMul: 0.5, icon: '▬' },
   stairs: { name: 'Stairs', slot: 'cell', costMul: 1, icon: '🪜' },
+  roof: { name: 'Roof', slot: 'cell', costMul: 0.75, icon: '🔺' },
 };
-export const PIECE_ORDER = ['foundation', 'wall', 'doorway', 'window', 'floor', 'stairs', 'half_wall'];
+export const PIECE_ORDER = ['foundation', 'wall', 'doorway', 'window', 'half_wall', 'floor', 'roof', 'stairs'];
 
 export function pieceCost(type, tier) {
   const base = TIERS[tier].cost, m = PIECES[type].costMul, out = {};
@@ -54,6 +55,7 @@ export function pieceBoxes(type, open = false) {
   switch (type) {
     case 'foundation': return [[0, -1.5, 0, 1.5, 1.5, 1.5]];
     case 'floor': return [[0, -0.1, 0, 1.5, 0.1, 1.5]];
+    case 'roof': return [[0, -0.1, 0, 1.5, 0.1, 1.5], [0, 0.35, 0, 0.9, 0.35, 0.9]];
     case 'wall': return [[0, 1.5, 0, 1.5, 1.5, 0.1]];
     case 'half_wall': return [[0, 0.6, 0, 1.5, 0.6, 0.1]];
     case 'doorway': return [[-1.05, 1.5, 0, 0.45, 1.5, 0.1], [1.05, 1.5, 0, 0.45, 1.5, 0.1], [0, 2.6, 0, 0.6, 0.4, 0.1]];
@@ -103,10 +105,10 @@ export function canPlace(type, gx, gz, level, idx, isFirst) {
     for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) if (idx.get(slotKey(gx + dx, gz + dz, 0, 'cell'))?.type === 'foundation') return null;
     return 'Must connect to a foundation';
   }
-  if (type === 'floor') {
+  if (type === 'floor' || type === 'roof') {
     if (level < 1) return 'Floors need walls below';
     for (const [ex, ez] of cellEdges(gx, gz)) { const w = idx.get(slotKey(ex, ez, level - 1, 'edge')); if (w && w.type !== 'half_wall') return null; }
-    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) { const f = idx.get(slotKey(gx + dx, gz + dz, level, 'cell')); if (f && f.type === 'floor') return null; }
+    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) { const f = idx.get(slotKey(gx + dx, gz + dz, level, 'cell')); if (f && (f.type === 'floor' || f.type === 'roof')) return null; }
     return 'Needs a wall or floor to support it';
   }
   if (type === 'stairs') {
@@ -144,7 +146,7 @@ export function canPlaceAny(type, gx, gz, level, idx, isFirst) {
     if (idx.has(slotKey(gx, gz, level + 1, 'cell'))) return 'Blocked by floor above';
     return canPlace(type, gx, gz, level, idx, isFirst);
   }
-  if (type === 'floor' && idx.has(slotKey(gx, gz, level - 1, 'stairs'))) return 'Stairs below';
+  if ((type === 'floor' || type === 'roof') && idx.has(slotKey(gx, gz, level - 1, 'stairs'))) return 'Stairs below';
   return canPlace(type, gx, gz, level, idx, isFirst);
 }
 
