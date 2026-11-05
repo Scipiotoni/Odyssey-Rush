@@ -107,8 +107,8 @@ kbd { background: #333; border: 1px solid #555; border-bottom-width: 2px; border
 #craftdetail button { padding: 6px 14px; margin-right: 6px; }
 #itemtip { position: fixed; pointer-events: none; background: rgba(10,10,10,.92); border: 1px solid #555; padding: 6px 10px; font-size: 12px; max-width: 240px; z-index: 30; }
 #dragghost { position: fixed; pointer-events: none; z-index: 40; font-size: 30px; transform: translate(-50%, -50%); }
-#buildwheel { position: relative; width: min(600px, 80vh, 92vw); aspect-ratio: 1; user-select: none; }
-#buildwheel svg { width: 100%; height: 100%; display: block; overflow: visible; }
+#buildwheel { position: relative; width: min(600px, 80vh, 92vw); user-select: none; flex: none; }
+#buildwheel svg { width: 100%; height: auto; display: block; overflow: visible; }
 #buildwheel .bw-seg path { fill: rgba(28,28,30,.9); stroke: #3a3a3e; stroke-width: 1.5; transition: fill .12s; }
 #buildwheel .bw-seg { cursor: pointer; }
 #buildwheel .bw-seg:hover path { fill: rgba(150,70,40,.95); }
