@@ -1,0 +1,439 @@
+// DOM user interface: HUD, inventory, crafting, containers, map, chat, menus.
+import { ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_SLOTS, HOTBAR, INV_SIZE } from '/shared/items.js';
+import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
+import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
+import { audio } from './audio.js';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+export const CONTROLS = [
+  ['WASD', 'Move'], ['Shift', 'Sprint'], ['Ctrl / C', 'Crouch'], ['Space', 'Jump / swim up'], ['LMB', 'Use / attack / build'], ['RMB', 'Aim · build menu · repair'],
+  ['E', 'Interact / pick up / enter vehicle'], ['R', 'Reload · rotate piece · flip vehicle'], ['1-6 / wheel', 'Belt slots'], ['Tab', 'Inventory & crafting'],
+  ['Q', 'Crafting'], ['M', 'Map'], ['F', 'Drink water (stand in it)'], ['X', 'Demolish (hammer, own piece)'], ['V', 'Vehicle camera'], ['Enter', 'Chat'], ['Esc', 'Pause / settings'],
+];
+
+const BIOME_COLORS = { [BIOME.OCEAN]: [30, 70, 105], [BIOME.BEACH]: [214, 198, 140], [BIOME.GRASS]: [110, 160, 70], [BIOME.FOREST]: [55, 105, 45], [BIOME.DESERT]: [215, 170, 105], [BIOME.SWAMP]: [80, 90, 55], [BIOME.SNOW]: [230, 235, 245], [BIOME.ROCK]: [130, 125, 118] };
+
+export class UI {
+  constructor(game) {
+    this.game = game;
+    this.open = null; // 'inv' | 'map' | 'build' | 'pause' | 'death' | 'chat'
+    this.drag = null;
+    this.selRecipe = null;
+    this.buildHotbar();
+    this.buildInventory();
+    this.buildMenus();
+    this.mapCanvas = $('mapcanvas');
+    this.mapCtx = this.mapCanvas.getContext('2d');
+    this.mapImg = this.mapCtx.createImageData(500, 500);
+    this.loadExplored();
+    document.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    document.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    $('craftsearch').addEventListener('input', () => this.renderCrafting());
+  }
+
+  // ------------------------------------------------------------------ HUD
+  buildHotbar() {
+    const hb = $('hotbar');
+    hb.innerHTML = '';
+    this.hotbarEls = [];
+    for (let i = 0; i < HOTBAR; i++) {
+      const el = document.createElement('div');
+      el.className = 'slot';
+      hb.appendChild(el);
+      this.hotbarEls.push(el);
+    }
+  }
+  slotHTML(st, key) {
+    if (!st) return key ? `<span class="k">${key}</span>` : '';
+    const d = ITEMS[st.id] || { icon: '?', name: st.id };
+    let n = st.n > 1 ? `<span class="n">${st.n}</span>` : '';
+    if (d.gun) n = `<span class="n">${st.a || 0}</span>`;
+    return `${key ? `<span class="k">${key}</span>` : ''}${d.icon}${n}`;
+  }
+  renderHotbar() {
+    const g = this.game;
+    for (let i = 0; i < HOTBAR; i++) {
+      const el = this.hotbarEls[i];
+      el.innerHTML = this.slotHTML(g.inv[i], i + 1);
+      el.classList.toggle('sel', i === g.sel);
+    }
+    const st = g.inv[g.sel];
+    const gun = st && ITEMS[st.id]?.gun;
+    $('ammo').innerHTML = gun ? `${st.a || 0}<small> / ${countItem(g.inv, gun.ammo)}</small>` : '';
+  }
+  renderStats(s) {
+    const pct = (v, m = 100) => Math.max(0, Math.min(100, (v / m) * 100)) + '%';
+    $('hpbar').style.width = pct(s.hp, s.maxhp); $('hpval').textContent = Math.ceil(s.hp);
+    $('foodbar').style.width = pct(s.food); $('foodval').textContent = Math.ceil(s.food);
+    $('waterbar').style.width = pct(s.water); $('waterval').textContent = Math.ceil(s.water);
+    $('lvl').textContent = `Lv ${s.lvl} · ${s.xp} xp · ${s.kills || 0} kills`;
+    $('cold').classList.toggle('hidden', !(s.cold > 0.5));
+  }
+  toast(m) {
+    const el = document.createElement('div'); el.className = 'toast'; el.textContent = m;
+    $('toasts').appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+    while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
+  }
+  gain(id, n) {
+    const d = ITEMS[id]; if (!d) return;
+    const last = $('gains').firstChild;
+    if (last && last.dataset.id === id && Date.now() - +last.dataset.t < 1500) {
+      last.dataset.n = +last.dataset.n + n; last.dataset.t = Date.now();
+      last.textContent = `+${last.dataset.n} ${d.icon} ${d.name}`;
+      last.style.animation = 'none'; void last.offsetWidth; last.style.animation = '';
+      return;
+    }
+    const el = document.createElement('div'); el.className = 'gain'; el.dataset.id = id; el.dataset.n = n; el.dataset.t = Date.now();
+    el.textContent = `+${n} ${d.icon} ${d.name}`;
+    $('gains').prepend(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+  prompt(html) { if (this._prompt !== html) { $('prompt').innerHTML = html || ''; this._prompt = html; } }
+  target(html) { if (this._target !== html) { $('target').innerHTML = html || ''; this._target = html; } }
+  progress(frac, text) {
+    if (frac === null) { $('progress').classList.add('hidden'); return; }
+    $('progress').classList.remove('hidden'); $('progressfill').style.width = frac * 100 + '%'; $('progresstext').textContent = text || '';
+  }
+  hitmarker(hs) {
+    const el = $('hitmarker'); el.classList.add('show'); el.classList.toggle('hs', !!hs);
+    clearTimeout(this._hm); this._hm = setTimeout(() => el.classList.remove('show'), 90);
+  }
+  hurt(fromAngle) {
+    $('vignette').classList.add('hurt'); setTimeout(() => $('vignette').classList.remove('hurt'), 120);
+    if (fromAngle !== null) { const d = $('hurtdir'); d.style.transform = `rotate(${fromAngle}rad)`; d.classList.add('show'); setTimeout(() => d.classList.remove('show'), 150); }
+  }
+  topbar(heading, loc, clock) {
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    $('compass').textContent = dirs[Math.round((((heading % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+    $('locinfo').textContent = loc; $('clock').textContent = clock;
+  }
+  renderQueue(q) {
+    $('queue').innerHTML = q.map((e, i) => `<div class="qi">${ITEMS[RECIPES[e.r].out].icon} ${ITEMS[RECIPES[e.r].out].name} <b>${Math.ceil(e.left)}s</b></div>`).join('');
+  }
+  vehicleHud(v) {
+    if (!v) { $('vehiclehud').classList.add('hidden'); return; }
+    $('vehiclehud').classList.remove('hidden');
+    $('speedo').textContent = Math.round(Math.abs(v.speed) * 3.6);
+    $('vfuel').textContent = `⛽ ${Math.floor(v.fuel)} / ${v.fuelCap}${v.fuel <= 0 ? ' — OUT OF FUEL' : ''}${v.engineOk === false ? ' — ENGINE FLOODED' : ''}`;
+    $('vhp').textContent = `🔧 ${Math.ceil(v.hp)} / ${v.maxHp}`;
+  }
+
+  // ------------------------------------------------------------------ chat
+  chat(from, m) {
+    const el = document.createElement('div');
+    if (!from) { el.className = 'sys'; el.textContent = m; } else el.innerHTML = `<b>${esc(from)}:</b> ${esc(m)}`;
+    $('chatlog').appendChild(el);
+    while ($('chatlog').children.length > 12) $('chatlog').firstChild.remove();
+  }
+  openChat() {
+    this.open = 'chat';
+    $('chat').classList.add('open');
+    const inp = $('chatinput'); inp.classList.remove('hidden'); inp.value = ''; inp.focus();
+  }
+  closeChat(send) {
+    const inp = $('chatinput');
+    if (send && inp.value.trim()) this.game.net.send({ t: 'chat', m: inp.value.trim() });
+    inp.classList.add('hidden'); inp.blur();
+    $('chat').classList.remove('open');
+    this.open = null;
+  }
+
+  // ------------------------------------------------------------------ inventory
+  buildInventory() {
+    const mk = (parent, c, i, key) => {
+      const el = document.createElement('div'); el.className = 'slot'; el.dataset.c = c; el.dataset.i = i;
+      if (key) el.dataset.key = key;
+      el.addEventListener('mousedown', (e) => this.onSlotDown(e, el));
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); this.onSlotRight(el); });
+      el.addEventListener('mouseenter', (e) => this.showTip(el, e));
+      el.addEventListener('mouseleave', () => $('itemtip').classList.add('hidden'));
+      parent.appendChild(el);
+      return el;
+    };
+    this.armorEls = ARMOR_SLOTS.map((s) => mk($('armorslots'), 'a', s));
+    this.invEls = [];
+    for (let i = HOTBAR; i < INV_SIZE; i++) this.invEls[i] = mk($('invgrid'), 'p', i);
+    for (let i = 0; i < HOTBAR; i++) this.invEls[i] = mk($('beltgrid'), 'p', i, i + 1);
+    this.contEls = [];
+    $('invscreen').addEventListener('mouseup', (e) => {
+      if (this.drag && (e.target === $('invscreen'))) { this.game.net.send({ t: 'drop', c: this.drag.c, i: this.drag.i }); this.endDrag(); }
+    });
+  }
+  stackAt(c, i) {
+    const g = this.game;
+    if (c === 'p') return g.inv[i];
+    if (c === 'a') return g.armor[i];
+    if (c === 'c') return g.container?.slots?.[i];
+    return null;
+  }
+  renderInventory() {
+    const g = this.game;
+    ARMOR_SLOTS.forEach((s, k) => { const el = this.armorEls[k]; el.innerHTML = this.slotHTML(g.armor[s]) || `<span class="lbl">${s}</span>`; });
+    for (let i = 0; i < INV_SIZE; i++) this.invEls[i].innerHTML = this.slotHTML(g.inv[i], i < HOTBAR ? i + 1 : null);
+    const c = g.container;
+    $('contpanel').classList.toggle('hidden', !c);
+    $('craftpanel').classList.toggle('hidden', !!c);
+    if (c) {
+      $('conttitle').textContent = c.title;
+      const grid = $('contgrid');
+      if (this.contEls.length !== c.slots.length) {
+        grid.innerHTML = ''; this.contEls = [];
+        c.slots.forEach((_, i) => {
+          const el = document.createElement('div'); el.className = 'slot'; el.dataset.c = 'c'; el.dataset.i = i;
+          el.addEventListener('mousedown', (e) => this.onSlotDown(e, el));
+          el.addEventListener('contextmenu', (e) => { e.preventDefault(); this.onSlotRight(el); });
+          el.addEventListener('mouseenter', (e) => this.showTip(el, e));
+          el.addEventListener('mouseleave', () => $('itemtip').classList.add('hidden'));
+          grid.appendChild(el); this.contEls.push(el);
+        });
+      }
+      c.slots.forEach((st, i) => (this.contEls[i].innerHTML = this.slotHTML(st)));
+    } else this.renderCrafting();
+    this.renderHotbar();
+  }
+  ref(el) { return { c: el.dataset.c, i: el.dataset.c === 'a' ? el.dataset.i : +el.dataset.i }; }
+  onSlotDown(e, el) {
+    if (e.button !== 0) return;
+    const r = this.ref(el);
+    const st = this.stackAt(r.c, r.i);
+    if (!st) return;
+    audio.click();
+    if (e.shiftKey) {
+      const g = this.game;
+      if (g.container) g.net.send({ t: 'move', from: r, to: { c: r.c === 'c' ? 'p' : 'c', i: -1 } });
+      else if (r.c === 'p') {
+        // belt <-> main
+        const range = r.i < HOTBAR ? [HOTBAR, INV_SIZE] : [0, HOTBAR];
+        for (let i = range[0]; i < range[1]; i++) if (!g.inv[i]) { g.net.send({ t: 'move', from: r, to: { c: 'p', i } }); break; }
+      } else if (r.c === 'a') g.net.send({ t: 'move', from: r, to: { c: 'p', i: firstFree(g.inv) } });
+      return;
+    }
+    this.drag = { ...r, half: e.ctrlKey };
+    const gh = document.createElement('div'); gh.id = 'dragghost'; gh.textContent = ITEMS[st.id].icon;
+    gh.style.left = e.clientX + 'px'; gh.style.top = e.clientY + 'px';
+    document.body.appendChild(gh);
+    this.dragEl = gh;
+  }
+  onMouseMove(e) { if (this.dragEl) { this.dragEl.style.left = e.clientX + 'px'; this.dragEl.style.top = e.clientY + 'px'; } }
+  onMouseUp(e) {
+    if (!this.drag) return;
+    const el = e.target.closest?.('.slot');
+    if (el && el.dataset.c) {
+      const to = this.ref(el);
+      if (!(to.c === this.drag.c && to.i === this.drag.i)) {
+        const st = this.stackAt(this.drag.c, this.drag.i);
+        const msg = { t: 'move', from: { c: this.drag.c, i: this.drag.i }, to };
+        if (this.drag.half && st) msg.n = Math.ceil(st.n / 2);
+        this.game.net.send(msg);
+      }
+      this.endDrag();
+    } else if (!e.target.closest?.('.invcol')) {
+      // dropped outside: handled by invscreen listener
+      setTimeout(() => this.endDrag(), 0);
+    } else this.endDrag();
+  }
+  endDrag() { this.drag = null; if (this.dragEl) { this.dragEl.remove(); this.dragEl = null; } }
+  onSlotRight(el) {
+    const r = this.ref(el), g = this.game;
+    const st = this.stackAt(r.c, r.i);
+    if (!st) return;
+    const d = ITEMS[st.id];
+    if (r.c === 'p' && (d.cat === 'food' || d.cat === 'medical')) return g.net.send({ t: 'eat', i: r.i });
+    if (r.c === 'p' && d.armor) return g.net.send({ t: 'move', from: r, to: { c: 'a', i: d.armor.slot } });
+    if (g.container) return g.net.send({ t: 'move', from: r, to: { c: r.c === 'c' ? 'p' : 'c', i: -1 } });
+    if (r.c === 'a') return g.net.send({ t: 'move', from: r, to: { c: 'p', i: firstFree(g.inv) } });
+  }
+  showTip(el, e) {
+    const st = this.stackAt(el.dataset.c, el.dataset.c === 'a' ? el.dataset.i : +el.dataset.i);
+    const tip = $('itemtip');
+    if (!st) { tip.classList.add('hidden'); return; }
+    tip.innerHTML = itemDesc(st);
+    tip.classList.remove('hidden');
+    const r = el.getBoundingClientRect();
+    tip.style.left = r.right + 6 + 'px'; tip.style.top = r.top + 'px';
+  }
+
+  // ------------------------------------------------------------------ crafting
+  stationsNear() {
+    const g = this.game, out = new Set();
+    for (const e of g.structures.map.values()) {
+      if (e.s.k !== 'deploy') continue;
+      if (Math.hypot(e.s.x - g.player.pos.x, e.s.y - g.player.pos.y, e.s.z - g.player.pos.z) > STATION_RANGE) continue;
+      for (const st in STATION_PROVIDERS) if (STATION_PROVIDERS[st].includes(e.s.type)) out.add(st);
+    }
+    return out;
+  }
+  renderCrafting() {
+    const g = this.game;
+    const near = this.stationsNear();
+    $('craftstation').textContent = near.size ? '— near ' + [...near].map((s) => STATION_NAMES[s]).join(', ') : '';
+    const q = $('craftsearch').value.trim().toLowerCase();
+    const groups = [[null, 'Basic'], ['campfire', 'Camp Fire'], ['furnace', 'Furnace'], ['wb1', 'Workbench Level 1'], ['wb2', 'Workbench Level 2'], ['wb3', 'Workbench Level 3']];
+    let html = '';
+    for (const [st, title] of groups) {
+      const list = RECIPES.filter((r) => (r.station || null) === st && (!q || ITEMS[r.out].name.toLowerCase().includes(q)));
+      if (!list.length) continue;
+      html += `<div class="rgroup">${title}${st && !near.has(st) ? ' (not nearby)' : ''}</div>`;
+      for (const r of list) {
+        const can = (!r.station || near.has(r.station)) && affordable(g.inv, r.cost);
+        const locked = r.station && !near.has(r.station);
+        html += `<div class="recipe ${can ? 'can' : ''} ${locked ? 'locked' : ''} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}"><span class="ic">${ITEMS[r.out].icon}</span><span class="nm">${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</span><span class="st">${r.time}s</span></div>`;
+      }
+    }
+    const list = $('craftlist');
+    const scroll = list.scrollTop;
+    list.innerHTML = html;
+    list.scrollTop = scroll;
+    list.querySelectorAll('.recipe').forEach((el) => el.addEventListener('click', () => { this.selRecipe = +el.dataset.r; audio.click(); this.renderCrafting(); }));
+    const det = $('craftdetail');
+    const r = RECIPES[this.selRecipe];
+    if (!r) { det.innerHTML = '<span class="hint">Select a recipe. Stand near a workbench, camp fire or furnace to unlock more.</span>'; return; }
+    const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${countItem(g.inv, k) < v ? 'miss' : ''}">${ITEMS[k].icon} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
+    det.innerHTML = `<b>${ITEMS[r.out].icon} ${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Requires ' + STATION_NAMES[r.station] : ''}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
+    $('c1').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 1 }); audio.click(); };
+    $('c5').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 5 }); audio.click(); };
+  }
+
+  // ------------------------------------------------------------------ build menu
+  buildMenus() {
+    const bg = $('buildgrid');
+    bg.innerHTML = PIECE_ORDER.map((t) => { const c = pieceCost(t, 0); return `<div class="bpiece" data-t="${t}"><div class="ic">${PIECES[t].icon}</div>${PIECES[t].name}<small>${Object.entries(c).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')}</small></div>`; }).join('');
+    bg.querySelectorAll('.bpiece').forEach((el) => el.addEventListener('click', () => { this.game.building.piece = el.dataset.t; audio.click(); this.close(); }));
+    const ctl = CONTROLS.map(([k, v]) => `<div><kbd>${k}</kbd> ${v}</div>`).join('');
+    $('controls').innerHTML = ctl; $('menucontrols').innerHTML = ctl;
+  }
+  renderBuildMenu() {
+    document.querySelectorAll('.bpiece').forEach((el) => el.classList.toggle('sel', el.dataset.t === this.game.building.piece));
+  }
+
+  // ------------------------------------------------------------------ panels
+  show(which) {
+    this.close(true);
+    this.open = which;
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen' }[which];
+    $(el).classList.remove('hidden');
+    if (which === 'inv') this.renderInventory();
+    if (which === 'map') this.renderMap();
+    if (which === 'build') this.renderBuildMenu();
+    this.game.input.unlock();
+  }
+  close(silent) {
+    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen']) $(id).classList.add('hidden');
+    $('itemtip').classList.add('hidden');
+    this.endDrag();
+    if (this.open === 'inv' && this.game.container) { this.game.net.send({ t: 'close' }); this.game.container = null; }
+    const was = this.open;
+    this.open = null;
+    if (!silent && was !== 'death') this.game.input.lock();
+  }
+
+  death(by, bags) {
+    this.show('death');
+    $('deathby').textContent = `Killed by ${by}`;
+    const opts = $('respawnopts');
+    opts.innerHTML = '';
+    const b0 = document.createElement('button'); b0.textContent = '🏖️ Respawn on a random beach'; b0.onclick = () => this.game.net.send({ t: 'respawn' }); opts.appendChild(b0);
+    for (const b of bags || []) {
+      const el = document.createElement('button'); el.className = 'alt'; el.textContent = `🛏️ Sleeping bag at ${b.x}, ${b.z}`;
+      el.onclick = () => this.game.net.send({ t: 'respawn', bag: b.id });
+      opts.appendChild(el);
+    }
+  }
+
+  // ------------------------------------------------------------------ map / fog of war
+  loadExplored() {
+    this.explored = new Uint8Array(500 * 500);
+    this.discovered = new Set();
+    try {
+      const k = 'or_explored_' + this.game.seed;
+      const s = localStorage.getItem(k);
+      if (s) { const bin = atob(s); for (let i = 0; i < bin.length && i * 8 < this.explored.length; i++) { const b = bin.charCodeAt(i); for (let j = 0; j < 8; j++) this.explored[i * 8 + j] = (b >> j) & 1; } }
+      const d = localStorage.getItem('or_pois_' + this.game.seed);
+      if (d) JSON.parse(d).forEach((x) => this.discovered.add(x));
+    } catch {}
+    this.mapDirty = true;
+  }
+  saveExplored() {
+    try {
+      let s = '';
+      for (let i = 0; i < this.explored.length; i += 8) { let b = 0; for (let j = 0; j < 8; j++) b |= this.explored[i + j] << j; s += String.fromCharCode(b); }
+      localStorage.setItem('or_explored_' + this.game.seed, btoa(s));
+      localStorage.setItem('or_pois_' + this.game.seed, JSON.stringify([...this.discovered]));
+    } catch {}
+  }
+  reveal(x, z) {
+    const cx = Math.floor((x + HALF) / 32), cz = Math.floor((z + HALF) / 32), R = 9;
+    let changed = false;
+    for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) {
+      if (i * i + j * j > R * R) continue;
+      const px = cx + i, pz = cz + j;
+      if (px < 0 || pz < 0 || px >= 500 || pz >= 500) continue;
+      const k = pz * 500 + px;
+      if (!this.explored[k]) { this.explored[k] = 1; changed = true; }
+    }
+    if (changed) this.mapDirty = true;
+    const np = this.game.world.nearestPOI(x, z);
+    if (np && np.d < 160 && !this.discovered.has(np.poi.id)) { this.discovered.add(np.poi.id); this.toast(`📍 Discovered: ${np.poi.name}`); }
+  }
+  renderMap() {
+    const w = this.game.world, img = this.mapImg.data;
+    if (this.mapDirty) {
+      for (let pz = 0; pz < 500; pz++) for (let px = 0; px < 500; px++) {
+        const k = pz * 500 + px, o = k * 4;
+        if (!this.explored[k]) { img[o] = 22; img[o + 1] = 26; img[o + 2] = 30; img[o + 3] = 255; continue; }
+        if (img[o + 3] === 254) continue; // cached
+        const x = -HALF + px * 32 + 16, z = -HALF + pz * 32 + 16;
+        const h = w.height(x, z);
+        const b = w.biome(x, z, h);
+        let [r, g, bl] = BIOME_COLORS[b];
+        if (h < 0) { const d = Math.min(1, -h / 30); r = 60 - d * 35; g = 120 - d * 55; bl = 160 - d * 60; }
+        else { const sh = 0.85 + Math.min(0.3, h / 400); r *= sh; g *= sh; bl *= sh; }
+        img[o] = r; img[o + 1] = g; img[o + 2] = bl; img[o + 3] = 254;
+      }
+      this.mapDirty = false;
+    }
+    const ctx = this.mapCtx;
+    ctx.putImageData(this.mapImg, 0, 0);
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    for (const p of w.allPOIs()) {
+      if (!this.discovered.has(p.id)) continue;
+      const mx = (p.x + HALF) / 32, mz = (p.z + HALF) / 32;
+      ctx.fillStyle = '#e0a040'; ctx.fillRect(mx - 2, mz - 2, 4, 4);
+      ctx.fillStyle = '#fff'; ctx.fillText(p.name, mx, mz - 5);
+    }
+    for (const b of this.game.bags || []) { const mx = (b.x + HALF) / 32, mz = (b.z + HALF) / 32; ctx.fillStyle = '#60c0ff'; ctx.fillRect(mx - 2, mz - 2, 4, 4); }
+    const pp = this.game.player.pos, yaw = this.game.player.yaw;
+    const mx = (pp.x + HALF) / 32, mz = (pp.z + HALF) / 32;
+    ctx.save(); ctx.translate(mx, mz); ctx.rotate(-yaw + Math.PI);
+    ctx.fillStyle = '#ff4030'; ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    let n = 0; for (let i = 0; i < this.explored.length; i++) n += this.explored[i];
+    $('mapinfo').textContent = `Position ${Math.round(pp.x)}, ${Math.round(pp.z)} · Explored ${((n / (500 * 500)) * 100).toFixed(2)}% of the map · ${this.discovered.size} places discovered · North is up`;
+  }
+}
+
+export function countItem(inv, id) { let n = 0; for (const s of inv) if (s && s.id === id) n += s.n; return n; }
+function affordable(inv, cost) { for (const k in cost) if (countItem(inv, k) < cost[k]) return false; return true; }
+function firstFree(inv) { for (let i = HOTBAR; i < inv.length; i++) if (!inv[i]) return i; for (let i = 0; i < HOTBAR; i++) if (!inv[i]) return i; return -1; }
+export function itemDesc(st, short) {
+  const d = ITEMS[st.id];
+  if (!d) return st.id;
+  let s = short ? '' : `<b>${d.icon} ${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
+  if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
+  else if (d.tool && d.tool.hammer) s += 'LMB upgrade building piece · RMB repair · X demolish';
+  else if (d.tool) s += `Damage ${d.tool.dmg} · tree ${d.tool.tree} · ore ${d.tool.ore}`;
+  else if (d.plan) s += 'Place foundations, walls, floors… RMB to choose piece, R to rotate.';
+  else if (d.armor) s += `${d.armor.slot} armor · ${Math.round(d.armor.prot * 100)}% protection · warmth ${d.armor.cold}`;
+  else if (d.explosive) s += `Raiding explosive · ${d.explosive.dmg} structure damage · ${d.explosive.fuse}s fuse. LMB to place/throw.`;
+  else if (d.cat === 'food') s += `Food +${d.food} · Water +${d.water}${d.heal ? ' · Health ' + (d.heal > 0 ? '+' : '') + d.heal : ''} · LMB to eat`;
+  else if (d.cat === 'medical') s += `Heals ${d.heal} · LMB to use`;
+  else if (d.deploy) s += { campfire: 'Cook food, make charcoal & fuel. Keeps you warm.', furnace: 'Smelt ore into metal & sulfur.', workbench1: 'Unlocks tier 1 crafting.', workbench2: 'Unlocks tier 2 crafting.', workbench3: 'Unlocks tier 3 crafting.', small_box: 'Store 12 stacks.', large_box: 'Store 30 stacks.', sleeping_bag: 'Respawn point.', tool_cupboard: 'Claim a 30m building privilege. Authorize friends. Locks doors to authorized players.' }[d.deploy.kind] || '';
+  else if (d.door) s += `Place in a doorway. ${d.door.hp} HP. Locked to tool cupboard authorized players.`;
+  else if (st.id === 'wheel' || st.id === 'engine_parts') s += 'Used to repair broken vehicles.';
+  else if (st.id === 'fuel') s += 'Fuel for vehicles. Press E on a vehicle while holding fuel in inventory to refuel.';
+  else s += d.cat;
+  return s;
+}

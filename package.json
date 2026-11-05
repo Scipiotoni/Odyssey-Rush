@@ -1,0 +1,19 @@
+{
+  "name": "odyssey-rush",
+  "version": "0.1.0",
+  "description": "Low-poly multiplayer survival shooter: gather, build, raid, repair and drive vehicles across an immense procedural island.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "three": "0.170.0",
+    "ws": "8.18.0"
+  }
+}
