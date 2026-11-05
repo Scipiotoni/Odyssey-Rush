@@ -8,7 +8,17 @@ vehicles, repair them and drive them offroad with physics that react to the terr
 
 ![stack](https://img.shields.io/badge/client-Three.js-black) ![stack](https://img.shields.io/badge/server-Node.js%20%2B%20WebSocket-green)
 
-## Quick start
+## Play online
+
+**https://odyssey-rush.onrender.com** — everyone who opens the link plays in the same persistent world.
+Bases, gathered trees, holes you dig, vehicles and sleeping players are stored in Postgres and survive
+server restarts. (Free hosting: after ~15 min with nobody online the server sleeps, so the first visit can
+take about a minute to load.)
+
+Hosting is defined in [`render.yaml`](render.yaml): a Node web service plus a Postgres database
+(`DATABASE_URL`). Pushing to the deployed branch redeploys automatically; players reconnect on their own.
+
+## Quick start (local)
 
 ```bash
 npm install
@@ -26,7 +36,8 @@ every minute and when the server stops.
 |---|---|---|
 | `PORT` | `3000` | HTTP/WebSocket port |
 | `SEED` | `1337` | World seed (a new seed = a new island and a fresh save) |
-| `DATA_FILE` | `data/world.json` | Save file |
+| `DATA_FILE` | `data/world.json` | Save file (used when `DATABASE_URL` is not set) |
+| `DATABASE_URL` | unset | Postgres connection string — stores the world in the database instead of a file |
 | `DEV` | unset | `DEV=1` enables admin chat commands (`/tp x z`, `/tppoi [type]`, `/give id n`, `/kit`, `/day 0-1`, `/heal`) |
 
 Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, Fly.io, a VPS…).
@@ -43,6 +54,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | R | Reload · rotate building piece · flip a vehicle back on its wheels |
 | F | Drink (standing in a river or lake — the ocean is salty) |
 | M | Map with fog-of-war (reveals as you explore, remembers discovered places) |
+| LMB / RMB with Shovel | Dig a hole (gives stone, sometimes ore) / pile up dirt (costs stone) |
 | X | Demolish your own piece (hammer, within 10 min of placing) |
 | G / H | Refuel / patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
