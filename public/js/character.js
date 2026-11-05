@@ -20,6 +20,21 @@ const lam = (color, opacity = 1) => { const m = new THREE.MeshLambertMaterial({ 
 const shade = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
 const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
 
+// Angular low-poly head: wide cheekbones, tapered jaw and chin, slightly flattened face.
+const headGeo = (fem) => G('head' + fem, () => {
+  const g = new THREE.SphereGeometry(0.105, 8, 7);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const ny = y / 0.105;
+    if (ny < 0.15) { const t = (0.15 - ny) / 1.15; x *= 1 - t * (fem ? 0.5 : 0.4); z *= 1 - t * 0.2; }
+    if (z < 0) z *= 0.9;
+    p.setXYZ(i, x * 0.93, y * 1.15, z);
+  }
+  g.computeVertexNormals();
+  return g;
+});
+
 function mk(geo, mat, parent, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.scale.set(sx, sy, sz);
@@ -53,29 +68,28 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   const hips = joint(rig, 0, 0.94, 0);
   const hw = fem ? 0.155 : 0.142;
   mk(lathe(`pelvis${fem}`, [[0.001, -0.11], [hw * 0.8, -0.1], [hw, -0.05], [hw * 0.98, 0.04], [hw * 0.93, 0.08], [0.001, 0.08]], 0.66), M.pants, hips);
-  mk(G('belt' + fem, () => { const g = new THREE.TorusGeometry(hw * 0.95, 0.016, 6, 24); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.66); return g; }), M.belt, hips, 0, 0.065, 0);
-  mk(rbox(0.045, 0.032, 0.01, 0.005), M.metal, hips, 0, 0.065, -hw * 0.66 - 0.006);
+  if (!sleeveLong) mk(G('belt' + fem, () => { const g = new THREE.TorusGeometry(hw * 0.95, 0.016, 6, 24); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.66); return g; }), M.belt, hips, 0, 0.065, 0);
+  if (!sleeveLong) mk(rbox(0.045, 0.032, 0.01, 0.005), M.metal, hips, 0, 0.065, -hw * 0.66 - 0.006);
   const leg = (sx) => {
     const hp = joint(hips, sx * 0.082, -0.045, 0);
-    mk(sph(0.074), M.pants, hp, 0, 0, 0);
-    mk(taper(0.08, 0.058, 0.42), M.pants, hp, 0, 0, 0);
-    mk(rbox(0.04, 0.12, 0.1, 0.01), M.pantsD, hp, sx * 0.072, -0.2, 0, 0, 0, sx * 0.08);          // thigh pocket
-    if (L.pants === 1) mk(rbox(0.035, 0.09, 0.09, 0.01), M.pantsD, hp, -sx * 0.06, -0.26, 0);
+    mk(sph(0.076), M.pants, hp, 0, 0, 0);
+    mk(taper(shorts ? 0.082 : 0.078, shorts ? 0.074 : 0.062, 0.42), M.pants, hp, 0, 0, 0);
+    if (L.pants === 1) mk(rbox(0.04, 0.12, 0.1, 0.01), M.pantsD, hp, sx * 0.072, -0.2, 0, 0, 0, sx * 0.08);   // cargo pocket
     if (L.pants === 0) mk(rbox(0.004, 0.36, 0.006, 0.002), M.seam, hp, sx * 0.07, -0.2, 0);
-    if (shorts) mk(taper(0.086, 0.07, 0.06), M.pantsD, hp, 0, -0.27, 0);
+    if (shorts) mk(taper(0.08, 0.08, 0.03), M.pantsD, hp, 0, -0.4, 0);
     const kn = joint(hp, 0, -0.43, 0);
-    mk(sph(0.06), shorts ? M.skin : M.pants, kn);
-    if (!shorts) mk(rbox(0.1, 0.11, 0.04, 0.012), M.pantsD, kn, 0, -0.03, -0.05, -0.1);             // knee patch
-    mk(taper(0.06, 0.042, 0.41), shorts ? M.skin : M.pants, kn);
+    mk(sph(shorts ? 0.05 : 0.061), shorts ? M.skin : M.pants, kn);
+    if (L.pants === 1) mk(rbox(0.1, 0.11, 0.04, 0.012), M.pantsD, kn, 0, -0.03, -0.05, -0.1);       // knee patch
+    mk(taper(shorts ? 0.05 : 0.061, shorts ? 0.038 : 0.048, 0.41), shorts ? M.skin : M.pants, kn);
     if (L.pants === 3) mk(taper(0.052, 0.052, 0.05), M.pantsD, kn, 0, -0.36, 0);
     const an = joint(kn, 0, -0.42, 0);
-    mk(sph(0.045), shorts || L.pants === 3 ? M.skin : M.pants, an);
-    // chunky boots: shaft, toe, heel, thick sole, laces
-    mk(taper(0.064, 0.06, 0.15), M.shoe, an, 0, 0.1, 0.0);
-    mk(rbox(0.112, 0.085, 0.21, 0.03), M.shoe, an, 0, -0.03, -0.05);
-    mk(rbox(0.11, 0.1, 0.1, 0.03), M.shoe, an, 0, -0.015, 0.03);
-    mk(rbox(0.12, 0.03, 0.28, 0.01), M.sole, an, 0, -0.072, -0.035);
-    mk(rbox(0.05, 0.01, 0.1, 0.004), M.lace, an, 0, 0.02, -0.065, 0.35);
+    if (shorts || L.pants === 3) mk(taper(0.042, 0.042, 0.06), M.white, an, 0, 0.04, 0);          // socks
+    // sneakers: rounded upper, white sole, toe cap, laces
+    mk(rbox(0.1, 0.075, 0.24, 0.03), M.shoe, an, 0, -0.02, -0.045);
+    mk(rbox(0.09, 0.05, 0.1, 0.02), M.shoe, an, 0, 0.02, 0.02);
+    mk(rbox(0.108, 0.03, 0.255, 0.012), M.white, an, 0, -0.065, -0.045);
+    mk(rbox(0.09, 0.02, 0.06, 0.008), M.white, an, 0, -0.04, -0.15);
+    mk(rbox(0.045, 0.008, 0.09, 0.003), M.lace, an, 0, 0.018, -0.07, 0.3);
     return { hp, kn, an };
   };
   const lL = leg(-1), lR = leg(1);
@@ -89,7 +103,7 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   const chestPts = fem
     ? [[0.001, -0.02], [waist * 1.03, -0.02], [0.14, 0.1], [0.15, 0.18], [sh, 0.25], [sh * 0.8, 0.3], [0.06, 0.335], [0.001, 0.335]]
     : [[0.001, -0.02], [waist * 1.03, -0.02], [0.165, 0.1], [0.18, 0.19], [sh, 0.25], [sh * 0.82, 0.305], [0.065, 0.34], [0.001, 0.34]];
-  mk(lathe(`chest${fem}`, chestPts, 0.62), M.top, chest);
+  mk(lathe(`chest${fem}`, chestPts, 0.62), M.top, chest, 0, 0, 0, 0, 0, 0, sleeveLong ? 1.06 : 1, 1, sleeveLong ? 1.14 : 1);
   if (fem) for (const sx of [-1, 1]) mk(sph(0.05), M.top, chest, sx * 0.052, 0.165, -0.06, 0, 0, 0, 1, 0.85, 0.55);
   else mk(sph(0.11), M.top, chest, 0, 0.18, -0.03, 0, 0, 0, 1.45, 0.8, 0.62); // broad chest
   // clothing details
@@ -97,12 +111,6 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
     mk(G('vneck', () => { const g = new THREE.ConeGeometry(0.04, 0.09, 3); g.rotateX(Math.PI); return g; }), M.skin, chest, 0, 0.29, -0.1, 0.15, 0, 0, 1, 1, 0.35);
     mk(rbox(fem ? 0.24 : 0.3, 0.09, 0.03, 0.01), M.topD, chest, 0, 0.215, -0.095, 0.05);           // chest panel
   }
-  // backpack with straps and bedroll
-  mk(rbox(0.26, 0.3, 0.13, 0.03), M.pack, chest, 0, 0.17, 0.155);
-  mk(rbox(0.27, 0.09, 0.14, 0.02), M.packD, chest, 0, 0.3, 0.155, -0.15);
-  mk(rbox(0.16, 0.1, 0.04, 0.01), M.packD, chest, 0, 0.1, 0.23);
-  mk(G('roll', () => new THREE.CylinderGeometry(0.048, 0.048, 0.28, 7)), M.packD, chest, 0, 0.37, 0.16, 0, 0, Math.PI / 2);
-  for (const sx of [-1, 1]) mk(rbox(0.035, 0.03, 0.2, 0.006), M.strap, chest, sx * 0.09, 0.315, 0.02, 0.1);  // straps over the shoulders
   if (L.top === 0 || L.top === 3) mk(G('collar', () => { const g = new THREE.TorusGeometry(0.06, 0.009, 6, 18); g.rotateX(Math.PI / 2 - 0.25); return g; }), M.topD, chest, 0, 0.325, -0.01);
   if (L.top === 3) for (const sx of [-1, 1]) mk(rbox(0.035, 0.012, 0.18, 0.005), M.topD, chest, sx * 0.1, 0.305, 0, 0, 0, sx * 0.2);
   if (L.top === 2) {
@@ -122,17 +130,14 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   // ---------------- neck & head
   const neck = joint(chest, 0, 0.33, 0);
   mk(taper(0.05, 0.048, 0.09), M.skin, neck, 0, 0.09, 0);
-  const head = joint(neck, 0, 0.08, 0); head.scale.setScalar(1.08);
-  mk(sph(0.108, 20, 16), M.skin, head, 0, 0.125, 0, 0, 0, 0, 0.94, 1.1, 1.02);                // skull
-  mk(sph(0.075, 16, 12), M.skin, head, 0, 0.05, -0.028, 0, 0, 0, fem ? 1.0 : 1.12, 0.82, 0.95); // jaw
+  const head = joint(neck, 0, 0.06, 0); head.scale.setScalar(1.2);
+  mk(headGeo(fem), M.skin, head, 0, 0.125, 0);                                                  // one angular low-poly head
   for (const sx of [-1, 1]) {
-    // stylised eyes: dark almond shapes under bold brows
-    mk(sph(0.015, 6, 4), M.eye, head, sx * 0.041, 0.133, -0.098, 0, 0, sx * -0.15, 1.35, 0.75, 0.55);
-    mk(rbox(0.05, 0.017, 0.022, 0.004), M.brow, head, sx * 0.042, 0.162, -0.1, 0, 0, sx * (fem ? -0.15 : -0.08));
-    mk(sph(0.026, 6, 4), M.skin, head, sx * 0.1, 0.12, 0.008, 0, 0, 0, 0.4, 1, 0.75);            // ears
+    mk(G('eye', () => new THREE.SphereGeometry(0.018, 5, 3)), M.eye, head, sx * 0.039, 0.136, -0.09, 0, 0, sx * -0.12, 1.15, 0.5, 0.45); // dark almond eye
+    mk(rbox(0.04, 0.008, 0.01, 0.003), M.skinD, head, sx * 0.04, 0.155, -0.093, 0, 0, sx * (fem ? -0.14 : -0.07));  // soft brow ridge
+    mk(sph(0.022, 5, 4), M.skin, head, sx * 0.094, 0.12, 0.01, 0, 0, 0, 0.45, 1, 0.75);           // ears
   }
-  mk(G('nose', () => { const g = new THREE.ConeGeometry(0.022, 0.06, 4); g.rotateX(-0.25); return g; }), M.skinD, head, 0, 0.1, -0.112, 0, Math.PI / 4, 0, 1, 1, 0.9);
-  mk(rbox(0.04, 0.008, 0.01, 0.003), M.mouth, head, 0, 0.06, -0.1);
+  mk(G('nose2', () => { const g = new THREE.ConeGeometry(0.016, 0.045, 4); g.rotateX(-0.3); return g; }), M.skinD, head, 0, 0.108, -0.098, 0, Math.PI / 4, 0, 1, 1, 0.85);
 
   // ---------------- hair
   const hairG = joint(head, 0, 0, 0);
@@ -141,11 +146,13 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
     const r = L.hair === 1 ? 0.112 : 0.118;
     mk(cap(r, 0.5, 0.55), M.hair, hairG, 0, 0.13, 0.008, 0, 0, 0, 0.97, 1.08, 1.04);
     if (L.hair >= 2 && L.hair !== 6) {
-      mk(sph(0.095, 8, 5), M.hair, hairG, 0.008, 0.215, -0.012, -0.2, 0, 0.1, 1.12, 0.62, 1.1);    // swept volume
-      mk(sph(0.05, 6, 4), M.hair, hairG, -0.035, 0.205, -0.08, 0, 0, 0.3, 1.3, 0.6, 0.8);           // fringe sweep
+      // chunky faceted volume swept up and back
+      const blob = G('hblob', () => new THREE.IcosahedronGeometry(0.06, 0));
+      const locks = [[0, 0.225, -0.05, 0.3, 0, 1.5, 0.8, 1.1], [-0.05, 0.215, -0.02, 0.1, 0.4, 1.0, 0.75, 1.2], [0.05, 0.22, -0.02, -0.1, -0.4, 1.0, 0.8, 1.2], [0, 0.22, 0.05, -0.3, 0, 1.6, 0.7, 1.1], [-0.07, 0.18, 0.03, 0, 0.5, 0.6, 0.9, 1.1], [0.07, 0.18, 0.03, 0, -0.5, 0.6, 0.9, 1.1]];
+      for (const [x, y, z, rx, rz, sx_, sy_, sz_] of locks) mk(blob, M.hair, hairG, x, y, z, rx, 0, rz, sx_, sy_ * (L.hair === 3 ? 1.3 : 1), sz_);
+      if (L.hair === 3) for (const [x, z, r] of [[0.03, -0.07, -0.4], [-0.03, -0.04, 0.5], [0.0, 0.0, 0.1]]) mk(G('tuft', () => new THREE.ConeGeometry(0.03, 0.08, 4)), M.hair, hairG, x, 0.27, z, -0.5, 0, r);
     }
-    for (const sx of [-1, 1]) mk(rbox(0.01, 0.04, 0.025, 0.004), M.hair, hairG, sx * 0.093, 0.125, -0.02);
-  }
+      }
   if (!helmeted) {
     if (L.hair === 3) for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; mk(G('spike', () => new THREE.ConeGeometry(0.03, 0.07, 6)), M.hair, hairG, Math.cos(a) * 0.06, 0.24, Math.sin(a) * 0.06 + 0.01, Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); }
     if (L.hair === 4) { mk(capsule(0.08, 0.16), M.hair, hairG, 0, 0.04, 0.07, 0.15, 0, 0, 1.25, 1, 0.55); for (const sx of [-1, 1]) mk(capsule(0.025, 0.16), M.hair, hairG, sx * 0.095, 0.05, -0.01, 0, 0, sx * 0.08); }
@@ -163,19 +170,19 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   // ---------------- arms
   const arm = (sx) => {
     const shJ = joint(chest, sx * (sh - 0.01), 0.245, 0.005);
-    mk(sph(0.058), bareArms ? M.skin : M.top, shJ, 0, -0.01, 0, 0, 0, 0, 1.0, 1, 0.95);           // deltoid
-    mk(taper(0.058, 0.046, 0.28), bareArms ? M.skin : M.top, shJ);
+    const aw = bareArms ? 0.052 : 0.064;
+    mk(sph(aw + 0.004), bareArms ? M.skin : M.top, shJ, 0, -0.01, 0);                                // shoulder
+    mk(taper(aw, aw * 0.88, 0.29), bareArms ? M.skin : M.top, shJ);
     if (!sleeveLong && !bareArms) { mk(taper(0.064, 0.06, 0.15), M.top, shJ); mk(G('cuffS', () => { const g = new THREE.TorusGeometry(0.061, 0.008, 5, 16); g.rotateX(Math.PI / 2); return g; }), M.topD, shJ, 0, -0.15, 0); }
     if (!sleeveLong) mk(taper(0.05, 0.046, 0.14), M.skin, shJ, 0, -0.14, 0);
     const el = joint(shJ, 0, -0.275, 0);
-    mk(sph(0.047), sleeveLong ? M.top : M.skin, el);
-    mk(taper(0.047, 0.034, 0.25), sleeveLong ? M.top : M.skin, el);
-    if (sleeveLong) mk(G('cuffL', () => { const g = new THREE.TorusGeometry(0.038, 0.009, 5, 16); g.rotateX(Math.PI / 2); return g; }), M.topD, el, 0, -0.23, 0);
+    const fw = sleeveLong ? 0.056 : 0.045;
+    mk(sph(fw), sleeveLong ? M.top : M.skin, el);
+    mk(taper(fw, sleeveLong ? 0.05 : 0.036, 0.25), sleeveLong ? M.top : M.skin, el);
+    if (sleeveLong) mk(G('cuffL', () => { const g = new THREE.TorusGeometry(0.048, 0.012, 5, 10); g.rotateX(Math.PI / 2); return g; }), M.topD, el, 0, -0.235, 0);
     const wr = joint(el, 0, -0.25, 0);
-    mk(sph(0.033), M.skin, wr);
-    mk(rbox(0.07, 0.08, 0.032, 0.014), M.skin, wr, 0, -0.045, 0);                        // palm
-    mk(rbox(0.066, 0.05, 0.03, 0.013), M.skin, wr, 0, -0.1, -0.01, 0.45);               // fingers (curled)
-    mk(capsule(0.012, 0.03), M.skin, wr, sx * -0.038, -0.045, -0.02, 0.4, 0, sx * 0.5); // thumb
+    mk(rbox(0.064, 0.11, 0.035, 0.014), M.skin, wr, 0, -0.05, -0.005, 0.15);                // mitten hand
+    mk(rbox(0.022, 0.05, 0.022, 0.008), M.skin, wr, sx * -0.036, -0.035, -0.02, 0.2, 0, sx * 0.35); // thumb
     const grip = joint(wr, 0, -0.085, -0.02);
     return { sh: shJ, el, wr, grip };
   };
