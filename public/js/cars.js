@@ -268,28 +268,227 @@ function atv(g, def, ud, paint) {
   for (const sx of [-1, 1]) { add(rbox(0.16, 0.07, 0.04, 0.015), head, sx * 0.2, 0.12, 0.94); add(box(0.1, 0.05, 0.03), tail, sx * 0.3, 0.12, -0.93); }
 }
 
-export function makeVehicle(type) {
+// ---------------------------------------------------------------- 4x4 jeeps (sharp low-poly, highly detailed)
+const flat = (o) => std({ flatShading: true, ...o });
+const J = {
+  steel: flat({ color: 0x2a2c2e, roughness: 0.6, metalness: 0.5 }), black: flat({ color: 0x161718, roughness: 0.8 }),
+  chrome: flat({ color: 0xd0d3d6, roughness: 0.2, metalness: 1 }), red: flat({ color: 0xc02a1a, roughness: 0.5 }),
+  orange: flat({ color: 0xe08a20, emissive: 0x803a00, emissiveIntensity: 0.3 }), canvas: flat({ color: 0x2e302c, roughness: 0.95 }),
+  canvasL: flat({ color: 0x3a3d38, roughness: 0.95 }), olive: flat({ color: 0x4f5a34, roughness: 0.85 }), seat: flat({ color: 0x24201c, roughness: 0.9 }),
+  glass: std({ color: 0x0b141b, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.6, flatShading: true }),
+  cyan: std({ color: 0x40e0ff, emissive: 0x30d8ff, emissiveIntensity: 1.4 }), deck: flat({ color: 0x3a3d40, roughness: 0.85, metalness: 0.3 }),
+  hazard: flat({ color: 0xd8b020, roughness: 0.7 }), panel: flat({ color: 0x50565c, roughness: 0.5, metalness: 0.6 }),
+};
+const JEEP_COLORS = [0x5a6a3a, 0x8a2a22, 0x2a4a6a, 0xd8d4c8, 0x1e1f20, 0xc8a050, 0x6a7a80, 0x3a6a3a, 0xc85a20, 0x7a6a5a];
+function rngFrom(seed) { let a = (Math.imul(seed | 0, 2654435761) ^ 0x9e3779b9) >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const B = (g, w, h, d, mat, x, y, z, rx = 0, ry = 0, rz = 0) => g.add(mesh(box(w, h, d), mat, x, y, z, rx, ry, rz));
+const CY = (g, rt, rb, h, seg, mat, x, y, z, rx = 0, ry = 0, rz = 0) => g.add(mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat, x, y, z, rx, ry, rz));
+// tube between two points (sharp 6-sided)
+function tube(g, a, b, r, mat) {
+  const A = new THREE.Vector3(...a), Bv = new THREE.Vector3(...b), len = A.distanceTo(Bv);
+  const m = mesh(new THREE.CylinderGeometry(r, r, len, 6), mat);
+  m.position.copy(A).add(Bv).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), Bv.clone().sub(A).normalize());
+  g.add(m);
+}
+
+function jeep(g, def, ud, paint, variant, kind) {
+  const rnd = rngFrom(variant + 7);
+  paint.color.set(JEEP_COLORS[variant % JEEP_COLORS.length]);
+  const top = kind === 'jeepPickup' ? (rnd() < 0.5 ? 2 : 1) : Math.floor(rnd() * 3); // 0 open + cage, 1 soft top, 2 hard top
+  const snorkel = rnd() < 0.5, rack = rnd() < 0.45, lightbar = rnd() < 0.55, winch = rnd() < 0.6, pods = rnd() < 0.5, cans = rnd() < 0.4;
+  ud.variantInfo = { top, snorkel, rack, lightbar, winch };
+  const W = def.half[0] * 2 - 0.12, F = def.half[2], R = -def.half[2];
+  const bottom = -0.42, belt = 0.24, hoodFront = F - 0.04, cowl = F - 1.35;
+  const cabBack = kind === 'jeepPickup' ? cowl - 1.45 : R;
+  const yc = def.wheels[0][1] - def.rest * 0.65, wr = def.wheelR;
+  // ---- body tub with wheel arches (sharp extrusion, no bevel)
+  const shape = bodyShape(def, bottom, (s) => {
+    s.lineTo(F - 0.08, bottom); s.lineTo(F, bottom + 0.06); s.lineTo(F + 0.01, 0.16); s.lineTo(hoodFront, 0.22);
+    s.lineTo(cowl, 0.27); s.lineTo(cowl - 0.05, belt); s.lineTo(R + 0.04, belt); s.lineTo(R, belt - 0.04); s.lineTo(R, bottom + 0.05);
+  }, [[R + 0.06, bottom]]);
+  g.add(extrude(shape, W, 0, paint));
+  // hood: raised centre panel, latches, vents
+  B(g, W * 0.55, 0.03, 1.25, paint, 0, 0.255, (hoodFront + cowl) / 2 + 0.02, -0.035);
+  for (const sx of [-1, 1]) { B(g, 0.05, 0.06, 0.08, J.black, sx * (W / 2 - 0.02), 0.15, F - 0.25); for (let i = 0; i < 4; i++) B(g, 0.18, 0.012, 0.03, J.black, sx * 0.48, 0.262, cowl + 0.3 + i * 0.07, -0.035); }
+  // grille: body-colour plate with vertical slots, round headlights with chrome rings, signals
+  B(g, W * 0.82, 0.42, 0.04, paint, 0, -0.06, F + 0.03);
+  for (let i = -2; i <= 2; i++) B(g, 0.055, 0.3, 0.02, J.black, i * 0.1, -0.04, F + 0.055);
+  const head = std({ color: 0xffffff, emissive: 0xfff3d6, emissiveIntensity: 0.5, flatShading: true });
+  const tail = std({ color: 0x6a0808, emissive: 0xff1a10, emissiveIntensity: 0.35, flatShading: true });
+  ud.headMat = head; ud.tailMat = tail;
+  for (const sx of [-1, 1]) {
+    CY(g, 0.1, 0.1, 0.04, 10, head, sx * 0.58, 0.0, F + 0.06, Math.PI / 2);
+    g.add(mesh(new THREE.TorusGeometry(0.11, 0.018, 4, 10), J.chrome, sx * 0.58, 0.0, F + 0.07));
+    B(g, 0.08, 0.05, 0.03, J.orange, sx * 0.58, -0.17, F + 0.06);
+    // tail lights + rear reflectors
+    B(g, 0.1, 0.2, 0.04, tail, sx * (W / 2 - 0.1), 0.02, R - 0.02);
+    B(g, 0.1, 0.05, 0.04, J.orange, sx * (W / 2 - 0.1), -0.12, R - 0.02);
+  }
+  // fender flares: flat-top black plastic over each wheel
+  for (const w of def.wheels) {
+    const sx = Math.sign(w[0]), x = sx * (W / 2 + 0.11), z = w[2], ty = yc + wr + 0.1;
+    B(g, 0.24, 0.05, 0.62, J.black, x, ty, z);
+    B(g, 0.24, 0.05, 0.42, J.black, x, ty - 0.14, z + 0.47, -0.75);
+    B(g, 0.24, 0.05, 0.42, J.black, x, ty - 0.14, z - 0.47, 0.75);
+  }
+  // bumpers: front steel bar with tow hooks and optional winch, rear bar
+  B(g, W + 0.26, 0.2, 0.24, J.steel, 0, -0.36, F + 0.12);
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.TorusGeometry(0.05, 0.016, 4, 8), J.red, sx * 0.62, -0.36, F + 0.26, 0, Math.PI / 2));
+  if (winch) { CY(g, 0.07, 0.07, 0.5, 8, J.black, 0, -0.33, F + 0.27, 0, 0, Math.PI / 2); B(g, 0.12, 0.08, 0.04, J.chrome, 0, -0.33, F + 0.36); }
+  B(g, W + 0.2, 0.18, 0.2, J.steel, 0, -0.36, R - 0.1);
+  // rock sliders & steps
+  for (const sx of [-1, 1]) { B(g, 0.1, 0.08, (F - R) * 0.42, J.steel, sx * (W / 2 + 0.06), -0.47, (cowl + cabBack) / 2 + 0.05); B(g, 0.06, 0.04, 0.04, J.steel, sx * (W / 2 + 0.03), -0.45, cowl - 0.2); }
+  // frame & drivetrain glimpses
+  for (const sx of [-1, 1]) B(g, 0.1, 0.13, F - R - 0.3, J.black, sx * 0.42, -0.52, (F + R) / 2);
+  CY(g, 0.04, 0.04, F - R - 0.8, 6, J.black, 0, -0.56, (F + R) / 2, Math.PI / 2);
+  for (const w of [def.wheels[0], def.wheels[2]]) CY(g, 0.06, 0.06, def.wheels[1][0] * 2 - 0.2, 6, J.black, 0, yc, w[2], 0, 0, Math.PI / 2);
+  // windshield frame (tilted), glass, wipers
+  const wsH = 0.62, wsTilt = -0.18;
+  const ws = new THREE.Group(); ws.position.set(0, belt + 0.02, cowl - 0.02); ws.rotation.x = wsTilt; g.add(ws);
+  B(ws, W, 0.06, 0.07, paint, 0, 0, 0); B(ws, W, 0.06, 0.07, paint, 0, wsH, 0);
+  for (const sx of [-1, 1]) B(ws, 0.06, wsH, 0.07, paint, sx * (W / 2 - 0.03), wsH / 2, 0);
+  B(ws, W - 0.12, wsH - 0.06, 0.02, J.glass, 0, wsH / 2, 0);
+  for (const sx of [-1, 1]) B(ws, 0.4, 0.015, 0.02, J.black, sx * 0.25, 0.06, 0.03, 0, 0, sx * 0.25);
+  for (const sx of [-1, 1]) B(g, 0.03, 0.08, 0.05, J.black, sx * (W / 2 - 0.15), belt + 0.06, cowl + 0.03); // hinges
+  if (lightbar) { B(ws, W * 0.8, 0.07, 0.09, J.black, 0, wsH + 0.07, 0.02); ud.fog = std({ color: 0xffffe0, emissive: 0xfff0a0, emissiveIntensity: 0.3, flatShading: true }); for (let i = -3; i <= 3; i++) B(ws, 0.12, 0.04, 0.02, ud.fog, i * 0.16, wsH + 0.07, -0.03); }
+  if (pods) for (const sx of [-1, 1]) B(ws, 0.1, 0.09, 0.08, J.black, sx * (W / 2 - 0.05), -0.02, -0.08);
+  // doors: seams, hinges, handles, mirrors
+  const doorZ = kind === 'jeep2' ? [[cowl - 0.05, cowl - 1.1]] : [[cowl - 0.05, cowl - 0.95], [cowl - 0.95, cowl - 1.75]];
+  for (const sx of [-1, 1]) {
+    const x = sx * (W / 2 + 0.004);
+    for (const [z0, z1] of doorZ) {
+      B(g, 0.012, 0.64, 0.012, J.black, x, -0.08, z0); B(g, 0.012, 0.64, 0.012, J.black, x, -0.08, z1);
+      B(g, 0.03, 0.06, 0.04, J.black, x, 0.12, z0 - 0.03); B(g, 0.03, 0.06, 0.04, J.black, x, -0.22, z0 - 0.03);
+      B(g, 0.03, 0.03, 0.12, J.chrome, sx * (W / 2 + 0.015), 0.12, z1 + 0.15);
+    }
+    const mir = new THREE.Group(); mir.position.set(sx * (W / 2 + 0.12), belt + 0.12, cowl - 0.15); g.add(mir);
+    B(mir, 0.04, 0.04, 0.16, J.black, -sx * 0.06, -0.06, 0.05, 0.6); B(mir, 0.16, 0.12, 0.04, J.black, 0, 0, 0); B(mir, 0.13, 0.09, 0.005, J.chrome, 0, 0, -0.022);
+  }
+  // rear: tailgate seam, spare wheel, third brake light
+  B(g, W - 0.1, 0.012, 0.012, J.black, 0, belt - 0.1, R - 0.005);
+  if (kind !== 'jeepPickup') { const sp = makeWheel(def.wheelR * 0.95, 0.24, 'offroad'); sp.rotation.y = Math.PI / 2; sp.position.set(0, 0.15, R - 0.2); g.add(sp); }
+  // interior: seats, dash, steering wheel, shifter
+  const seatRows = kind === 'jeep2' ? [cowl - 0.6, cowl - 1.6] : [cowl - 0.55, cowl - 1.4];
+  for (const z of seatRows) for (const sx of [-1, 1]) {
+    B(g, 0.46, 0.12, 0.46, J.seat, sx * 0.38, -0.2, z); B(g, 0.44, 0.55, 0.1, J.seat, sx * 0.38, 0.08, z - 0.24, -0.12); B(g, 0.24, 0.14, 0.08, J.seat, sx * 0.38, 0.42, z - 0.28);
+  }
+  B(g, W - 0.12, 0.2, 0.3, J.black, 0, 0.13, cowl - 0.2);
+  g.add(mesh(new THREE.TorusGeometry(0.17, 0.02, 4, 10), J.black, -0.38, 0.27, cowl - 0.42, -0.45));
+  B(g, 0.03, 0.18, 0.03, J.black, 0.05, -0.08, cowl - 0.6, -0.3);
+  // tops
+  const cabLen = cowl - cabBack - 0.1, roofY = belt + wsH + 0.07, rz = (cowl + cabBack) / 2 - 0.05;
+  if (top === 0) {
+    // roll cage
+    for (const z of [cowl - 1.0, cabBack + 0.2]) for (const sx of [-1, 1]) tube(g, [sx * (W / 2 - 0.06), belt, z], [sx * (W / 2 - 0.08), roofY, z], 0.035, J.black);
+    for (const z of [cowl - 1.0, cabBack + 0.2]) tube(g, [-(W / 2 - 0.08), roofY, z], [W / 2 - 0.08, roofY, z], 0.035, J.black);
+    for (const sx of [-1, 1]) tube(g, [sx * (W / 2 - 0.08), roofY, cowl - 0.15], [sx * (W / 2 - 0.08), roofY, cabBack + 0.2], 0.035, J.black);
+  } else {
+    const roofMat = top === 1 ? J.canvas : paint;
+    B(g, W + 0.02, 0.07, cabLen + 0.12, roofMat, 0, roofY, rz);
+    for (const sx of [-1, 1]) {
+      B(g, 0.04, wsH, cabLen, roofMat, sx * (W / 2 - 0.0), belt + wsH / 2, rz);
+      const nWin = kind === 'jeep2' ? 1 : 2;
+      for (let i = 0; i < nWin; i++) B(g, 0.01, wsH * 0.62, cabLen / nWin - 0.25, J.glass, sx * (W / 2 + 0.02), belt + wsH * 0.52, cowl - 0.2 - (i + 0.5) * (cabLen / nWin));
+      if (top === 1) for (let i = 1; i < 4; i++) B(g, 0.05, 0.02, cabLen, J.canvasL, sx * (W / 2), belt + i * wsH / 4, rz);
+    }
+    B(g, W, wsH, 0.04, roofMat, 0, belt + wsH / 2, cabBack + 0.03);
+    B(g, W * 0.72, wsH * 0.55, 0.01, J.glass, 0, belt + wsH * 0.55, cabBack + 0.0);
+    if (rack) {
+      for (const sx of [-1, 1]) B(g, 0.05, 0.05, cabLen, J.black, sx * (W / 2 - 0.1), roofY + 0.09, rz);
+      for (let i = 0; i < 4; i++) B(g, W - 0.15, 0.03, 0.04, J.black, 0, roofY + 0.12, cabBack + 0.3 + i * (cabLen - 0.4) / 3);
+      if (cans) for (let i = 0; i < 2; i++) B(g, 0.17, 0.27, 0.32, i ? J.olive : J.red, -0.3 + i * 0.36, roofY + 0.27, rz, Math.PI / 2);
+    }
+  }
+  if (snorkel) { tube(g, [W / 2 + 0.06, -0.05, cowl + 0.25], [W / 2 + 0.06, roofY - 0.05, cowl - 0.08], 0.05, J.black); B(g, 0.13, 0.12, 0.16, J.black, W / 2 + 0.06, roofY, cowl - 0.1); }
+  // pickup bed
+  if (kind === 'jeepPickup') {
+    B(g, W - 0.1, 0.03, cabBack - R - 0.1, J.black, 0, belt - 0.01, (cabBack + R) / 2);
+    for (const sx of [-1, 1]) B(g, 0.08, 0.05, cabBack - R, J.black, sx * (W / 2 - 0.04), belt + 0.03, (cabBack + R) / 2);
+    if (cans) for (let i = 0; i < 3; i++) B(g, 0.17, 0.27, 0.32, i % 2 ? J.olive : J.red, -0.5 + i * 0.4, belt + 0.15, R + 0.5);
+    tube(g, [-(W / 2 - 0.1), belt, cabBack - 0.15], [-(W / 2 - 0.1), belt + 0.5, cabBack - 0.15], 0.035, J.black);
+    tube(g, [W / 2 - 0.1, belt, cabBack - 0.15], [W / 2 - 0.1, belt + 0.5, cabBack - 0.15], 0.035, J.black);
+    tube(g, [-(W / 2 - 0.1), belt + 0.5, cabBack - 0.15], [W / 2 - 0.1, belt + 0.5, cabBack - 0.15], 0.035, J.black);
+  }
+  // number plate
+  B(g, 0.42, 0.11, 0.015, M.plate, 0, -0.2, R - 0.02);
+}
+
+// ---------------------------------------------------------------- futuristic hauler with a buildable deck
+function hauler(g, def, ud, paint) {
+  const d = def.deck, W = def.half[0] * 2;
+  const yc = def.wheels[0][1] - def.rest * 0.65, wr = def.wheelR;
+  // chassis spine & deck plate
+  B(g, 1.6, 0.35, 13.6, J.black, 0, -0.55, -0.2);
+  const deckLen = 9.0, deckZ = d.z;
+  B(g, W, 0.16, deckLen, J.deck, 0, d.y - 0.08, deckZ);
+  for (let i = 0; i < 18; i++) B(g, W - 0.3, 0.012, 0.05, J.panel, 0, d.y + 0.003, deckZ - deckLen / 2 + 0.25 + i * 0.5);
+  for (const sx of [-1, 1]) for (let i = 0; i < 18; i++) B(g, 0.08, 0.02, 0.25, i % 2 ? J.hazard : J.black, sx * (W / 2 - 0.04), d.y + 0.005, deckZ - deckLen / 2 + 0.25 + i * 0.5);
+  for (let i = 0; i < 6; i++) for (const sx of [-1, 1]) g.add(mesh(new THREE.TorusGeometry(0.05, 0.012, 4, 8), J.steel, sx * (W / 2 - 0.18), d.y + 0.02, deckZ - 4 + i * 1.6, Math.PI / 2));
+  // angular side skirts between wheels, body colour with cyan light seams
+  const skirts = [[1.6, -0.1], [-3.7, 1.1], [-6.0, 1.6]];
+  for (const sx of [-1, 1]) for (const [z, len] of skirts) {
+    B(g, 0.08, 0.62, len, paint, sx * (W / 2 - 0.02), -0.28, z);
+    B(g, 0.09, 0.03, len, J.cyan, sx * (W / 2 - 0.02), -0.05, z);
+  }
+  // fuel / battery pods
+  for (const sx of [-1, 1]) { CY(g, 0.28, 0.28, 1.4, 8, J.panel, sx * 1.15, -0.5, 1.6, Math.PI / 2); B(g, 0.6, 0.04, 1.42, J.cyan, sx * 1.15, -0.22, 1.6); }
+  // cab: angular wedge (sharp extrusion)
+  const cz0 = 2.2, cz1 = def.half[2] + 0.05;
+  const cab = poly([[cz0, -0.75], [cz1 - 0.1, -0.75], [cz1, -0.35], [cz1 - 0.15, 0.55], [cz1 - 1.3, 2.05], [cz0 + 0.5, 2.35], [cz0, 2.25]]);
+  g.add(extrude(cab, W, 0, paint));
+  g.add(extrude(poly([[cz1 - 0.2, 0.62], [cz1 - 1.3, 1.98], [cz1 - 1.55, 1.98], [cz1 - 0.45, 0.62]]), W - 0.12, 0, J.glass));
+  for (const sx of [-1, 1]) {
+    g.add(mesh(box(0.02, 0.55, 1.4), J.glass, sx * (W / 2 + 0.005), 1.45, cz0 + 1.9));
+    B(g, 0.03, 0.04, 3.9, J.cyan, sx * (W / 2 + 0.01), 0.45, cz0 + 2.3);           // cab light seam
+    B(g, 0.03, 0.04, 2.6, J.cyan, sx * (W / 2 + 0.01), 2.1, cz0 + 1.3, -0.12);
+    // camera-pod mirrors
+    B(g, 0.08, 0.08, 0.35, J.black, sx * (W / 2 + 0.15), 1.5, cz1 - 1.2, 0, 0, 0); B(g, 0.14, 0.18, 0.12, J.panel, sx * (W / 2 + 0.25), 1.5, cz1 - 1.05);
+    // steps
+    for (let i = 0; i < 3; i++) B(g, 0.12, 0.04, 0.45, J.steel, sx * (W / 2 + 0.04), -0.65 + i * 0.35, cz0 + 0.55);
+  }
+  // nose: light bar, intakes, sensor strip, bumper
+  const head = std({ color: 0xffffff, emissive: 0xe8f6ff, emissiveIntensity: 0.6 }), tail = std({ color: 0x6a0808, emissive: 0xff1a10, emissiveIntensity: 0.35 });
+  ud.headMat = head; ud.tailMat = tail;
+  B(g, W - 0.3, 0.08, 0.05, head, 0, 0.35, cz1 - 0.05);
+  for (let i = -3; i <= 3; i++) B(g, 0.22, 0.32, 0.04, J.black, i * 0.36, -0.1, cz1 - 0.02);
+  B(g, W + 0.1, 0.3, 0.35, J.steel, 0, -0.72, cz1 + 0.05);
+  B(g, W - 0.6, 0.06, 0.06, J.cyan, 0, 2.38, cz0 + 0.7);
+  B(g, 1.2, 0.16, 0.5, J.panel, 0, 2.43, cz0 + 1.2);
+  // rear: tail light strips, mud flaps, back plate
+  for (const sx of [-1, 1]) { B(g, 0.06, 0.5, 0.04, tail, sx * (W / 2 - 0.1), -0.2, deckZ - deckLen / 2 - 0.02); B(g, 0.5, 0.45, 0.03, J.black, sx * 0.9, -0.95, -5.4); }
+  B(g, W, 0.35, 0.1, J.steel, 0, -0.45, deckZ - deckLen / 2 - 0.05);
+  // interior seats & console
+  for (const sx of [-1, 1]) { B(g, 0.5, 0.12, 0.5, J.seat, sx * 0.65, 0.88, 5.6); B(g, 0.48, 0.6, 0.1, J.seat, sx * 0.65, 1.2, 5.32, -0.1); }
+  B(g, W - 0.3, 0.25, 0.4, J.panel, 0, 1.15, 6.25); B(g, 0.6, 0.02, 0.25, J.cyan, 0, 1.3, 6.2, -0.4);
+}
+
+export function makeVehicle(type, variant = 0) {
   const def = VEHICLES[type];
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
-  const paint = std({ color: def.color, metalness: 0.55, roughness: 0.3 });
+  const paint = std({ color: def.color, metalness: 0.45, roughness: 0.38, flatShading: true });
   const ud = { body, paintMat: paint };
-  ({ hatch, suv, pickup, atv })[def.style](body, def, ud, paint);
+  const style = def.style;
+  if (style.startsWith('jeep')) jeep(body, def, ud, paint, variant, style);
+  else ({ hatch, suv, pickup, atv, hauler })[style](body, def, ud, paint, variant);
+  ud.baseColor = paint.color.getHex();
   body.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   bakeByMaterial(body);
   const wheels = [];
-  const style = def.style === 'hatch' ? 'alloy' : def.style === 'atv' ? 'atv' : 'offroad';
+  const wstyle = style === 'hatch' ? 'alloy' : style === 'atv' ? 'atv' : 'offroad';
   for (const w of def.wheels) {
     const pivot = new THREE.Group(); pivot.position.set(w[0], w[1] - def.rest * 0.5, w[2]); g.add(pivot);
     const spin = new THREE.Group(); pivot.add(spin);
-    const wheel = makeWheel(def.wheelR, def.wheelR * (def.style === 'atv' ? 0.75 : 0.62), style);
+    const wheel = makeWheel(def.wheelR, def.wheelR * (style === 'atv' ? 0.75 : style === 'hauler' ? 0.55 : 0.68), wstyle);
+    if (style === 'hauler') { const ring = mesh(new THREE.TorusGeometry(def.wheelR * 0.5, 0.03, 4, 16), J.cyan, def.wheelR * 0.25, 0, 0, 0, Math.PI / 2); wheel.add(ring); }
     if (w[0] < 0) wheel.rotation.y = Math.PI; // spokes face outward
     bakeByMaterial(wheel);
     spin.add(wheel);
-    if (def.style !== 'atv') { const cal = mesh(rbox(0.06, 0.14, 0.1, 0.02), M.caliper, (w[0] < 0 ? -1 : 1) * def.wheelR * 0.1, def.wheelR * 0.32, 0.06); pivot.add(cal); }
+    if (style !== 'atv') { const cal = mesh(rbox(0.06, 0.14, 0.1, 0.02), M.caliper, (w[0] < 0 ? -1 : 1) * def.wheelR * 0.1, def.wheelR * 0.32, 0.06); pivot.add(cal); }
     wheels.push({ pivot, spin, def: w });
   }
-  const headlight = new THREE.SpotLight(0xfff0d0, 0, 60, 0.55, 0.45, 1.1);
+  const headlight = new THREE.SpotLight(0xfff0d0, 0, style === 'hauler' ? 90 : 60, 0.55, 0.45, 1.1);
   headlight.position.set(0, 0, def.half[2]); headlight.target.position.set(0, -1.2, def.half[2] + 12);
   body.add(headlight); body.add(headlight.target);
   Object.assign(ud, { wheels, headlight });

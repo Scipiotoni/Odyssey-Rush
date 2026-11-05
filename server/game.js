@@ -3,7 +3,7 @@
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
 import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
 import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
-import { VEHICLES, VEHICLE_ENTER_RANGE, restHeight } from '../shared/vehicles.js';
+import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
 import { sanitizeLook, encodeLook } from '../shared/look.js';
@@ -70,9 +70,10 @@ export class Game {
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
       for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.players.set(p.token, p); this.byPid.set(p.pid, p); }
       for (const b of d.buildings || []) this.buildings.set(b.id, b);
-      for (const s of d.structs || []) { this.structs.set(s.id, s); this.region(rkey(s.x, s.z)).s.add(s.id); if (s.queue?.length) this.activeStations.add(s.id); if (s.kind === 'piece') { const m = pieceMaxHp(s.tier, s.reinf); if (s.mhp !== m) { s.hp = Math.max(1, (s.hp / s.mhp) * m); s.mhp = m; } } }
+      for (const s of d.structs || []) { this.structs.set(s.id, s); if (!s.veh) this.region(rkey(s.x, s.z)).s.add(s.id); if (s.queue?.length) this.activeStations.add(s.id); if (s.kind === 'piece') { const m = pieceMaxHp(s.tier, s.reinf); if (s.mhp !== m) { s.hp = Math.max(1, (s.hp / s.mhp) * m); s.mhp = m; } } }
       for (const l of d.loot || []) { this.loot.set(l.id, l); this.region(rkey(l.x, l.z)).l.add(l.id); }
-      for (const v of d.vehicles || []) { v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); this.vehicles.set(v.id, v); }
+      for (const v of d.vehicles || []) { if (!VEHICLES[v.type]) continue; v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); v.attached = new Set(); if (v.var === undefined) v.var = Math.floor(hash3(v.id.length, v.x | 0, v.z | 0, 3) * 1000); this.vehicles.set(v.id, v); }
+      for (const s of this.structs.values()) if (s.veh) { const v = this.vehicles.get(s.veh); if (v) v.attached.add(s.id); else this.structs.delete(s.id); }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
       for (const k of d.spawned || []) this.spawned.add(k);
       for (const c of d.clans || []) this.clans.set(c.id, c);
@@ -89,7 +90,7 @@ export class Game {
       buildings: [...this.buildings.values()],
       structs: [...this.structs.values()],
       loot: [...this.loot.values()],
-      vehicles: [...this.vehicles.values()].map(({ seats, ...v }) => v),
+      vehicles: [...this.vehicles.values()].map(({ seats, attached, ...v }) => v),
       nodes: [...this.nodeState.entries()],
       spawned: [...this.spawned],
       clans: [...this.clans.values()],
@@ -194,6 +195,7 @@ export class Game {
       case 'demolish': return this.onDemolish(p, m);
       case 'dig': return this.onDig(p, m);
       case 'clan': return this.onClan(p, m);
+      case 'vst': return this.onVehicleStructs(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
@@ -237,7 +239,7 @@ export class Game {
       const d = Math.hypot(x - p.x, z - p.z);
       if ((num(m.seq) | 0) < (p.tpSeq || 0)) {
         // stale packet sent before the client processed our last teleport
-      } else if (d > 14 * dt + 4) {
+      } else if (d > (14 + this.rideSpeed(m.on, x, z)) * dt + 4) {
         this.teleport(p, p.x, p.y, p.z);
       } else { p.x = x; p.y = y; p.z = z; }
     }
@@ -247,6 +249,12 @@ export class Game {
     this.updateRegions(p);
   }
 
+  // speed of the vehicle a player says they're standing on (hauler deck), if plausible
+  rideSpeed(id, x, z) {
+    const v = id && this.vehicles.get(String(id));
+    if (!v || Math.hypot(v.x - x, v.z - z) > VEHICLES[v.type].half[2] + 6) return 0;
+    return Math.hypot(v.vel?.[0] || 0, v.vel?.[2] || 0) * 1.3 + 4;
+  }
   teleport(p, x, y, z, type = 'tp') {
     p.x = x; p.y = y; p.z = z;
     p.tpSeq = (p.tpSeq || 0) + 1;
@@ -285,7 +293,7 @@ export class Game {
         const y = l.y > poi.y + 0.5 ? l.y : this.world.ground(l.x, l.z);
         this.addLoot({ id, kind: 'crate', tier: l.tier, x: l.x, y, z: l.z, yaw: l.yaw, slots: this.lootSlots(l.tier), respawn: 0 });
       });
-      lay.vehicles.forEach((v, i) => this.spawnWreck(`veh_${poi.id}_${i}`, v.type, v.x, v.z, v.yaw));
+      lay.vehicles.forEach((v, i) => this.spawnWreck(`veh_${poi.id}_${i}`, v.type === 'truck' && hash3(poi.x | 0, poi.z | 0, i, 77) < 0.35 ? 'hauler' : v.type, v.x, v.z, v.yaw));
     }
     const wk = `w_${cx}_${cz}`;
     if (!this.spawned.has(wk)) {
@@ -296,8 +304,8 @@ export class Game {
         const g = this.world.ground(wx, wz);
         const npp = this.world.nearestPOI(wx, wz);
         if (g > 1 && (!npp || npp.d > 100)) {
-          const types = ['quad', 'buggy', 'truck', 'suv'];
-          this.spawnWreck(`veh_${wk}`, types[Math.floor(rng() * 4)], wx, wz, rng() * 6.28);
+          const types = ['quad', 'buggy', 'truck', 'suv', 'buggy', 'hauler'];
+          this.spawnWreck(`veh_${wk}`, types[Math.floor(rng() * 6)], wx, wz, rng() * 6.28);
           // a stash of parts near the wreck
           this.addLoot({ id: `cr_${wk}`, kind: 'crate', tier: 1, x: wx + 3, y: this.world.ground(wx + 3, wz + 2), z: wz + 2, yaw: rng() * 6, slots: this.lootSlots(1), respawn: 0 });
         }
@@ -312,11 +320,94 @@ export class Game {
   spawnWreck(id, type, x, z, yaw) {
     if (this.vehicles.has(id)) return;
     const def = VEHICLES[type];
-    const y = this.world.ground(x, z) + restHeight(def) + 0.05;
+    const spot = this.findClearSpot(type, x, z, yaw, [0, 4, 8, 14, 22]);
+    if (!spot) return;
     const needs = {};
     for (const k in def.repair) needs[k] = def.repair[k];
-    const v = { id, type, x, y, z, q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], vel: [0, 0, 0], hp: 0, broken: true, needs, fuel: 0, steer: 0, rpm: 0, seats: new Array(def.seats.length).fill(0) };
+    const v = { id, type, x: spot.x, y: spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: 0, broken: true, needs, fuel: 0, steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set() };
     this.vehicles.set(id, v);
+    return v;
+  }
+  // Find a flat, open spot for a vehicle near (x,z): no water, trees, rocks, buildings, props or other vehicles.
+  findClearSpot(type, x, z, yaw, dists = [0, 6, 10, 15, 20, 28], ignoreVeh = null) {
+    const def = VEHICLES[type], [hx, , hz] = def.half;
+    const angles = [0, 0.5, -0.5, 1, -1, 1.6, -1.6, 2.2, -2.2, 2.7, -2.7, Math.PI];
+    const fwd = [Math.sin(yaw), Math.cos(yaw)];
+    for (const dist of dists) for (const a of dist === 0 ? [0] : angles) {
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const dx = fwd[0] * ca + fwd[1] * sa, dz = -fwd[0] * sa + fwd[1] * ca;
+      const cx = x + dx * dist, cz = z + dz * dist;
+      if (this.footprintClear(def, cx, cz, yaw, ignoreVeh)) {
+        let gmax = -Infinity;
+        for (const [px, pz] of this.footprintPts(def, cx, cz, yaw)) gmax = Math.max(gmax, this.world.ground(px, pz));
+        return { x: cx, y: gmax + restHeight(def) + 0.25, z: cz, yaw };
+      }
+    }
+    return null;
+  }
+  footprintPts(def, cx, cz, yaw) {
+    const [hx, , hz] = def.half, pts = [];
+    for (let i = -1; i <= 1; i += 0.5) for (let j = -1; j <= 1; j += 1 / Math.max(1, Math.ceil(hz))) {
+      const [rx, rz] = rotY(i * (hx + 0.4), j * (hz + 0.4), yaw);
+      pts.push([cx + rx, cz + rz]);
+    }
+    return pts;
+  }
+  footprintClear(def, cx, cz, yaw, ignoreVeh) {
+    const pts = this.footprintPts(def, cx, cz, yaw);
+    let gmin = Infinity, gmax = -Infinity;
+    for (const [px, pz] of pts) { const g = this.world.ground(px, pz); gmin = Math.min(gmin, g); gmax = Math.max(gmax, g); }
+    if (gmin < 0.3 || gmax - gmin > 1.4 + def.half[2] * 0.18) return false;          // water / too steep
+    const R = Math.hypot(def.half[0], def.half[2]) + 1;
+    for (const v of this.vehicles.values()) if (v.id !== ignoreVeh && Math.hypot(v.x - cx, v.z - cz) < R + Math.hypot(...VEHICLES[v.type].half.filter((_, i) => i !== 1))) return false;
+    // trees & rocks
+    const [c0, c1] = regionOf(cx, cz);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const k = chunkKey(c0 + i, c1 + j);
+      let list = this.chunkCache.get(k);
+      if (!list) { list = this.world.chunkNodes(c0 + i, c1 + j); this.chunkCache.set(k, list); }
+      for (const n of list) {
+        if (Math.hypot(n.x - cx, n.z - cz) > R + 2 || NODES[n.type].kind === 'pick' || this.nodeState.get(n.id)?.hp <= 0) continue;
+        for (const [px, pz] of pts) if (Math.hypot(n.x - px, n.z - pz) < NODES[n.type].radius * n.s + 0.6) return false;
+      }
+    }
+    // buildings, deployables and monument props
+    const boxes = [];
+    for (const st of this.structsNear(cx, cz)) if (Math.hypot(st.x - cx, st.z - cz) < R + 4) boxes.push(...worldBoxes(st));
+    const np = this.world.nearestPOI(cx, cz);
+    if (np && np.d < 120) for (const pr of this.world.poiLayout(np.poi).props) boxes.push(pr.k === 'box' ? { x: pr.x, z: pr.z, hx: pr.sx / 2, hz: pr.sz / 2, yaw: pr.yaw } : { x: pr.x, z: pr.z, hx: pr.r, hz: pr.r, yaw: 0 });
+    for (const b of boxes) for (const [px, pz] of pts) {
+      const [lx, lz] = invRotY(px - b.x, pz - b.z, b.yaw);
+      if (Math.abs(lx) < b.hx + 0.4 && Math.abs(lz) < b.hz + 0.4) return false;
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------ vehicle-mounted structures (hauler deck)
+  deckBuilding(v) {
+    const id = 'D' + v.id;
+    let b = this.buildings.get(id);
+    if (!b) { const d = VEHICLES[v.type].deck; b = { id, x: d.x, y: d.y, z: d.z, yaw: 0, veh: v.id, owner: v.owner || 0 }; this.buildings.set(id, b); }
+    return b;
+  }
+  deckFoundations(v) { const d = VEHICLES[v.type].deck; return d.cells.map((gz) => ({ type: 'foundation', gx: 0, gz, level: 0, virtual: true })); }
+  attachedWorld(v, l) {
+    const [x, y, z] = quatRotate(v.q, [l.x, l.y, l.z]);
+    return { x: v.x + x, y: v.y + y, z: v.z + z, yaw: quatYaw(v.q) + (l.yaw || 0) };
+  }
+  refreshAttached(v) {
+    if (!v.attached || !v.attached.size) return;
+    for (const id of v.attached) { const s = this.structs.get(id); if (s) Object.assign(s, this.attachedWorld(v, s.local)); }
+  }
+  canUseDeck(p, v) {
+    if (!v.owner) return true;
+    const o = this.byPid.get(v.owner);
+    return v.owner === p.pid || this.sameClan(p, o);
+  }
+  onVehicleStructs(p, m) {
+    const v = this.vehicles.get(String(m.id));
+    if (!v || !v.attached) return;
+    this.send(p, { t: 'vst', id: v.id, s: [...v.attached].map((id) => this.sStruct(this.structs.get(id))).filter(Boolean) });
   }
 
   // ------------------------------------------------------------ serialization
@@ -326,6 +417,7 @@ export class Game {
     if (s.kind === 'piece') { o.tier = s.tier; o.rf = s.reinf || 0; o.bid = s.bid; o.gx = s.gx; o.gz = s.gz; o.level = s.level; o.rot = s.rot || 0; const b = this.buildings.get(s.bid); if (b) o.b = [b.x, b.y, b.z, b.yaw]; }
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
+    if (s.veh) { o.veh = s.veh; o.l = [r2(s.local.x), r2(s.local.y), r2(s.local.z), s.local.yaw || 0]; }
     return o;
   }
   sLoot(l) {
@@ -336,11 +428,17 @@ export class Game {
 
   addStruct(s) {
     this.structs.set(s.id, s);
+    if (s.veh) {
+      const v = this.vehicles.get(s.veh);
+      v.attached.add(s.id); Object.assign(s, this.attachedWorld(v, s.local));
+      this.toNear(v.x, v.z, SNAP_RANGE, { t: 'sadd', s: this.sStruct(s) });
+      return;
+    }
     const k = rkey(s.x, s.z);
     this.region(k).s.add(s.id);
     this.toRegion(k, { t: 'sadd', s: this.sStruct(s) });
   }
-  updStruct(s) { this.toRegion(rkey(s.x, s.z), { t: 'supd', s: this.sStruct(s) }); }
+  updStruct(s) { if (s.veh) this.toNear(s.x, s.z, SNAP_RANGE, { t: 'supd', s: this.sStruct(s) }); else this.toRegion(rkey(s.x, s.z), { t: 'supd', s: this.sStruct(s) }); }
   addLoot(l) {
     this.loot.set(l.id, l);
     const k = rkey(l.x, l.z);
@@ -366,6 +464,7 @@ export class Game {
   // ------------------------------------------------------------ spatial helpers
   structsNear(x, z, r = 1) {
     const [rx, rz] = regionOf(x, z), out = [];
+    for (const v of this.vehicles.values()) if (v.attached && v.attached.size && Math.abs(v.x - x) < (r + 0.5) * CHUNK + 20 && Math.abs(v.z - z) < (r + 0.5) * CHUNK + 20) for (const id of v.attached) { const s = this.structs.get(id); if (s) out.push(s); }
     for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
       const reg = this.regions.get(chunkKey(rx + i, rz + j));
       if (reg) for (const id of reg.s) { const s = this.structs.get(id); if (s) out.push(s); }
@@ -380,7 +479,8 @@ export class Game {
     }
     return false;
   }
-  privBlocked(p, x, z) {
+  privBlocked(p, x, z, st = null) {
+    if (st?.veh) { const v = this.vehicles.get(st.veh); return !!v && !this.canUseDeck(p, v); }
     for (const s of this.structsNear(x, z)) {
       if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < PRIV_RADIUS * PRIV_RADIUS && !this.tcAuthed(s, p)) return true;
     }
@@ -722,6 +822,7 @@ export class Game {
     if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     let b, gx = num(m.gx) | 0, gz = num(m.gz) | 0, level = num(m.level) | 0;
     let isNew = false;
+    if (m.veh) return this.onDeckBuild(p, m, type, tier, cost, gx, gz, level);
     if (m.bid && this.buildings.has(String(m.bid))) b = this.buildings.get(String(m.bid));
     else {
       if (type !== 'foundation') return this.toast(p, 'Start with a foundation');
@@ -746,6 +847,25 @@ export class Game {
     this.addXp(p, 1);
   }
 
+  onDeckBuild(p, m, type, tier, cost, gx, gz, level) {
+    const v = this.vehicles.get(String(m.veh));
+    const def = v && VEHICLES[v.type];
+    if (!def?.deck) return this.toast(p, 'You can only build on a hauler deck');
+    if (dist3(v, p) > def.half[2] + 8) return this.toast(p, 'Too far away');
+    if (!this.canUseDeck(p, v)) return this.toast(p, 'This hauler belongs to someone else');
+    if (type === 'foundation') return this.toast(p, 'The deck is already a foundation — build walls and floors on it');
+    const d = def.deck;
+    if (Math.abs(gx) > 1 || gz < Math.min(...d.cells) - 1 || gz > Math.max(...d.cells) + 1 || level > d.levels) return this.toast(p, 'Outside the deck');
+    const b = this.deckBuilding(v);
+    const pieces = this.piecesOf(b.id);
+    const err = canPlaceAny(type, gx, gz, level, buildIndex([...pieces, ...this.deckFoundations(v)]), false);
+    if (err) return this.toast(p, err);
+    Inv.removeAll(p.inv, cost);
+    if (!v.owner) { v.owner = p.pid; b.owner = p.pid; this.toast(p, `🚛 You claimed this ${def.name} — only you and your clan can build on it`); }
+    const local = pieceTransform(b, { type, gx, gz, level, rot: m.rot | 0 });
+    this.addStruct({ id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, veh: v.id, local, x: 0, y: 0, z: 0, yaw: 0 });
+    this.sendInv(p);
+  }
   onUpgrade(p, m) {
     const s = this.structs.get(String(m.id));
     if (!s || s.kind !== 'piece' || !p.alive) return;
@@ -754,7 +874,7 @@ export class Game {
     const tier = num(m.tier, s.tier + 1) | 0;
     if (tier <= s.tier || tier >= TIERS.length) return;
     if (dist3(s, p) > BUILD_REACH + 3) return;
-    if (this.privBlocked(p, s.x, s.z)) return this.toast(p, 'Building blocked');
+    if (this.privBlocked(p, s.x, s.z, s)) return this.toast(p, 'Building blocked');
     const cost = pieceCost(s.type, tier);
     if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     Inv.removeAll(p.inv, cost);
@@ -771,7 +891,7 @@ export class Game {
     const lvl = (s.reinf || 0) + 1;
     if (lvl >= REINFORCE.length) return this.toast(p, 'Already fully reinforced');
     if (dist3(s, p) > BUILD_REACH + 3) return;
-    if (this.privBlocked(p, s.x, s.z)) return this.toast(p, 'Building blocked');
+    if (this.privBlocked(p, s.x, s.z, s)) return this.toast(p, 'Building blocked');
     const cost = reinforceCost(s.type, lvl);
     if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     Inv.removeAll(p.inv, cost);
@@ -822,14 +942,30 @@ export class Game {
       if (!dw || dw.type !== 'doorway') return this.toast(p, 'Place doors in a doorway');
       if (dist3(dw, p) > BUILD_REACH + 3) return;
       for (const s of this.structs.values()) if (s.kind === 'door' && s.parent === dw.id) return this.toast(p, 'Doorway already has a door');
-      if (this.privBlocked(p, dw.x, dw.z)) return this.toast(p, 'Building blocked');
+      if (this.privBlocked(p, dw.x, dw.z, dw)) return this.toast(p, 'Building blocked');
       Inv.remove(p.inv, st.id, 1);
       const tier = DOOR_TIER[def.door.tier];
-      this.addStruct({ id: this.id('S'), kind: 'door', type: 'door', doorTier: def.door.tier, tierIdx: tier, parent: dw.id, hp: def.door.hp, mhp: def.door.hp, owner: p.pid, x: dw.x, y: dw.y, z: dw.z, yaw: dw.yaw, open: false, created: now() });
+      this.addStruct({ id: this.id('S'), kind: 'door', type: 'door', doorTier: def.door.tier, tierIdx: tier, parent: dw.id, hp: def.door.hp, mhp: def.door.hp, owner: p.pid, x: dw.x, y: dw.y, z: dw.z, yaw: dw.yaw, open: false, created: now(), ...(dw.veh ? { veh: dw.veh, local: { ...dw.local } } : {}) });
       this.sendInv(p);
       return;
     }
     if (!def.deploy) return;
+    if (m.veh) {
+      const v = this.vehicles.get(String(m.veh)), vd = v && VEHICLES[v.type];
+      if (!vd?.deck || dist3(v, p) > vd.half[2] + 8) return;
+      if (!this.canUseDeck(p, v)) return this.toast(p, 'This hauler belongs to someone else');
+      const l = { x: num(m.lx), y: num(m.ly), z: num(m.lz), yaw: num(m.lyaw) };
+      const zs = vd.deck.cells.map((c) => vd.deck.z + c * 1.5);
+      if (Math.abs(l.x) > 1.5 || l.z < Math.min(...zs) - 1.5 || l.z > Math.max(...zs) + 1.5 || l.y < vd.deck.y - 0.2 || l.y > vd.deck.y + vd.deck.levels * 3 + 0.3) return this.toast(p, 'Place it on the deck');
+      if (def.deploy.kind === 'tool_cupboard') return this.toast(p, "Tool cupboards can't go on vehicles — the hauler's owner and clan already control it");
+      Inv.remove(p.inv, st.id, 1);
+      if (!v.owner) v.owner = p.pid;
+      const s = { id: this.id('S'), kind: 'deploy', type: def.deploy.kind, hp: def.deploy.hp, mhp: def.deploy.hp, owner: p.pid, veh: v.id, local: l, x: 0, y: 0, z: 0, yaw: 0, created: now() };
+      if (def.deploy.slots) s.slots = Inv.emptySlots(def.deploy.slots);
+      this.addStruct(s);
+      this.sendInv(p);
+      return;
+    }
     const x = num(m.x), y = num(m.y), z = num(m.z);
     if (Math.hypot(x - p.x, z - p.z) > BUILD_REACH + 2) return this.toast(p, 'Too far away');
     if (this.inPOI(x, z)) return this.toast(p, "Can't deploy in monuments");
@@ -864,21 +1000,28 @@ export class Game {
   destroyStruct(s, effects) {
     if (!this.structs.has(s.id)) return;
     this.structs.delete(s.id);
-    const k = rkey(s.x, s.z);
-    this.region(k).s.delete(s.id);
-    this.toRegion(k, { t: 'sdel', id: s.id, fx: effects ? 1 : 0 });
+    if (s.veh) { this.vehicles.get(s.veh)?.attached.delete(s.id); this.toNear(s.x, s.z, SNAP_RANGE, { t: 'sdel', id: s.id, fx: effects ? 1 : 0 }); }
+    else {
+      const k = rkey(s.x, s.z);
+      this.region(k).s.delete(s.id);
+      this.toRegion(k, { t: 'sdel', id: s.id, fx: effects ? 1 : 0 });
+    }
     if (s.slots) this.dropBag(s.x, s.y + 0.3, s.z, s.slots.filter((it, i) => it && Math.random() < 0.6));
     if (s.kind === 'piece') {
       // doors in destroyed doorway
       if (s.type === 'doorway') for (const d of [...this.structs.values()]) if (d.kind === 'door' && d.parent === s.id) this.destroyStruct(d, effects);
       const pieces = this.piecesOf(s.bid);
       if (!pieces.length) { this.buildings.delete(s.bid); }
-      else for (const dead of unsupportedPieces(pieces)) this.destroyStruct(dead, true);
+      else {
+        const bb = this.buildings.get(s.bid), dv = bb?.veh ? this.vehicles.get(bb.veh) : null;
+        for (const dead of unsupportedPieces(dv ? [...pieces, ...this.deckFoundations(dv)] : pieces)) if (dead.id) this.destroyStruct(dead, true);
+      }
       // deployables that lost their floor
       for (const o of this.structsNear(s.x, s.z)) if (o.kind === 'deploy' && !this.hasSupport(o)) this.destroyStruct(o, true);
     }
   }
   hasSupport(o) {
+    if (o.veh) return true;
     if (o.y - this.world.ground(o.x, o.z) < 0.6) return true;
     for (const s of this.structsNear(o.x, o.z, 0)) {
       if (s.kind !== 'piece' || (s.type !== 'foundation' && s.type !== 'floor' && s.type !== 'stairs')) continue;
@@ -951,7 +1094,7 @@ export class Game {
     const s = this.structs.get(String(m.id));
     if (!s || !p.alive || dist3(s, p) > 4.5) return;
     if (s.kind === 'door') {
-      const auth = this.authorizedAt(p, s.x, s.z);
+      const auth = s.veh ? this.canUseDeck(p, this.vehicles.get(s.veh)) || null : this.authorizedAt(p, s.x, s.z);
       if (auth === false || (auth === null && s.owner !== p.pid && !this.sameClan(p, this.byPid.get(s.owner)))) return this.toast(p, '🔒 Locked');
       s.open = !s.open;
       this.updStruct(s);
@@ -1149,6 +1292,7 @@ export class Game {
   onChat(p, m) {
     const msg = String(m.m || '').replace(/[<>]/g, '').slice(0, 200).trim();
     if (!msg) return;
+    if (/^\/(spawn|unstuck|help)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
     if (msg.startsWith('/') && !msg.startsWith('/c ') && process.env.DEV) return this.devCommand(p, msg.slice(1).split(/\s+/));
     if (msg.startsWith('/c ')) {
       const c = this.clans.get(p.clan);
@@ -1220,11 +1364,50 @@ export class Game {
     if (a === 'promote' && c.leader === p.pid && c.members.includes(num(m.pid))) { c.leader = num(m.pid); return this.clanBroadcast(c); }
   }
 
+  // Commands available to everyone
+  publicCommand(p, [cmd, a]) {
+    if (cmd === 'help') return this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat' });
+    if (!p.alive) return;
+    if (cmd === 'spawn') {
+      const type = SPAWNABLE[String(a || '').toLowerCase()];
+      if (!type) return this.toast(p, 'Usage: /spawn atv | jeep | jeep4 | pickup | hauler');
+      const t = now();
+      if (!process.env.DEV && t - (p.lastSpawn || 0) < 30) return this.toast(p, `Wait ${Math.ceil(30 - (t - p.lastSpawn))}s before spawning another vehicle`);
+      const spot = this.findClearSpot(type, p.x, p.z, p.yaw + Math.PI, [6, 9, 13, 18, 25, 33, 42, 55].map((d) => d + VEHICLES[type].half[2]));
+      if (!spot) return this.toast(p, 'No clear, flat spot nearby — try an open area');
+      // each player keeps at most 2 spawned vehicles (oldest empty one is removed)
+      p.spawnedVeh = (p.spawnedVeh || []).filter((id) => this.vehicles.has(id));
+      if (p.spawnedVeh.length >= 2 && !process.env.DEV) {
+        const old = p.spawnedVeh.find((id) => { const v = this.vehicles.get(id); return v && !v.seats.some(Boolean) && !(v.attached && v.attached.size); });
+        if (!old) return this.toast(p, 'You already have 2 spawned vehicles in use');
+        this.vehicles.delete(old); p.spawnedVeh = p.spawnedVeh.filter((x) => x !== old);
+      }
+      const def = VEHICLES[type], id = this.id('V');
+      const v = { id, type, x: spot.x, y: spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * 0.5), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), spawnedBy: p.pid };
+      this.vehicles.set(id, v);
+      p.spawnedVeh.push(id); p.lastSpawn = t;
+      return this.toast(p, `🚙 ${def.name} spawned ${Math.round(Math.hypot(spot.x - p.x, spot.z - p.z))}m away (half a tank of fuel)`);
+    }
+    if (cmd === 'unstuck') {
+      let v = p.vehicle ? this.vehicles.get(p.vehicle.id) : null;
+      if (!v) { let bd = 12; for (const o of this.vehicles.values()) { const d = dist3(o, p); if (d < bd) { bd = d; v = o; } } }
+      if (!v) return this.toast(p, 'No vehicle nearby');
+      const yaw = quatYaw(v.q);
+      const spot = this.findClearSpot(v.type, v.x, v.z, yaw, [0, 4, 8, 12, 18], v.id);
+      if (!spot) return this.toast(p, "Couldn't find a clear spot near the vehicle");
+      v.x = spot.x; v.y = spot.y; v.z = spot.z; v.q = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)]; v.vel = [0, 0, 0];
+      this.refreshAttached(v);
+      const driver = this.byPid.get(v.seats[0]);
+      if (driver) this.send(driver, { t: 'v_reset', id: v.id, p: [v.x, v.y, v.z], q: v.q });
+      return this.toast(p, `🔧 ${VEHICLES[v.type].name} freed`);
+    }
+  }
+
   // Developer / admin commands (only when the server runs with DEV=1)
   devCommand(p, [cmd, a, b, c]) {
     if (cmd === 'tp') {
       const x = num(a), z = num(b);
-      this.teleport(p, x, this.world.ground(x, z) + 1, z);
+      this.teleport(p, x, c !== undefined ? num(c) : this.world.ground(x, z) + 1, z);
       this.updateRegions(p, true);
     } else if (cmd === 'tppoi') {
       const pois = this.world.allPOIs().filter((q) => !a || q.type === a);
@@ -1244,7 +1427,7 @@ export class Game {
   onVehicleEnter(p, m) {
     const v = this.vehicles.get(String(m.id));
     if (!v || !p.alive || p.vehicle) return;
-    if (dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5) return;
+    if (dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 + Math.max(0, VEHICLES[v.type].half[2] - 2)) return;
     if (v.broken) return this.toast(p, 'This vehicle is broken — repair it first');
     let seat = v.seats.indexOf(0);
     if (m.seat !== undefined && v.seats[num(m.seat) | 0] === 0) seat = num(m.seat) | 0;
@@ -1278,10 +1461,11 @@ export class Game {
     v.steer = num(m.s); v.rpm = num(m.r); v.thr = num(m.th);
     if (Math.abs(v.thr) > 0.05) { v.fuel = Math.max(0, v.fuel - VEHICLES[v.type].fuelUse * dt * Math.abs(v.thr)); }
     for (const pid of v.seats) { const o = this.byPid.get(pid); if (o) { o.x = v.x; o.y = v.y; o.z = v.z; this.updateRegions(o); } }
+    this.refreshAttached(v);
   }
   onVehicleFuel(p, m) {
     const v = this.vehicles.get(String(m.id));
-    if (!v || dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5) return;
+    if (!v || dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 + Math.max(0, VEHICLES[v.type].half[2] - 2)) return;
     const def = VEHICLES[v.type];
     const room = Math.floor(def.fuelCap - v.fuel);
     const n = Math.min(room, Inv.count(p.inv, 'fuel'));
@@ -1293,7 +1477,7 @@ export class Game {
   }
   onVehicleRepair(p, m) {
     const v = this.vehicles.get(String(m.id));
-    if (!v || dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 || !p.alive) return;
+    if (!v || dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 + Math.max(0, VEHICLES[v.type].half[2] - 2) || !p.alive) return;
     const def = VEHICLES[v.type];
     if (!v.broken) {
       // field repair with hammer: metal fragments restore health
@@ -1337,7 +1521,7 @@ export class Game {
     if (m.k === 'p') { const o = this.byPid.get(num(m.id)); if (o && o !== p && dist3(o, v) < 6 && !o.vehicle) this.damagePlayer(o, spd * 4, p); }
     if (m.k === 'a') { const a = this.animals.get(String(m.id)); if (a && dist3(a, v) < 6) this.damageAnimal(a, spd * 6, p); }
   }
-  sVehicleFull(v) { return { id: v.id, type: v.type, p: [v.x, v.y, v.z], q: v.q, vel: v.vel, hp: v.hp, fuel: v.fuel, broken: v.broken, needs: v.needs }; }
+  sVehicleFull(v) { return { id: v.id, type: v.type, var: v.var || 0, p: [v.x, v.y, v.z], q: v.q, vel: v.vel, hp: v.hp, fuel: v.fuel, broken: v.broken, needs: v.needs }; }
 
   // ------------------------------------------------------------ animals
   tickAnimals(dt) {
@@ -1490,7 +1674,7 @@ export class Game {
       }
       for (const v of this.vehicles.values()) {
         if (dist2(v, p) > R2) continue;
-        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0]]);
+        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0]);
       }
       for (const a of this.animals.values()) {
         if (dist2(a, p) > R2) continue;

@@ -69,7 +69,7 @@ export class Physics {
     let g = this.world.ground(x, z), surf = null;
     const list = this.query(x, z, r + 0.5, this._q1 || (this._q1 = []));
     for (const c of list) {
-      if (c.ghost || (ignore && c.ref === ignore)) continue;
+      if (c.ghost || (ignore && (c.ref === ignore || (c.ref && c.ref.veh && c.ref.veh === ignore.id)))) continue;
       if (c.t === 'box') {
         const [lx, lz] = invRotY(x - c.x, z - c.z, c.yaw);
         if (Math.abs(lx) > c.hx + r || Math.abs(lz) > c.hz + r) continue;
@@ -97,7 +97,7 @@ export class Physics {
       this.query(p.x, p.z, r + 2, list);
       for (let it = 0; it < 2; it++) {
         for (const c of list) {
-          if (c.ghost || (c.ref && c.ref === ignore)) continue;
+          if (c.ghost || (c.ref && ignore && (c.ref === ignore || (c.ref.veh && c.ref.veh === ignore.id)))) continue;
           if (c.t === 'box') this._boxResolve(p, vel, r, h, c, stepH, res);
           else this._cylResolve(p, vel, r, h, c, stepH, res);
         }

@@ -1,11 +1,12 @@
 // Building plan / deployable / hammer placement logic with snapping ghosts.
 import * as THREE from 'three';
-import { REINFORCE, reinforceCost, G, LEVEL_H, BUILD_REACH, PIECES, TIERS, pieceTransform, canPlaceAny, pieceCost, invRotY, rotY } from '/shared/building.js';
+import { REINFORCE, reinforceCost, G, LEVEL_H, BUILD_REACH, PIECES, TIERS, pieceTransform, canPlaceAny, buildIndex, pieceCost, invRotY, rotY } from '/shared/building.js';
 import { POI_FLAT } from '/shared/worldgen.js';
 import { ITEMS } from '/shared/items.js';
 import { pieceGeometry, deployGeometry } from './models.js';
 import { countItem } from './ui.js';
 
+const _l = new THREE.Vector3(), _iq = new THREE.Quaternion(), _yq = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
 const OK = new THREE.MeshBasicMaterial({ color: 0x40ff60, transparent: true, opacity: 0.35, depthWrite: false });
 const BAD = new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.35, depthWrite: false });
 
@@ -49,10 +50,65 @@ export class Builder {
     return null;
   }
 
+  // Vehicle with a buildable deck that the crosshair is on (hauler), with the aim point in its local frame.
+  deckHit(hit) {
+    const ref = hit?.ref;
+    const vid = ref && (ref.veh || (ref.kind === 'v' && ref.deck ? ref.id : null));
+    const view = vid && this.game.vehicleViews.get(vid);
+    if (!view || !view.def.deck || view.yaw === undefined) return null;
+    const p = hit.point;
+    _l.set(p.x, p.y, p.z).sub(view.pos).applyQuaternion(_iq.copy(view.q).invert());
+    return { view, l: _l.clone() };
+  }
+  toWorld(view, t) {
+    const w = new THREE.Vector3(t.x, t.y, t.z).applyQuaternion(view.q).add(view.pos);
+    return { pos: w, quat: view.q.clone().multiply(_yq.setFromAxisAngle(_Y, t.yaw)) };
+  }
+  snap(type, fx, fz, ly) {
+    let gx, gz, level;
+    if (PIECES[type].slot === 'cell') {
+      gx = 2 * Math.round(fx); gz = 2 * Math.round(fz);
+      level = type === 'foundation' ? 0 : type === 'floor' || type === 'roof' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
+    } else {
+      const i = Math.round(fx), j = Math.round(fz), dx = fx - i, dz = fz - j;
+      if (Math.abs(dx) > Math.abs(dz)) { gx = 2 * i + Math.sign(dx || 1); gz = 2 * j; } else { gx = 2 * i; gz = 2 * j + Math.sign(dz || 1); }
+      level = Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
+    }
+    return { gx, gz, level };
+  }
+  updateDeckPlan(type, dk) {
+    const g = this.game, { view } = dk, d = view.def.deck;
+    const { gx, gz, level } = this.snap(type, (dk.l.x - d.x) / G, (dk.l.z - d.z) / G, dk.l.y - d.y);
+    const bid = 'D' + view.id;
+    const pieces = [];
+    for (const e of g.structures.map.values()) if (e.s.k === 'piece' && e.s.bid === bid) pieces.push(e.s);
+    let err = null;
+    if (type === 'foundation') err = 'The deck is already a foundation — build walls, floors and stairs on it';
+    else if (Math.abs(gx) > 1 || gz < Math.min(...d.cells) - 1 || gz > Math.max(...d.cells) + 1) err = 'Outside the deck';
+    else if (level > d.levels) err = 'Too high for the hauler';
+    else err = canPlaceAny(type, gx, gz, level, buildIndex([...pieces, ...d.cells.map((c) => ({ type: 'foundation', gx: 0, gz: c, level: 0 }))]), false);
+    const t = pieceTransform({ x: d.x, y: d.y, z: d.z, yaw: 0 }, { type, gx, gz, level, rot: this.rot });
+    const w = this.toWorld(view, t);
+    return { plan: { type, veh: view.id, gx, gz, level, rot: this.rot, w }, err };
+  }
+
   // ------------------------------------------------------------ building plan
   updatePlan() {
     const g = this.game, type = this.piece;
     const { point, hit } = this.aim();
+    const dk = this.deckHit(hit);
+    if (dk) {
+      let { plan, err } = this.updateDeckPlan(type, dk);
+      if (!err) { const cost = pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
+      this.plan = plan; this.err = err;
+      this.setGhost('p:' + type, () => pieceGeometry(type, 1));
+      this.ghost.material = err ? BAD : OK;
+      this.ghost.position.copy(plan.w.pos); this.ghost.quaternion.copy(plan.w.quat);
+      this.ghost.visible = true;
+      const cost = pieceCost(type, this.tier);
+      g.ui.prompt(`🚛 <b>${TIERS[this.tier].name} ${PIECES[type].name}</b> on the hauler deck (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> build wheel · <kbd>R</kbd> rotate</small>`);
+      return;
+    }
     const b = g.structures.nearestBuilding(point.x, point.z, 9);
     let plan = null, err = null;
     if (b) {
@@ -95,7 +151,8 @@ export class Builder {
     const p = this.plan;
     if (!p) return;
     if (this.err) { this.game.ui.toast(this.err); return; }
-    if (p.bid) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
+    if (p.veh) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, veh: p.veh, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
+    else if (p.bid) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
     else this.game.net.send({ t: 'build', type: p.type, tier: this.tier, x: p.x, y: p.y, z: p.z, yaw: p.yaw });
   }
 
@@ -114,7 +171,16 @@ export class Builder {
       }
       this.setGhost('door', () => { const b = new THREE.BoxGeometry(1.2, 2.2, 0.1); b.translate(0, 1.1, 0); return b; });
     } else {
-      if (!hit) err = 'Too far';
+      const dk = d.deploy && this.deckHit(hit);
+      if (dk) {
+        const p = hit.point, v = dk.view;
+        const gy = g.physics.groundAt(p.x, p.z, p.y + 0.1, 0.3);
+        if (Math.abs(gy - p.y) > 0.2) err = 'Needs a flat surface';
+        if (d.deploy.kind === 'tool_cupboard') err = "Tool cupboards can't go on vehicles";
+        const lyaw = g.player.yaw - v.yaw;
+        const l = dk.l;
+        plan = { veh: v.id, l: [l.x, l.y, l.z, lyaw], t: { x: p.x, y: p.y, z: p.z, yaw: g.player.yaw }, w: this.toWorld(v, { x: l.x, y: l.y, z: l.z, yaw: lyaw }) };
+      } else if (!hit) err = 'Too far';
       else {
         const p = hit.point;
         const gy = g.physics.groundAt(p.x, p.z, p.y + 0.1, 0.3);
@@ -128,7 +194,8 @@ export class Builder {
     this.plan = plan; this.err = err;
     if (plan) {
       this.ghost.material = err ? BAD : OK;
-      this.ghost.position.set(plan.t.x, plan.t.y, plan.t.z); this.ghost.rotation.set(0, plan.t.yaw, 0);
+      if (plan.w) { this.ghost.position.copy(plan.w.pos); this.ghost.quaternion.copy(plan.w.quat); }
+      else { this.ghost.position.set(plan.t.x, plan.t.y, plan.t.z); this.ghost.rotation.set(0, plan.t.yaw, 0); }
       this.ghost.visible = true;
     } else this.ghost.visible = false;
     g.ui.prompt(`Place <b>${d.name}</b>${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place</small>`);
@@ -139,6 +206,7 @@ export class Builder {
     if (this.err) { this.game.ui.toast(this.err); return; }
     const id = this.deployId;
     if (p.door) this.game.net.send({ t: 'deploy', sel: this.game.sel, id, door: p.door });
+    else if (p.veh) this.game.net.send({ t: 'deploy', sel: this.game.sel, id, veh: p.veh, lx: p.l[0], ly: p.l[1], lz: p.l[2], lyaw: p.l[3] });
     else this.game.net.send({ t: 'deploy', sel: this.game.sel, id, x: p.t.x, y: p.t.y, z: p.t.z, yaw: p.t.yaw });
   }
 

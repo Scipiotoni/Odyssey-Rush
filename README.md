@@ -59,7 +59,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | X | Demolish your own piece (hammer, within 10 min of placing) |
 | G / H | Refuel / patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
-| Enter | Chat · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume) |
+| T or Enter | Chat (`/help` lists commands) · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume) |
 
 ## How to play
 
@@ -96,14 +96,29 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 8. **Develop.** Gathering, crafting and fighting earn XP: every level adds max health and gather rate.
    Armor (burlap → hide → metal) reduces damage and keeps you warm in the tundra and at night.
 9. **Explore & drive.** ~117 monuments (ruins, gas stations, farms, radio towers, military outposts, junkyards)
-   hold loot crates that respawn, and **broken vehicles**: an ATV, a Rally Hatchback, an Offroad SUV or a Double-Cab Pickup. Look at one
-   and press E to install the parts it needs (wheels, engine parts, scrap, metal), add Low Grade Fuel, and drive.
+   hold loot crates that respawn, and **broken vehicles**: an ATV, the **Scout 4x4** jeep (short, long-wheelbase and pickup
+   versions; every one you find is different: open roll cage, soft or hard top, snorkel, winch, roof rack, light bar, paint)
+   and the huge futuristic six-wheel **Atlas Hauler**. Look at one and press E to install the parts it needs (wheels, engine
+   parts, scrap, metal), add Low Grade Fuel, and drive.
+10. **Mobile base.** The Atlas Hauler's flatbed is a ready-made 3×1 foundation: equip the Building Plan, aim at the deck and
+   build walls, doorways, windows, floors, a second storey and stairs, then put in doors, boxes, a workbench or a bed. The first
+   player to build on it claims it (owner + clan can build and open its doors). Everything moves with the truck, and you can
+   walk around inside while a friend drives.
+
+### Chat commands
+
+| Command | What it does |
+|---|---|
+| `/spawn atv\|jeep\|jeep4\|pickup\|hauler` | Spawns a working vehicle (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
+| `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
+| `/c message` | Clan chat |
+| `/help` | Lists the commands |
 
 ### Vehicle physics
 
-Each vehicle is a rigid body with four raycast spring-damper suspensions, tyre friction circles and an engine
+Each vehicle is a rigid body with raycast spring-damper suspension on every wheel (four, or six on the hauler), tyre friction circles and an engine
 torque curve. Grip and rolling resistance depend on the surface under each wheel (grass, dirt, sand, mud, snow,
-rock, building floors). Water adds buoyancy, drag and can flood the engine. The chassis collides with terrain,
+rock, building floors); the jeeps' long-travel suspension, all-wheel drive and offroad tyres grip extra well off the road. Water adds buoyancy, drag and can flood the engine. The chassis collides with terrain,
 trees, rocks, buildings and other vehicles; hard impacts damage the vehicle and its passengers, and you can run
 over animals and players. Wheels kick up dust, mud, snow or spray depending on the ground.
 

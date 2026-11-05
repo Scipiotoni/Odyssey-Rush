@@ -1,5 +1,6 @@
 // Client mirror of server structures: meshes, colliders and building indexes.
 import * as THREE from 'three';
+const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _up = new THREE.Vector3(0, 1, 0);
 import { worldBoxes, buildIndex } from '/shared/building.js';
 import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT } from './models.js';
 
@@ -9,7 +10,10 @@ export class Structures {
     this.map = new Map();       // id -> {s, obj}
     this.buildings = new Map(); // bid -> {x,y,z,yaw, pieces: Map id->s}
     this.fires = [];
+    this.attached = new Map(); // vehicle id -> Set of struct ids riding on it (hauler deck)
   }
+  countVehicle(vid) { return this.attached.get(vid)?.size || 0; }
+  removeVehicle(vid) { for (const id of [...(this.attached.get(vid) || [])]) this.remove(id); this.attached.delete(vid); }
 
   upsert(s) {
     const old = this.map.get(s.id);
@@ -46,6 +50,25 @@ export class Structures {
     obj.position.set(s.x, s.y, s.z);
     obj.rotation.y = s.yaw;
     obj.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    if (s.veh) {
+      // rides on a vehicle: transform follows the vehicle every frame, colliders are dynamic
+      const [lx, ly, lz, lyaw] = s.l;
+      const loc = { ...s, x: lx, y: ly, z: lz, yaw: lyaw };
+      const ref = { kind: 's', id: s.id, veh: s.veh };
+      const boxes = worldBoxes(loc);
+      const dyn = boxes.map((b) => ({ t: 'box', ...b, rad: Math.hypot(b.hx, b.hz) + 0.3, ref, lb: b }));
+      if (s.k === 'door' && s.open) for (const b of worldBoxes({ ...loc, open: false })) dyn.push({ t: 'box', ...b, rad: Math.hypot(b.hx, b.hz) + 0.3, ref, lb: b, ghost: true });
+      if (!boxes.length) dyn.push({ t: 'box', x: lx, y: ly + 0.25, z: lz, hx: 0.5, hy: 0.25, hz: 0.5, yaw: lyaw, rad: 0.8, ref, lb: { x: lx, y: ly + 0.25, z: lz, yaw: lyaw }, ghost: true });
+      obj.matrixAutoUpdate = false;
+      if (s.k === 'door') obj.userData.pivot.matrixAutoUpdate = true;
+      this.scene.add(obj);
+      this.physics.dynamic.push(...dyn);
+      let set = this.attached.get(s.veh);
+      if (!set) { set = new Set(); this.attached.set(s.veh, set); }
+      set.add(s.id);
+      this.map.set(s.id, { s, obj, dyn, local: loc });
+      return;
+    }
     obj.matrixAutoUpdate = s.k === 'door';
     obj.updateMatrix();
     this.scene.add(obj);
@@ -61,6 +84,7 @@ export class Structures {
     if (!e) return;
     this.scene.remove(e.obj);
     this.physics.removeGroup('s:' + id);
+    if (e.dyn) { this.physics.dynamic = this.physics.dynamic.filter((c) => !e.dyn.includes(c)); this.attached.get(e.s.veh)?.delete(id); }
     this.map.delete(id);
     this.fires = this.fires.filter((f) => f.id !== id);
     if (e.s.k === 'piece') {
@@ -82,11 +106,34 @@ export class Structures {
   nearestBuilding(x, z, r = 10) {
     let best = null, bd = r;
     for (const e of this.map.values()) {
-      if (e.s.k !== 'piece') continue;
+      if (e.s.k !== 'piece' || e.s.veh) continue;
       const d = Math.hypot(e.s.x - x, e.s.z - z);
       if (d < bd) { bd = d; best = this.buildings.get(e.s.bid); }
     }
     return best;
+  }
+
+  // Move structures that ride on vehicles (call after the vehicle views have updated).
+  updateAttached(views) {
+    for (const [vid, set] of this.attached) {
+      const v = views.get(vid);
+      for (const id of set) {
+        const e = this.map.get(id);
+        if (!e) continue;
+        e.obj.visible = !!v;
+        if (!v) { for (const c of e.dyn) c.x = 1e9; continue; }
+        const l = e.local;
+        _ml.compose(_v.set(l.x, l.y, l.z), _qy.setFromAxisAngle(_up, l.yaw), _one);
+        e.obj.matrix.copy(_m.compose(v.pos, v.q, _one)).multiply(_ml);
+        e.obj.matrixWorldNeedsUpdate = true;
+        _v.set(l.x, l.y, l.z).applyQuaternion(v.q).add(v.pos);
+        e.s.x = _v.x; e.s.y = _v.y; e.s.z = _v.z; e.s.yaw = v.yaw + l.yaw;
+        for (const c of e.dyn) {
+          _v.set(c.lb.x, c.lb.y, c.lb.z).applyQuaternion(v.q);
+          c.x = v.pos.x + _v.x; c.y = v.pos.y + _v.y; c.z = v.pos.z + _v.z; c.yaw = v.yaw + c.lb.yaw;
+        }
+      }
+    }
   }
 
   update(dt) {

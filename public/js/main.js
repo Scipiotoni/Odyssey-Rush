@@ -21,6 +21,7 @@ import { Creator } from './creator.js';
 import { makeHumanoid, poseHumanoid } from './character.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { audio } from './audio.js';
+const _rv = new THREE.Vector3(), _rq = new THREE.Quaternion();
 
 const $ = (id) => document.getElementById(id);
 const DEFAULTS = { viewDist: 900, sens: 1, fov: 75, shadows: true, volume: 0.6 };
@@ -92,7 +93,7 @@ class Game {
     this.held = new Held(this);
     this.avatar = makeHumanoid(this.look); this.avatar.visible = false; this.scene.add(this.avatar);
     this.building = this.builder;
-    this.input.onKey = (code) => this.onKey(code);
+    this.input.onKey = (code, e) => this.onKey(code, e);
     this.input.onUnlock = () => { if (this.ready && !this.ui.open) this.ui.show('pause'); };
     this.setupSettings();
     $('chatinput').addEventListener('keydown', (e) => {
@@ -158,7 +159,8 @@ class Game {
     n.on('chat', (m) => this.ui.chat(m.from, m.m, m.clan));
     n.on('claninfo', (m) => { this.clanInfo = m; if (this.ui.open === 'clan') this.ui.renderClan(); });
     n.on('time', (m) => (this.day = m.day));
-    n.on('tp', (m) => { this.tpSeq = m.seq || 0; this.player.pos.set(m.p[0], m.p[1], m.p[2]); this.player.vel.set(0, 0, 0); });
+    n.on('v_reset', (m) => { const v = this.vehicle; if (v && v.id === m.id && v.sim) { v.sim.setState(m.p, m.q, [0, 0, 0]); v.sim.ang.set(0, 0, 0); } });
+    n.on('tp', (m) => { this.ride = null; this.tpSeq = m.seq || 0; this.player.pos.set(m.p[0], m.p[1], m.p[2]); this.player.vel.set(0, 0, 0); });
     n.on('rg', (m) => {
       const rc = { s: new Set(), l: new Set(), d: new Set(m.d) };
       this.regionContents.set(m.k, rc);
@@ -176,8 +178,9 @@ class Game {
       this.regionContents.delete(m.k);
     });
     const regionOf = (x, z) => chunkKey(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
-    n.on('sadd', (m) => { this.structures.upsert(m.s); this.regionContents.get(regionOf(m.s.x, m.s.z))?.s.add(m.s.id); this.refreshBags(); if (m.s.o === this.pid) audio.hitStruct(); });
+    n.on('sadd', (m) => { this.structures.upsert(m.s); if (!m.s.veh) this.regionContents.get(regionOf(m.s.x, m.s.z))?.s.add(m.s.id); this.refreshBags(); if (m.s.o === this.pid) audio.hitStruct(); });
     n.on('supd', (m) => this.structures.upsert(m.s));
+    n.on('vst', (m) => { for (const st of m.s) this.structures.upsert(st); this.refreshBags(); });
     n.on('sdel', (m) => { const e = this.structures.map.get(m.id); this.structures.remove(m.id, m.fx); if (e) this.regionContents.get(regionOf(e.s.x, e.s.z))?.s.delete(m.id); if (m.fx) audio.hitStruct(); this.refreshBags(); });
     n.on('ladd', (m) => { this.entities.addLoot(m.l, this.physics); this.regionContents.get(regionOf(m.l.x, m.l.z))?.l.add(m.l.id); });
     n.on('lupd', (m) => { const e = this.entities.loot.get(m.l.id); if (e && e.data.item !== m.l.item) this.entities.addLoot(m.l, this.physics); else if (e) e.data = m.l; });
@@ -227,6 +230,36 @@ class Game {
     n.on('v_seat', (m) => this.onSeat(m));
   }
 
+  // Standing on a moving vehicle (hauler deck / its buildings): move with it.
+  carryRider() {
+    const r = this.ride;
+    if (!r) return;
+    const v = this.vehicleViews.get(r.vid);
+    if (!v || v.yaw === undefined) { this.ride = null; return; }
+    const p = this.player.pos;
+    _rv.copy(r.l).applyQuaternion(v.q).add(v.pos);
+    if (_rv.distanceTo(p) > 25) { this.ride = null; return; }
+    p.copy(_rv);
+    let dy = v.yaw - r.yaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    this.player.yaw += dy;
+  }
+  updateRide() {
+    const p = this.player.pos, ph = this.physics;
+    if (this.player.onGround) {
+      const g = ph.groundAt(p.x, p.z, p.y + 0.1, 0.3, 0.2);
+      const ref = ph.lastSurf?.ref;
+      const vid = ref && Math.abs(g - p.y) < 0.35 ? (ref.kind === 'v' && ref.deck ? ref.id : ref.veh) : null;
+      this.ride = vid ? { vid } : null;
+    }
+    if (this.ride) {
+      const v = this.vehicleViews.get(this.ride.vid);
+      if (!v || v.yaw === undefined) { this.ride = null; return; }
+      this.ride.l = (this.ride.l || new THREE.Vector3()).copy(p).sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
+      this.ride.yaw = v.yaw;
+    }
+  }
+
   refreshBags() {
     this.bags = [];
     for (const e of this.structures.map.values()) if ((e.s.type === 'sleeping_bag' || e.s.type === 'bed') && e.s.o === this.pid) this.bags.push({ id: e.s.id, x: Math.round(e.s.x), z: Math.round(e.s.z) });
@@ -240,13 +273,16 @@ class Game {
     for (const a of m.ve) {
       seen.add(a[0]);
       let v = this.vehicleViews.get(a[0]);
-      if (!v) { v = new VehicleView(this.scene, { id: a[0], type: a[1] }, this.world, this.physics); this.vehicleViews.set(a[0], v); this.physics.dynamic.push(v.collider); }
+      if (!v) { v = new VehicleView(this.scene, { id: a[0], type: a[1], var: a[14] }, this.world, this.physics); this.vehicleViews.set(a[0], v); this.physics.dynamic.push(...v.colliders); }
       v.setNet(a);
+      // mobile-base structures on this vehicle: fetch them when our copy is out of date
+      if (v.nAttached !== this.structures.countVehicle(a[0]) && performance.now() - (v.vstAt || -1e9) > 3000) { v.vstAt = performance.now(); this.net.send({ t: 'vst', id: a[0] }); }
       if (this.vehicle && this.vehicle.id === a[0] && this.vehicle.sim) { this.vehicle.sim.fuel = a[11]; v.hp = a[6]; }
     }
     for (const [id, v] of this.vehicleViews) if (!seen.has(id) && !(this.vehicle && this.vehicle.id === id)) {
       v.dispose(); this.vehicleViews.delete(id);
-      this.physics.dynamic = this.physics.dynamic.filter((c) => c !== v.collider);
+      this.physics.dynamic = this.physics.dynamic.filter((c) => !v.colliders.includes(c));
+      this.structures.removeVehicle(id);
     }
   }
 
@@ -289,7 +325,7 @@ class Game {
   onSeat(m) {
     if (!m.id) { if (this.vehicle) this.leaveVehicleLocal(); return; }
     let view = this.vehicleViews.get(m.id);
-    if (!view) { view = new VehicleView(this.scene, { id: m.id, type: m.v.type }, this.world, this.physics); this.vehicleViews.set(m.id, view); this.physics.dynamic.push(view.collider); }
+    if (!view) { view = new VehicleView(this.scene, { id: m.id, type: m.v.type, var: m.v.var }, this.world, this.physics); this.vehicleViews.set(m.id, view); this.physics.dynamic.push(...view.colliders); }
     const veh = { id: m.id, seat: m.seat, view, sim: null, camMode: this.settings.vcam || 'third' };
     if (m.seat === 0) {
       const sim = new VehicleSim(m.v.type, this.world, this.physics);
@@ -487,6 +523,8 @@ class Game {
             const needs = v.needs ? Object.entries(v.needs).map(([k, n]) => `${n}× ${ITEMS[k].name} (have ${countItem(this.inv, k)})`).join(', ') : '';
             text = `<b>Broken ${def.name}</b><br>Needs: ${needs}<br><kbd>E</kbd> Install parts`;
             if (E) this.net.send({ t: 'v_repair', id: v.id });
+          } else if (def.deck && hit.col !== v.colliders[1]) {
+            target = `${def.name} deck${v.nAttached ? '' : ' — build on it with the Building Plan'}`;
           } else {
             text = `<b>${def.name}</b> ⛽ ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp}<br><kbd>E</kbd> ${v.driver ? 'Ride as passenger' : 'Drive'} · <kbd>G</kbd> Refuel (${countItem(this.inv, 'fuel')} fuel)${v.hp < def.hp ? ' · <kbd>H</kbd> Patch with metal' : ''}`;
             if (E) this.net.send({ t: 'v_enter', id: v.id });
@@ -509,7 +547,7 @@ class Game {
     if (active && this.input.hit('KeyF')) this.net.send({ t: 'drink' });
   }
 
-  onKey(code) {
+  onKey(code, e) {
     if (!this.ready) return;
     const ui = this.ui;
     if (ui.open === 'death' || ui.open === 'chat') return;
@@ -517,7 +555,7 @@ class Game {
     else if (code === 'KeyM') { if (ui.open === 'map') ui.close(); else if (!ui.open) ui.show('map'); }
     else if (code === 'KeyL') { if (ui.open === 'clan') ui.close(); else if (!ui.open) ui.show('clan'); }
     else if (code === 'Escape') { if (ui.open && ui.open !== 'pause') ui.close(); }
-    else if (code === 'Enter' && !ui.open) { this.input.unlock(); ui.openChat(); }
+    else if ((code === 'Enter' || code === 'KeyT') && !ui.open) { e?.preventDefault(); this.input.unlock(); ui.openChat(); }
     else if (code === 'KeyB' && ui.open === 'build') ui.close();
   }
 
@@ -559,12 +597,13 @@ class Game {
       this.held.vm.visible = false;
     } else {
       if (active) this.player.look(input.mouse.dx, input.mouse.dy, this.settings.sens);
-      if (this.alive) this.player.update(dt, input, active);
+      if (this.alive) { this.carryRider(); this.player.update(dt, input, active); this.updateRide(); }
       this.held.vm.visible = this.alive;
     }
     // vehicles
     const night = this.sky.dayLight < 0.35;
     for (const v of this.vehicleViews.values()) v.update(dt, this.vehicle?.id === v.id ? this.vehicle.sim : null, this.effects, night);
+    this.structures.updateAttached(this.vehicleViews);
     // camera
     this.updateAvatar();
     if (this.vehicle) this.vehicleCamera(dt);
@@ -580,7 +619,7 @@ class Game {
     if (now - this.lastSend > 66) {
       this.lastSend = now;
       const p = this.player;
-      this.net.send({ t: 'st', p: this.vehicle ? undefined : [+p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2)], yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3), cr: p.crouch ? 1 : 0, air: !p.onGround && !p.swimming ? 1 : 0, spr: p.sprinting ? 1 : 0, sel: this.sel, seq: this.tpSeq });
+      this.net.send({ t: 'st', p: this.vehicle ? undefined : [+p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2)], yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3), cr: p.crouch ? 1 : 0, air: !p.onGround && !p.swimming ? 1 : 0, spr: p.sprinting ? 1 : 0, sel: this.sel, seq: this.tpSeq, on: this.ride && !this.vehicle ? this.ride.vid : undefined });
     }
     // world
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;

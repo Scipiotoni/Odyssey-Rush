@@ -89,6 +89,7 @@ export class VehicleSim {
   }
 
   ground(x, z, y) { return this.physics.groundAt(x, z, y, 0.6, 0, this.ignore); }
+  ignores(c) { return this.ignore && (c.ref === this.ignore || (c.ref && c.ref.veh === this.ignore.id)); }
 
   step(dt, input) {
     this.acc += Math.min(dt, 0.1);
@@ -160,7 +161,7 @@ export class VehicleSim {
       const vp = this.pointVel(P, comW, new V3());
       const vLong = vp.dot(fwd), vLat = vp.dot(side);
       const N = Fs;
-      let grip = surf.grip * (wh.water ? 0.6 : 1);
+      let grip = surf.grip * (wh.water ? 0.6 : 1) * (surfBox ? 1 : def.offroad || 1);
       if (input.handbrake && !wh.steer) grip *= 0.45;
       let Fx = 0;
       if (wh.drive && canDrive) Fx += (thr * def.engine * curve) / this.nDrive;
@@ -217,7 +218,7 @@ export class VehicleSim {
         this.contact(P, nn, (g - P.y) * nn.y, comW, 0.5, 0.05);
       }
       for (const c of _col) {
-        if (c.ghost || (this.ignore && c.ref === this.ignore)) continue;
+        if (c.ghost || this.ignores(c)) continue;
         if (c.t === 'cyl') {
           if (P.y < c.y || P.y > c.y + c.h) continue;
           const dx = P.x - c.x, dz = P.z - c.z, d2 = dx * dx + dz * dz;
@@ -268,14 +269,21 @@ export class VehicleView {
   constructor(scene, data, world, physics) {
     this.id = data.id; this.type = data.type; this.world = world; this.physics = physics;
     this.def = VEHICLES[data.type];
-    this.group = makeVehicle(data.type);
+    this.variant = data.var || 0;
+    this.group = makeVehicle(data.type, this.variant);
     scene.add(this.group);
     this.scene = scene;
     this.pos = new V3(); this.q = new THREE.Quaternion();
     this.tPos = new V3(); this.tQ = new THREE.Quaternion(); this.vel = new V3();
     this.steer = 0; this.rpm = 0; this.hp = 0; this.broken = true; this.fuel = 0; this.needs = null; this.driver = 0;
     this.spin = 0; this.first = true;
-    this.collider = { t: 'box', x: 0, y: 0, z: 0, hx: this.def.half[0], hy: this.def.half[1], hz: this.def.half[2], yaw: 0, rad: Math.hypot(this.def.half[0], this.def.half[2]), ref: { kind: 'v', id: data.id } };
+    const ref = { kind: 'v', id: data.id, deck: !!this.def.deck };
+    // local collision boxes [cx,cy,cz,hx,hy,hz]; the hauler is a low deck + tall cab so you can stand and build on the back
+    this.boxes = this.def.deck
+      ? [[0, this.def.deck.y - 0.57, -2.4, 1.52, 0.57, 4.55], [0, 0.8, 4.6, 1.5, 1.4, 2.4]]
+      : [[0, 0, 0, ...this.def.half]];
+    this.colliders = this.boxes.map(([, , , hx, hy, hz]) => ({ t: 'box', x: 0, y: 0, z: 0, hx, hy, hz, yaw: 0, rad: Math.hypot(hx, hz) + 0.5, ref }));
+    this.collider = this.colliders[0];
     this.smokeT = 0;
   }
   setNet(a) {
@@ -283,6 +291,7 @@ export class VehicleView {
     this.tPos.set(a[2], a[3], a[4]); this.tQ.set(a[5][0], a[5][1], a[5][2], a[5][3]);
     this.hp = a[6]; this.broken = !!a[7]; this.steer = a[8]; this.rpm = a[9]; this.driver = a[10]; this.fuel = a[11]; this.needs = a[12] || null;
     this.vel.set(a[13][0], a[13][1], a[13][2]);
+    this.nAttached = a[15] || 0;
     if (!this.interp) this.interp = new Interp();
     this.interp.push(performance.now(), a[2], a[3], a[4], 0, a[5]);
     if (this.first) { this.pos.copy(this.tPos); this.q.copy(this.tQ); this.first = false; }
@@ -313,7 +322,7 @@ export class VehicleView {
       if (sim) w.spin.rotation.x = sim.wheels[i].spin;
       else { const fwd = _d.set(0, 0, 1).applyQuaternion(this.q); w.spin.rotation.x += (this.vel.dot(fwd) / this.def.wheelR) * dt; }
     });
-    const tint = this.broken ? 0x6b4a32 : this.def.color;
+    const tint = this.broken ? 0x6b4a32 : ud.baseColor ?? this.def.color;
     if (ud._tint !== tint) { ud.paintMat.color.set(tint); ud.paintMat.roughness = this.broken ? 0.85 : 0.3; ud.paintMat.metalness = this.broken ? 0.15 : 0.55; ud._tint = tint; }
     const drivenNow = sim || this.driver;
     ud.headlight.intensity = drivenNow && night ? 40 : 0;
@@ -322,8 +331,11 @@ export class VehicleView {
     if (ud.fog) ud.fog.emissiveIntensity = drivenNow && night ? 2 : 0.15;
     // collider for players / other vehicles
     const fwd = _d.set(0, 0, 1).applyQuaternion(this.q);
-    const c = this.collider;
-    c.x = this.pos.x; c.y = this.pos.y; c.z = this.pos.z; c.yaw = Math.atan2(fwd.x, fwd.z);
+    this.yaw = Math.atan2(fwd.x, fwd.z);
+    this.boxes.forEach((b, i) => {
+      const c = this.colliders[i], o = _c.set(b[0], b[1], b[2]).applyQuaternion(this.q);
+      c.x = this.pos.x + o.x; c.y = this.pos.y + o.y; c.z = this.pos.z + o.z; c.yaw = this.yaw;
+    });
     // damage smoke
     const maxHp = this.def.hp;
     const hp = sim ? this.hp : this.hp;

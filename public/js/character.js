@@ -29,6 +29,8 @@ const headGeo = (fem) => G('head' + fem, () => {
     const ny = y / 0.105;
     if (ny < 0.15) { const t = (0.15 - ny) / 1.15; x *= 1 - t * (fem ? 0.5 : 0.4); z *= 1 - t * 0.2; }
     if (z < 0) z *= 0.9;
+    // chin: the lower front of the same mesh is drawn forward and down (no separate lump)
+    if (ny < -0.35 && z < 0) { const t = Math.min(1, (-0.35 - ny) / 0.65); const front = Math.min(1, -z / 0.07); z -= t * front * (fem ? 0.012 : 0.018); y -= t * front * 0.01; }
     p.setXYZ(i, x * 0.93, y * 1.15, z);
   }
   g.computeVertexNormals();
