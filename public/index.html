@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Odyssey Rush</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap" />
   <link rel="stylesheet" href="/css/style.css" />
   <script type="importmap">
     { "imports": { "three": "/lib/three/three.module.js", "three/addons/": "/lib/three/addons/" } }
@@ -39,22 +41,25 @@
   </div>
 
   <!-- Inventory / crafting / container -->
-  <div id="invscreen" class="hidden panelscreen">
-    <div class="invcol">
-      <h3>Armor</h3><div id="armorslots" class="grid armor"></div>
-      <h3>Inventory</h3><div id="invgrid" class="grid"></div>
-      <h3>Belt</h3><div id="beltgrid" class="grid"></div>
-      <div class="hint">Drag to move · Shift+click quick-move · Right-click use/equip · Drag outside to drop</div>
-    </div>
-    <div class="invcol right">
-      <div id="contpanel" class="hidden"><h3 id="conttitle">Container</h3><div id="contgrid" class="grid"></div></div>
-      <div id="craftpanel">
-        <h3>Crafting <small id="craftstation"></small></h3>
-        <input id="craftsearch" placeholder="Search recipes…" />
-        <div id="craftlist"></div>
-        <div id="craftdetail"></div>
+  <div id="invscreen" class="hidden panelscreen mcscreen">
+    <div class="mcpanel" id="invpanel">
+      <div class="mctop">
+        <div id="armorslots" class="grid armor"></div>
+        <div class="mcpreview"><canvas id="invpreview" width="200" height="236"></canvas></div>
+        <div class="mcinfo" id="invinfo"></div>
       </div>
+      <div id="contpanel" class="hidden"><div class="mclbl" id="conttitle">Container</div><div id="contgrid" class="grid"></div></div>
+      <div class="mclbl">Inventory</div>
+      <div id="invgrid" class="grid"></div>
+      <div id="beltgrid" class="grid belt"></div>
     </div>
+    <div class="mcpanel" id="craftpanel">
+      <div class="mclbl">Crafting <small id="craftstation"></small></div>
+      <input id="craftsearch" placeholder="Search recipes…" />
+      <div id="craftlist"></div>
+      <div id="craftdetail"></div>
+    </div>
+    <div class="mchint">Drag to move · Shift+click quick-move · Ctrl+drag half a stack · Right-click use / equip · Drag outside to drop · Tab or Esc to close</div>
     <div id="itemtip" class="hidden"></div>
   </div>
 

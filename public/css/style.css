@@ -205,3 +205,75 @@ details summary { cursor: pointer; opacity: .8; }
 .islot .ico { width: 44px; height: 44px; }
 .islot .emo { font-size: 30px; }
 @media (max-width: 760px) { .swatches { grid-template-columns: repeat(4, 40px); } .decals { grid-template-columns: repeat(4, 76px); } }
+
+/* ================= Minecraft-style inventory ================= */
+:root { --mc-font: 'Pixelify Sans', 'Segoe UI', monospace; --mc-panel: #c6c6c6; --mc-slot: #8b8b8b; --mc-dark: #373737; --mc-text: #3f3f3f; }
+.mcscreen { align-items: center; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 24px; background: rgba(8,8,10,.62); }
+.mcpanel {
+  background: var(--mc-panel); color: var(--mc-text); font-family: var(--mc-font); padding: 12px 14px 14px;
+  border: 3px solid; border-color: #fff #555 #555 #fff; border-radius: 6px;
+  box-shadow: 0 0 0 2px #000, 0 10px 30px rgba(0,0,0,.5); image-rendering: pixelated;
+}
+.mclbl { font-size: 15px; font-weight: 600; color: var(--mc-text); margin: 8px 0 4px 2px; }
+.mclbl small { font-weight: 400; opacity: .75; }
+.mcscreen .slot {
+  width: 52px; height: 52px; background: var(--mc-slot); border: 2px solid; border-color: var(--mc-dark) #fff #fff var(--mc-dark);
+  border-radius: 0; box-sizing: content-box; cursor: pointer;
+}
+.mcscreen .slot:hover, .mcscreen .slot.hover { background: #a9a9a9; }
+.mcscreen .slot .ico { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 rgba(0,0,0,.28)); }
+.mcscreen .slot .ico.emo { font-size: 28px; }
+.mcscreen .slot .n, #hotbar .slot .n { font-family: var(--mc-font); font-size: 16px; font-weight: 600; color: #fff; text-shadow: 2px 2px 0 #3f3f3f; right: 3px; bottom: 0; }
+.mcscreen .slot .k { color: #4a4a4a; opacity: .9; font-family: var(--mc-font); font-size: 11px; }
+.mcscreen .slot .lbl { color: #5a5a5a; opacity: .9; text-transform: capitalize; font-family: var(--mc-font); bottom: 2px; }
+.mcscreen .slot .ghost { font-size: 26px; filter: grayscale(1) brightness(1.6); opacity: .35; }
+.mcscreen .grid { gap: 0; grid-template-columns: repeat(6, 56px); }
+.mcscreen .grid.belt { margin-top: 10px; }
+.mcscreen .grid.armor { grid-template-columns: 56px; align-content: start; }
+.mctop { display: flex; gap: 10px; align-items: stretch; margin-bottom: 4px; }
+.mcpreview { width: 150px; height: 168px; background: #000; border: 2px solid; border-color: var(--mc-dark) #fff #fff var(--mc-dark); overflow: hidden; }
+.mcpreview canvas { width: 150px; height: 177px; display: block; }
+.mcinfo { flex: 1; min-width: 96px; font-size: 13px; line-height: 1.25; padding: 2px 0; }
+.mcinfo .nm { font-size: 16px; font-weight: 600; color: #2a2a2a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcinfo .lv { color: #3d8a1e; font-weight: 600; margin-top: 2px; }
+.mcinfo .row { margin-top: 5px; }
+.mcinfo .row.small { font-size: 11px; opacity: .8; }
+.mcbar { height: 7px; background: #3a3a3a; border: 1px solid #222; margin-top: 2px; }
+.mcbar > div { height: 100%; }
+.mcbar.xp > div { background: #7ee03a; } .mcbar.hp > div { background: #d8352b; } .mcbar.food > div { background: #c98a2e; } .mcbar.water > div { background: #3a86d8; }
+#contpanel .grid { grid-template-columns: repeat(6, 56px); }
+#craftpanel.mcpanel { width: 372px; }
+.mcscreen #craftsearch { width: 100%; box-sizing: border-box; background: #000; color: #e0e0e0; border: 2px solid #a0a0a0; font-family: var(--mc-font); font-size: 14px; padding: 5px 7px; border-radius: 0; }
+.mcscreen #craftlist { max-height: 38vh; display: block; padding: 0; margin-top: 4px; }
+.mcscreen .rgroup { opacity: 1; font-family: var(--mc-font); font-size: 12px; color: #4a4a4a; margin: 8px 0 3px 2px; background: none; padding: 0; text-transform: none; letter-spacing: 0; }
+.rgrid { display: grid; grid-template-columns: repeat(6, 56px); }
+.mcscreen .rslot.no { background: #a47a7a; }
+.mcscreen .rslot.no:hover { background: #b88e8e; }
+.mcscreen .rslot.no .ico { opacity: .7; }
+.mcscreen .rslot.locked { background: #707070; } .mcscreen .rslot.locked .ico { opacity: .4; filter: grayscale(1); }
+.mcscreen .rslot.sel { background: #c2d8a0; box-shadow: inset 0 0 0 2px #fff; }
+.mcscreen .rslot.queue .tm { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 12px; color: #fff; text-shadow: 1px 1px 0 #000; background: rgba(0,0,0,.35); font-family: var(--mc-font); }
+.mcscreen #craftdetail { background: #b0b0b0; color: #2e2e2e; border: 2px solid; border-color: var(--mc-dark) #fff #fff var(--mc-dark); font-family: var(--mc-font); font-size: 13px; margin-top: 8px; }
+.mcscreen #craftdetail .cost span.miss { color: #b01e14; }
+.mcscreen #craftdetail .hint { color: #444; opacity: 1; }
+.mcscreen button, .mcbtn {
+  font-family: var(--mc-font); font-size: 15px; color: #fff; text-shadow: 2px 2px 0 #3f3f3f; padding: 6px 18px; cursor: pointer;
+  background: linear-gradient(#9a9a9a, #6f6f6f); border: 2px solid #000; box-shadow: inset 2px 2px 0 rgba(255,255,255,.35), inset -2px -2px 0 rgba(0,0,0,.35); border-radius: 0;
+}
+.mcscreen button:hover { background: linear-gradient(#8fa4df, #5f72b0); }
+.mcscreen button.alt { background: linear-gradient(#7d7d7d, #585858); }
+.mchint { width: 100%; text-align: center; font-family: var(--mc-font); font-size: 13px; color: #d8d8d8; text-shadow: 1px 1px 0 #000; }
+/* tooltip */
+#itemtip { background: rgba(16,0,16,.94); border: 2px solid #2a0a5c; box-shadow: 0 0 0 2px rgba(16,0,16,.94); border-radius: 2px; font-family: var(--mc-font); font-size: 13px; color: #e8e8e8; padding: 6px 9px; max-width: 260px; }
+#itemtip b { color: #fff; font-size: 15px; font-weight: 600; }
+#itemtip .sub { color: #a8a8a8; }
+#itemtip .bigico { display: none; }
+#dragghost img { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 rgba(0,0,0,.3)); }
+/* hotbar HUD to match */
+#hotbar { gap: 0; padding: 2px; background: rgba(20,20,20,.55); border: 2px solid #8b8b8b; box-shadow: 0 0 0 2px rgba(0,0,0,.8); }
+#hotbar .slot { width: 56px; height: 56px; background: transparent; border: 2px solid rgba(120,120,120,.55); }
+#hotbar .slot.sel { background: rgba(255,255,255,.08); border: 2px solid #fff; box-shadow: 0 0 0 3px #1a1a1a, inset 0 0 0 2px #9a9a9a; z-index: 1; }
+#hotbar .slot .ico { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 rgba(0,0,0,.45)); }
+#hotbar .slot .k { font-family: var(--mc-font); color: #ddd; opacity: .8; }
+@media (max-width: 900px) { #craftpanel.mcpanel { width: auto; } }
+body.invopen #hotbar, body.invopen #ammo { visibility: hidden; }

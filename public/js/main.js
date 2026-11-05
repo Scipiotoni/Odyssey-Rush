@@ -68,6 +68,7 @@ class Game {
     let token = localStorage.getItem('or_token');
     if (!token) { token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''); localStorage.setItem('or_token', token); }
     localStorage.setItem('or_name', name);
+    this.name = name;
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
     $('menustatus').textContent = 'Connecting…';
     await this.net.connect(url);

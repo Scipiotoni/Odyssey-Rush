@@ -7,6 +7,7 @@ import { icons } from './icons.js';
 import { PAINT_COLORS, PAINT_NAMES, DECALS } from '/shared/paint.js';
 import { decalPreview } from './paint.js';
 import { SIZE_NAMES } from './painter.js';
+import { InvPreview } from './invpreview.js';
 
 // <img> for an item's rendered icon (falls back to the emoji until it's ready)
 export function iconHTML(id, cls = 'ico') { const src = icons.get(id); return src ? `<img class="${cls}" src="${src}" alt="">` : `<span class="${cls} emo">${ITEMS[id]?.icon || '?'}</span>`; }
@@ -72,6 +73,7 @@ export class UI {
     $('ammo').innerHTML = gun ? `${st.a || 0}<small> / ${countItem(g.inv, gun.ammo)}</small>` : '';
   }
   renderStats(s) {
+    this.lastStats = s;
     const pct = (v, m = 100) => Math.max(0, Math.min(100, (v / m) * 100)) + '%';
     $('hpbar').style.width = pct(s.hp, s.maxhp); $('hpval').textContent = Math.ceil(s.hp);
     $('foodbar').style.width = pct(s.food); $('foodval').textContent = Math.ceil(s.food);
@@ -195,6 +197,7 @@ export class UI {
       return el;
     };
     this.armorEls = ARMOR_SLOTS.map((s) => mk($('armorslots'), 'a', s));
+    this.preview = new InvPreview(this.game, $('invpreview'));
     this.invEls = [];
     for (let i = HOTBAR; i < INV_SIZE; i++) this.invEls[i] = mk($('invgrid'), 'p', i);
     for (let i = 0; i < HOTBAR; i++) this.invEls[i] = mk($('beltgrid'), 'p', i, i + 1);
@@ -212,7 +215,15 @@ export class UI {
   }
   renderInventory() {
     const g = this.game;
-    ARMOR_SLOTS.forEach((s, k) => { const el = this.armorEls[k]; el.innerHTML = this.slotHTML(g.armor[s]) || `<span class="lbl">${s}</span>`; });
+    const ghost = { head: '⛑️', chest: '🦺', legs: '👖' };
+    ARMOR_SLOTS.forEach((s, k) => { const el = this.armorEls[k]; el.innerHTML = this.slotHTML(g.armor[s]) || `<span class="ghost">${ghost[s] || ''}</span><span class="lbl">${s}</span>`; });
+    const st = this.lastStats;
+    if (st) {
+      const bar = (v, m, cls) => `<div class="mcbar ${cls}"><div style="width:${Math.max(0, Math.min(100, (v / m) * 100))}%"></div></div>`;
+      $('invinfo').innerHTML = `<div class="nm">${(g.name || 'Survivor').replace(/[<>&]/g, '')}</div><div class="lv">Level ${st.lvl}</div>${bar(st.xp % 100, 100, 'xp')}
+        <div class="row">❤ ${Math.ceil(st.hp)}</div>${bar(st.hp, st.maxhp, 'hp')}<div class="row">🍖 ${Math.ceil(st.food)}</div>${bar(st.food, 100, 'food')}<div class="row">💧 ${Math.ceil(st.water)}</div>${bar(st.water, 100, 'water')}
+        <div class="row small">${st.kills || 0} kills · ${st.deaths || 0} deaths</div>`;
+    }
     for (let i = 0; i < INV_SIZE; i++) this.invEls[i].innerHTML = this.slotHTML(g.inv[i], i < HOTBAR ? i + 1 : null);
     const c = g.container;
     $('contpanel').classList.toggle('hidden', !c);
@@ -317,26 +328,32 @@ export class UI {
     let html = '';
     if (station && c.queue && c.queue.length) {
       const now = performance.now();
-      html += `<div class="rgroup">Crafting here (${c.queue.length})</div>` + c.queue.map((e, i) => {
-        const left = Math.max(0, e.left - (now - c.recv) / 1000 - (i ? 0 : 0));
-        return `<div class="recipe can" data-cancel="${i}"><span class="ic">${iconHTML(RECIPES[e.r].out, 'rico')}</span><span class="nm">${ITEMS[RECIPES[e.r].out].name}</span><span class="st">${Math.ceil(left)}s ✕</span></div>`;
-      }).join('');
+      html += `<div class="rgroup">Crafting here (${c.queue.length}) — click to cancel</div><div class="rgrid">` + c.queue.map((e, i) => {
+        const left = Math.max(0, e.left - (now - c.recv) / 1000);
+        return `<div class="slot rslot queue" data-cancel="${i}" data-tip="${ITEMS[RECIPES[e.r].out].name} — ${Math.ceil(left)}s left (click to cancel)">${iconHTML(RECIPES[e.r].out)}<span class="tm">${Math.ceil(left)}s</span></div>`;
+      }).join('') + '</div>';
     }
-    html += `<div class="rgroup">${station ? `${ITEMS[station].name} recipes` : 'Hand crafting — press E on a camp fire, furnace or workbench for more'}</div>`;
+    html += `<div class="rgroup">${station ? `${ITEMS[station].name} recipes` : 'Hand crafting — press E on a camp fire, furnace or workbench for more'}</div><div class="rgrid">`;
+    const tipOf = (r) => `${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''} · ${r.time}s|${Object.entries(r.cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`;
     for (const r of recipes.filter((r) => !q || ITEMS[r.out].name.toLowerCase().includes(q))) {
       const can = affordable(g.inv, r.cost);
-      html += `<div class="recipe ${can ? 'can' : ''} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}"><span class="ic">${iconHTML(r.out, 'rico')}</span><span class="nm">${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</span><span class="st">${r.time}s</span></div>`;
+      html += `<div class="slot rslot ${can ? 'can' : 'no'} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}" data-tip="${tipOf(r)}">${iconHTML(r.out)}${r.n > 1 ? `<span class="n">${r.n}</span>` : ''}</div>`;
     }
+    html += '</div>';
     if (!station) {
       const locked = RECIPES.filter((r) => r.station && (!q || ITEMS[r.out].name.toLowerCase().includes(q)));
-      if (q && locked.length) html += `<div class="rgroup">Needs a station</div>` + locked.map((r) => `<div class="recipe locked"><span class="ic">${iconHTML(r.out, 'rico')}</span><span class="nm">${ITEMS[r.out].name}</span><span class="st">${STATION_NAMES[r.station]}</span></div>`).join('');
+      if (q && locked.length) html += `<div class="rgroup">Needs a station</div><div class="rgrid">` + locked.map((r) => `<div class="slot rslot locked" data-tip="${ITEMS[r.out].name}|Made at: ${STATION_NAMES[r.station]}">${iconHTML(r.out)}</div>`).join('') + '</div>';
     }
     const list = $('craftlist');
     const scroll = list.scrollTop;
     list.innerHTML = html;
     list.scrollTop = scroll;
-    list.querySelectorAll('.recipe[data-r]').forEach((el) => el.addEventListener('click', () => { this.selRecipe = +el.dataset.r; audio.click(); this.renderCrafting(); }));
-    list.querySelectorAll('.recipe[data-cancel]').forEach((el) => el.addEventListener('click', () => { g.net.send({ t: 'ccancel', i: +el.dataset.cancel, st: c.id }); audio.click(); }));
+    list.querySelectorAll('[data-tip]').forEach((el) => {
+      el.addEventListener('mouseenter', () => { const [a, b] = el.dataset.tip.split('|'); const tip = $('itemtip'); tip.innerHTML = `<b>${a}</b>${b ? `<br><span class="sub">${b}</span>` : ''}`; tip.classList.remove('hidden'); const r = el.getBoundingClientRect(); tip.style.left = r.right + 6 + 'px'; tip.style.top = r.top + 'px'; });
+      el.addEventListener('mouseleave', () => $('itemtip').classList.add('hidden'));
+    });
+    list.querySelectorAll('.rslot[data-r]').forEach((el) => el.addEventListener('click', () => { this.selRecipe = +el.dataset.r; audio.click(); this.renderCrafting(); }));
+    list.querySelectorAll('.rslot[data-cancel]').forEach((el) => el.addEventListener('click', () => { g.net.send({ t: 'ccancel', i: +el.dataset.cancel, st: c.id }); audio.click(); }));
     const det = $('craftdetail');
     const r = RECIPES[this.selRecipe];
     if (!r || !recipes.includes(r)) { det.innerHTML = `<span class="hint">${station ? 'Select a recipe. Crafted items appear in the output slots above — drag them to your inventory.' : 'Select a recipe. Workbench, furnace and camp fire items are made at the station itself: walk up to it and press E.'}</span>`; return; }
@@ -475,7 +492,8 @@ export class UI {
     this.open = which;
     const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen' }[which];
     $(el).classList.remove('hidden');
-    if (which === 'inv') this.renderInventory();
+    if (which === 'inv') { this.renderInventory(); this.preview.start(); }
+    document.body.classList.toggle('invopen', which === 'inv');
     if (which === 'map') this.renderMap();
     if (which === 'build') this.renderBuildMenu();
     if (which === 'paint') this.renderPaint();
@@ -488,6 +506,8 @@ export class UI {
     $('itemtip').classList.add('hidden');
     this.endDrag();
     if (this.open === 'inv' && this.game.container) { this.game.net.send({ t: 'close' }); this.game.container = null; }
+    if (this.preview) this.preview.stop();
+    document.body.classList.remove('invopen');
     const was = this.open;
     this.open = null;
     if (!silent && was !== 'death') this.game.input.lock();
