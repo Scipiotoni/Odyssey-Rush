@@ -109,18 +109,18 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   if (fem) for (const sx of [-1, 1]) mk(sph(0.05), M.top, chest, sx * 0.052, 0.165, -0.06, 0, 0, 0, 1, 0.85, 0.55);
   else mk(sph(0.11), M.top, chest, 0, 0.18, -0.03, 0, 0, 0, 1.45, 0.8, 0.62); // broad chest
   // clothing details
-  if (L.top === 0 || L.top === 1) {
+  if (!armChest && (L.top === 0 || L.top === 1)) {
     mk(G('vneck', () => { const g = new THREE.ConeGeometry(0.04, 0.09, 3); g.rotateX(Math.PI); return g; }), M.skin, chest, 0, 0.29, -0.1, 0.15, 0, 0, 1, 1, 0.35);
     mk(rbox(fem ? 0.24 : 0.3, 0.09, 0.03, 0.01), M.topD, chest, 0, 0.215, -0.095, 0.05);           // chest panel
   }
-  if (L.top === 0 || L.top === 3) mk(G('collar', () => { const g = new THREE.TorusGeometry(0.06, 0.009, 6, 18); g.rotateX(Math.PI / 2 - 0.25); return g; }), M.topD, chest, 0, 0.325, -0.01);
-  if (L.top === 3) for (const sx of [-1, 1]) mk(rbox(0.035, 0.012, 0.18, 0.005), M.topD, chest, sx * 0.1, 0.305, 0, 0, 0, sx * 0.2);
-  if (L.top === 2) {
+  if (!armChest && (L.top === 0 || L.top === 3)) mk(G('collar', () => { const g = new THREE.TorusGeometry(0.06, 0.009, 6, 18); g.rotateX(Math.PI / 2 - 0.25); return g; }), M.topD, chest, 0, 0.325, -0.01);
+  if (!armChest && L.top === 3) for (const sx of [-1, 1]) mk(rbox(0.035, 0.012, 0.18, 0.005), M.topD, chest, sx * 0.1, 0.305, 0, 0, 0, sx * 0.2);
+  if (!armChest && L.top === 2) {
     mk(G('hood', () => { const g = new THREE.SphereGeometry(0.12, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55); g.rotateX(-1.9); return g; }), M.topD, chest, 0, 0.35, 0.06, 0, 0, 0, 1.05, 0.7, 0.8);
     mk(rbox(0.16, 0.08, 0.02, 0.01), M.topD, spine, 0, 0.1, -waist * 0.64 - 0.008);
     for (const sx of [-1, 1]) mk(capsule(0.004, 0.09), M.white, chest, sx * 0.03, 0.24, -0.11);
   }
-  if (L.top === 4) {
+  if (!armChest && L.top === 4) {
     mk(rbox(0.008, 0.33, 0.006, 0.003), M.metal, chest, 0, 0.13, -0.112);
     mk(rbox(0.008, 0.2, 0.006, 0.003), M.metal, spine, 0, 0.09, -waist * 0.64 - 0.004);
     for (const sx of [-1, 1]) mk(rbox(0.06, 0.12, 0.012, 0.005), M.topD, chest, sx * 0.05, 0.27, -0.1, -0.2, 0, sx * 0.35);
@@ -190,34 +190,143 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   };
   const aL = arm(-1), aR = arm(1);
 
-  // ---------------- armour
+  // ---------------- armour & wearables
   const armor = joint(chest, 0, 0, 0);
   const helmet = joint(head, 0, 0, 0);
   const acol = (id) => ITEMS[id]?.armor?.color ?? 0x888888;
+  const stitch = lam(0x3a2a18), rope = lam(0xb89a62), rivet = lam(0xc8c0b0), rust = lam(0x8a4a24), fur = lam(0xd8c8a8), furD = lam(0x9a8264);
+  const sleeve = (sx, m, mD, len, r0, r1, cuff = true) => {
+    const shJ = sx < 0 ? aL.sh : aR.sh;
+    mk(sph(r0 + 0.006), m, shJ, 0, -0.01, 0, 0, 0, 0, 1.08, 1, 1.08);
+    mk(taper(r0, r1, len), m, shJ);
+    if (cuff) mk(G(`cuff${r1}`, () => { const g = new THREE.TorusGeometry(r1, 0.009, 5, 12); g.rotateX(Math.PI / 2); return g; }), mD, shJ, 0, -len + 0.005, 0);
+    return shJ;
+  };
+  const legWrap = (L_, m, len, r0, r1, onKnee = false) => mk(taper(r0, r1, len), m, onKnee ? L_.kn : L_.hp);
   if (armHead) {
-    const m = lam(acol(armHead));
+    const c = acol(armHead), m = lam(c), mD = lam(shade(c, 0.7)), mL = lam(mix(c, 0xffffff, 0.15));
     if (armHead === 'metal_mask') {
-      mk(sph(0.122, 18, 14), m, helmet, 0, 0.12, 0, 0, 0, 0, 0.98, 1.12, 1.05);
-      mk(rbox(0.12, 0.018, 0.02, 0.006), M.pupil, helmet, 0, 0.135, -0.122);
-      for (const sx of [-1, 1]) mk(sph(0.008), M.metal, helmet, sx * 0.07, 0.19, -0.105);
+      // welded scrap helmet: dome, faceted face plate with a visor slit, cheek guards, rivets and rust
+      mk(G('mdome', () => { const g = new THREE.SphereGeometry(0.125, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.62); return g; }), m, helmet, 0, 0.14, 0.005, 0, 0, 0, 1, 1.12, 1.05);
+      mk(G('mface', () => { const g = new THREE.CylinderGeometry(0.118, 0.1, 0.2, 7, 1, true, Math.PI * 0.55, Math.PI * 0.9); return g; }), mL, helmet, 0, 0.11, 0.0, 0, Math.PI, 0);
+      mk(rbox(0.13, 0.022, 0.03, 0.006), M.pupil, helmet, 0, 0.14, -0.118);                       // visor slit
+      mk(rbox(0.15, 0.018, 0.03, 0.006), mD, helmet, 0, 0.163, -0.116);                           // brow bar
+      mk(rbox(0.012, 0.1, 0.03, 0.004), mD, helmet, 0, 0.085, -0.123);                            // nose ridge weld
+      for (let k = 0; k < 4; k++) mk(rbox(0.07, 0.006, 0.01, 0.002), M.pupil, helmet, 0, 0.065 - k * 0.012, -0.12, 0, 0, 0); // breathing slots
+      for (const sx of [-1, 1]) {
+        mk(rbox(0.03, 0.12, 0.1, 0.01), m, helmet, sx * 0.112, 0.09, -0.02, 0, sx * 0.2, 0);      // cheek guard
+        for (const [y, z] of [[0.19, -0.1], [0.12, -0.12], [0.06, -0.11], [0.14, 0.09]]) mk(sph(0.007, 5, 4), rivet, helmet, sx * 0.075, y, z);
+        mk(sph(0.018, 6, 4), rust, helmet, sx * 0.06, 0.21, 0.04, 0, 0, 0, 1.4, 0.4, 1.2);       // rust patch
+      }
+      mk(rbox(0.02, 0.06, 0.18, 0.008), mD, helmet, 0, 0.245, 0.01);                            // top weld seam
     } else if (armHead === 'cloth_hood') {
-      mk(sph(0.125, 16, 12), m, helmet, 0, 0.125, 0.005, 0, 0, 0, 1, 1.15, 1.05);
-      for (const sx of [-1, 1]) mk(rbox(0.03, 0.02, 0.012, 0.005), M.pupil, helmet, sx * 0.04, 0.135, -0.125);
-      mk(G('rope', () => { const g = new THREE.TorusGeometry(0.075, 0.01, 6, 16); g.rotateX(Math.PI / 2); return g; }), M.belt, helmet, 0, 0.01, -0.01);
+      // burlap sack hood: lumpy, eye holes, stitched seam, drape over the neck tied with rope
+      mk(G('sack', () => { const g = new THREE.SphereGeometry(0.128, 10, 8); const p = g.attributes.position; for (let i2 = 0; i2 < p.count; i2++) { const x = p.getX(i2), y = p.getY(i2), z = p.getZ(i2); const k = 1 + Math.sin(x * 61 + y * 37) * 0.04 + Math.sin(z * 53 - y * 29) * 0.035; p.setXYZ(i2, x * k, y * k, z * k); } g.computeVertexNormals(); return g; }), m, helmet, 0, 0.13, 0.008, 0, 0, 0, 1, 1.16, 1.06);
+      mk(G('sackpeak', () => new THREE.ConeGeometry(0.05, 0.09, 5)), m, helmet, 0, 0.28, 0.03, -0.5, 0, 0.2);
+      for (const sx of [-1, 1]) { mk(G('eyehole', () => new THREE.CircleGeometry(0.022, 7)), M.pupil, helmet, sx * 0.042, 0.142, -0.134, 0, 0, 0, 1.2, 0.8, 1); mk(G('eyering', () => new THREE.TorusGeometry(0.023, 0.004, 4, 10)), stitch, helmet, sx * 0.042, 0.142, -0.133, 0, 0, 0, 1.2, 0.8, 1); }
+      for (let k = 0; k < 7; k++) mk(rbox(0.006, 0.018, 0.006, 0.002), stitch, helmet, 0, 0.26 - k * 0.032, -0.06 - Math.sin(k * 0.45) * 0.07, -0.5 + k * 0.25);  // seam
+      mk(G('drape', () => new THREE.CylinderGeometry(0.1, 0.15, 0.1, 9, 1, true)), m, helmet, 0, 0.005, 0.01);
+      mk(G('rope', () => { const g = new THREE.TorusGeometry(0.085, 0.011, 6, 16); g.rotateX(Math.PI / 2); return g; }), rope, helmet, 0, 0.03, 0.0);
+      mk(capsule(0.008, 0.05), rope, helmet, 0.02, -0.01, -0.09, 0.3, 0, 0.3);
     } else {
-      mk(cap(0.122, 0.5, 0.25), m, helmet, 0, 0.14, 0.005, 0, 0, 0, 1, 1.05, 1.05);
-      mk(G('brim', () => new THREE.CylinderGeometry(0.17, 0.17, 0.012, 20)), m, helmet, 0, 0.17, 0.0);
+      // hide hood: leather hat with a pinched crown, wide stitched brim and a band
+      mk(G('hcrown', () => { const g = new THREE.CylinderGeometry(0.095, 0.118, 0.11, 9); const p = g.attributes.position; for (let i2 = 0; i2 < p.count; i2++) if (p.getY(i2) > 0) p.setY(i2, p.getY(i2) - Math.abs(p.getX(i2)) * 0.25); g.computeVertexNormals(); return g; }), m, helmet, 0, 0.225, 0.005);
+      mk(G('hbrim', () => { const g = new THREE.CylinderGeometry(0.2, 0.19, 0.012, 16); const p = g.attributes.position; for (let i2 = 0; i2 < p.count; i2++) { const x = p.getX(i2); p.setY(i2, p.getY(i2) + (Math.abs(x) / 0.2) ** 2 * 0.035); } g.computeVertexNormals(); return g; }), mD, helmet, 0, 0.17, 0.005);
+      mk(G('hband', () => new THREE.CylinderGeometry(0.12, 0.12, 0.024, 12)), lam(0x2a1a0e), helmet, 0, 0.19, 0.005);
+      mk(rbox(0.016, 0.03, 0.012, 0.004), rivet, helmet, 0.08, 0.19, -0.09);
+      mk(G('feather', () => { const g = new THREE.ConeGeometry(0.012, 0.12, 4); return g; }), lam(0xe8e0d0), helmet, 0.11, 0.24, 0.04, 0, 0, -0.5);
+      mk(cap(0.122, 0.48, 0.2), m, helmet, 0, 0.13, 0.005, 0, 0, 0, 1, 1.02, 1.04);
     }
   }
   if (armChest) {
-    const m = lam(acol(armChest));
+    const c = acol(armChest), m = lam(c), mD = lam(shade(c, 0.72)), mL = lam(mix(c, 0xffffff, 0.12));
+    const over = (k, pts) => pts.map(([r, y]) => [r === 0.001 ? r : r + k, y]);
     if (armChest === 'metal_chest') {
-      mk(rbox(0.32, 0.26, 0.05, 0.03), m, armor, 0, 0.16, -0.1, 0.05);
-      mk(rbox(0.3, 0.22, 0.04, 0.03), m, armor, 0, 0.16, 0.1);
-      for (const sx of [-1, 1]) mk(sph(0.075), m, armor, sx * (sh - 0.01), 0.26, 0, 0, 0, 0, 1.1, 0.7, 1);
-    } else mk(lathe(`vest${fem}`, chestPts.map(([r, y]) => [r === 0.001 ? r : r + 0.012, y]).slice(0, -2).concat([[0.001, 0.3]]), 0.66), m, armor);
+      // shaped breast + back plate, plated belly, layered pauldrons, leather straps, rivets
+      mk(lathe(`plate${fem}`, over(0.02, chestPts).slice(1, -1).concat([[0.001, 0.32]]).map(([r, y], k) => [r, y]), 0.7), m, armor, 0, 0, 0, 0, 0, 0, 1.02, 1, 1.05);
+      mk(rbox(0.07, 0.24, 0.02, 0.008), mL, armor, 0, 0.16, -0.13, 0.04);                     // centre ridge
+      for (let k = 0; k < 3; k++) mk(rbox(waist * 2.05, 0.05, waist * 1.45, 0.012), k % 2 ? mD : m, spine, 0, 0.17 - k * 0.055, 0);   // banded belly plates
+      for (const sx of [-1, 1]) sleeve(sx, lam(0x4a3a2a), lam(0x2a1a0e), 0.285, 0.079, 0.07); // padded gambeson sleeves under the plates
+      for (const sx of [-1, 1]) {
+        const shJ = sx < 0 ? aL.sh : aR.sh;
+        for (let k = 0; k < 3; k++) mk(G(`paul${k}`, () => { const g = new THREE.SphereGeometry(0.085 - k * 0.006, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5); return g; }), k % 2 ? mD : m, shJ, sx * 0.01, 0.02 - k * 0.04, 0, 0, 0, sx * 0.25, 1.1, 0.8 - k * 0.1, 1.1);
+        for (const [y, z] of [[0.28, -0.12], [0.2, -0.135], [0.1, -0.13], [0.24, 0.12]]) mk(sph(0.008, 5, 4), rivet, armor, sx * 0.1, y, z);
+        mk(rbox(0.03, 0.2, 0.012, 0.004), lam(0x3a2414), armor, sx * 0.17, 0.15, 0, 0, 0, sx * 0.05);   // side straps
+        mk(sph(0.02, 6, 4), rust, armor, sx * 0.09, 0.13, -0.135, 0, 0, 0, 1.4, 1, 0.3);
+      }
+      mk(rbox(0.2, 0.012, 0.012, 0.004), M.pupil, armor, 0, 0.255, -0.142);                  // weld line
+    } else {
+      const hide = armChest === 'leather_vest';
+      // garment over the torso (chest + belly), hem, sleeves
+      mk(lathe(`tunic${fem}${hide}`, over(hide ? 0.014 : 0.012, chestPts), 0.66), m, armor);
+      mk(lathe(`tunicA${fem}${hide}`, over(0.014, [[0.001, -0.05], [hw * 1.02, -0.05], [waist * 1.02, 0.08], [waist * 1.05, 0.2], [0.001, 0.2]]), 0.66), m, spine);
+      if (hide) {
+        // open front with lacing, fur collar and shoulder fur, belt with pouch
+        mk(rbox(0.03, 0.42, 0.012, 0.004), lam(0x2a1a0e), armor, 0, 0.12, -0.125);
+        for (let k = 0; k < 6; k++) mk(rbox(0.05, 0.005, 0.006, 0.002), rope, armor, 0, 0.27 - k * 0.055, -0.13, 0, 0, k % 2 ? 0.5 : -0.5);
+        mk(G('furcollar', () => { const g = new THREE.TorusGeometry(0.1, 0.035, 6, 14); g.rotateX(Math.PI / 2); return g; }), fur, chest, 0, 0.31, 0.0, 0, 0, 0, 1.1, 1, 0.85);
+        for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; mk(G('furtuft', () => new THREE.ConeGeometry(0.02, 0.05, 4)), k % 2 ? fur : furD, chest, Math.cos(a) * 0.11, 0.33, Math.sin(a) * 0.095, Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9); }
+        for (const sx of [-1, 1]) sleeve(sx, m, lam(0x2a1a0e), 0.285, 0.079, 0.07);
+        mk(G('vbelt' + fem, () => { const g = new THREE.TorusGeometry(hw * 1.0, 0.018, 5, 22); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.68); return g; }), lam(0x2a1a0e), hips, 0, 0.07, 0);
+        mk(rbox(0.06, 0.07, 0.035, 0.012), mD, hips, 0.1, 0.03, -0.07, 0, -0.4, 0);   // pouch
+        mk(rbox(0.04, 0.04, 0.01, 0.006), rivet, hips, 0, 0.07, -hw * 0.68 - 0.012);  // buckle
+      } else {
+        // burlap tunic: frayed hem, patches, stitched seams, rope belt, rough short sleeves
+        for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; mk(G('fray', () => new THREE.ConeGeometry(0.03, 0.05, 3)), k % 2 ? m : mD, spine, Math.cos(a) * hw * 1.02, -0.075, Math.sin(a) * hw * 0.7, Math.PI + Math.sin(a) * 0.3, 0, Math.cos(a) * 0.3); }
+        mk(rbox(0.08, 0.07, 0.012, 0.01), lam(shade(c, 0.6)), armor, -0.07, 0.18, -0.128, 0.1, 0, 0.2);    // patch
+        for (let k = 0; k < 4; k++) mk(rbox(0.004, 0.016, 0.004, 0.001), stitch, armor, -0.07 + 0.035, 0.205 - k * 0.018, -0.134);
+        mk(rbox(0.06, 0.05, 0.012, 0.008), lam(mix(c, 0x6a5a3a, 0.5)), spine, 0.06, 0.08, -waist * 0.7 - 0.01, 0, 0, -0.15);
+        for (let k = 0; k < 9; k++) mk(rbox(0.005, 0.02, 0.005, 0.001), stitch, armor, 0.0, 0.3 - k * 0.035, -0.13);
+        mk(G('ropebelt' + fem, () => { const g = new THREE.TorusGeometry(hw * 1.03, 0.012, 5, 22); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.68); return g; }), rope, hips, 0, 0.06, 0);
+        mk(capsule(0.009, 0.09), rope, hips, 0.05, 0.0, -hw * 0.68, 0.1, 0, 0.2);
+        for (const sx of [-1, 1]) sleeve(sx, m, mD, 0.285, 0.079, 0.07);
+      }
+    }
   }
-  if (armLegs === 'metal_legs') for (const sx of [-1, 0, 1]) mk(rbox(0.1, 0.2, 0.012, 0.005), lam(acol(armLegs)), hips, sx * 0.09, -0.12, -0.11 + Math.abs(sx) * 0.02, 0, sx * 0.4, 0);
+  if (armLegs) {
+    const c = acol(armLegs), m = lam(c), mD = lam(shade(c, 0.7));
+    const boots = lam(0x3a2414), bootsD = lam(0x24160a);
+    // leather boots over the shoes (fully covering the sneaker and its sole)
+    const boot = (L_) => {
+      mk(taper(0.066, 0.061, 0.13), boots, L_.an, 0, 0.11, 0);
+      mk(rbox(0.118, 0.085, 0.262, 0.03), boots, L_.an, 0, -0.018, -0.045);
+      mk(rbox(0.124, 0.036, 0.272, 0.01), bootsD, L_.an, 0, -0.068, -0.045);
+      mk(G('bootcuff', () => { const g = new THREE.TorusGeometry(0.066, 0.01, 5, 12); g.rotateX(Math.PI / 2); return g; }), bootsD, L_.an, 0, 0.11, 0);
+    };
+    if (armLegs === 'metal_legs') {
+      // roadsign kilt: painted sign plates hanging from a belt, plus shin guards and boots
+      const signs = [[0xd8b21e, 0x222222], [0xc8281e, 0xf0f0f0], [0x2a6ad0, 0xf0f0f0], [0x2a8a3a, 0xf0f0f0], [0xd8b21e, 0x222222]];
+      for (let k = 0; k < 9; k++) {
+        const a = (k / 9) * Math.PI * 2 + Math.PI / 2, [cA, cB] = signs[k % signs.length];
+        const px = Math.cos(a) * (hw + 0.012), pz = Math.sin(a) * (hw * 0.72 + 0.012);
+        const plate = mk(rbox(0.085, 0.17, 0.01, 0.004), lam(cA), hips, px, -0.06, pz, 0.12 * Math.sin(a), -a + Math.PI / 2, 0);
+        mk(rbox(0.06, 0.012, 0.012, 0.002), lam(cB), plate, 0, 0.03, -0.004);   // painted stripe
+        mk(sph(0.008, 5, 4), rivet, plate, 0, 0.07, -0.006);
+      }
+      mk(G('kbelt' + fem, () => { const g = new THREE.TorusGeometry(hw * 1.06, 0.02, 5, 22); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.72); return g; }), lam(0x2a1a0e), hips, 0, 0.03, 0);
+      for (const L_ of [lL, lR]) {
+        mk(rbox(0.11, 0.3, 0.05, 0.012), m, L_.kn, 0, -0.17, -0.04);           // shin guard
+        mk(sph(0.055, 7, 5), mD, L_.kn, 0, -0.01, -0.035, 0, 0, 0, 1.1, 1, 0.8); // knee cap
+        for (const y of [-0.08, -0.26]) mk(rbox(0.13, 0.016, 0.1, 0.004), lam(0x2a1a0e), L_.kn, 0, y, 0);
+        boot(L_);
+      }
+    } else {
+      const hide = armLegs === 'leather_pants';
+      for (const L_ of [lL, lR]) {
+        legWrap(L_, m, 0.42, 0.087, 0.07);
+        legWrap(L_, m, 0.39, 0.07, 0.058, true);
+        mk(sph(0.08, 8, 6), m, L_.hp, 0, 0, 0, 0, 0, 0, 1.05, 1, 1.05);
+        if (hide) {
+          mk(rbox(0.1, 0.11, 0.05, 0.016), mD, L_.kn, 0, -0.02, -0.05);      // knee pad
+          for (let k = 0; k < 5; k++) mk(rbox(0.006, 0.006, 0.03, 0.002), rope, L_.hp, 0.075, -0.06 - k * 0.07, 0, 0, 0, 0.6);  // side lacing
+        } else {
+          mk(rbox(0.07, 0.08, 0.012, 0.01), lam(shade(c, 0.62)), L_.hp, 0.02, -0.25, -0.07, 0.05);  // patch
+          mk(G('ankle', () => { const g = new THREE.TorusGeometry(0.06, 0.01, 5, 12); g.rotateX(Math.PI / 2); return g; }), rope, L_.kn, 0, -0.37, 0);
+        }
+        boot(L_);
+      }
+    }
+  }
 
   if (armBack) {
     // bag on the back (+z is behind the character): bigger bag = bigger pack

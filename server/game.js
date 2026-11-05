@@ -246,6 +246,8 @@ export class Game {
       case 'vpaint': return this.onVehiclePaintReq(p, m);
       case 'agive': return this.onAdminGive(p, m);
       case 'reset_world': return this.onResetWorld(p, m);
+      case 'throwrock': return this.onThrowRock(p, m);
+      case 'rockland': return this.onRockLand(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
@@ -1348,6 +1350,30 @@ export class Game {
     this.sendStats(p);
   }
 
+  // Rocks: thrown in an arc, hurt what they hit and land as a pickup
+  onThrowRock(p, m) {
+    const sel = num(m.sel) | 0, st = p.inv[sel];
+    if (!p.alive || !st || st.id !== 'rock') return;
+    const t = now();
+    if (t - (p.lastRock || 0) < 0.55) return;
+    p.lastRock = t;
+    st.n -= 1; if (st.n <= 0) p.inv[sel] = null;
+    p.rockInFlight = (p.rockInFlight || 0) + 1;
+    this.sendInv(p);
+    const a = Array.isArray(m.a) ? m.a.slice(0, 3).map((v) => num(v)) : [p.x, p.y + 1.5, p.z], v = Array.isArray(m.v) ? m.v.slice(0, 3).map((x) => Math.max(-40, Math.min(40, num(x)))) : [0, 0, 0];
+    this.toNear(p.x, p.z, 120, { t: 'fx', k: 'throw', a, v, dur: Math.min(3, num(m.dur)) }, p);
+  }
+  onRockLand(p, m) {
+    if (!(p.rockInFlight > 0)) return;
+    p.rockInFlight--;
+    const pt = Array.isArray(m.pt) ? m.pt.slice(0, 3).map((v) => num(v)) : null;
+    if (!pt || Math.hypot(pt[0] - p.x, pt[2] - p.z) > 45) return;
+    const h = m.hit;
+    if (h && h.k === 'p') { const o = this.byPid.get(num(h.id)); if (o && o !== p && o.alive && Math.hypot(o.x - pt[0], o.z - pt[2]) < 3) this.damagePlayer(o, h.hs ? 22 : 12, p, !!h.hs); }
+    else if (h && h.k === 'a') { const a = this.animals.get(String(h.id)); if (a && Math.hypot(a.x - pt[0], a.z - pt[2]) < 4) this.damageAnimal(a, h.hs ? 30 : 18, p); }
+    const gy = this.world.ground(pt[0], pt[2]);
+    this.dropBag(pt[0], Math.max(gy, pt[1] - 0.05), pt[2], [newStack('rock', 1)]);
+  }
   onThrow(p, m) {
     let sel = num(m.sel) | 0;
     if (m.id && ITEMS[m.id]?.explosive && p.inv[sel]?.id !== m.id) sel = p.inv.findIndex((s) => s && s.id === m.id);

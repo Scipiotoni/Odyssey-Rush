@@ -26,13 +26,14 @@ import { audio } from './audio.js';
 const _rv = new THREE.Vector3(), _rq = new THREE.Quaternion();
 
 const $ = (id) => document.getElementById(id);
-const DEFAULTS = { viewDist: 900, sens: 1, fov: 75, shadows: true, volume: 0.6 };
+const MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4;
+const DEFAULTS = { viewDist: 900, sens: 1, fov: 75, shadows: true, volume: 0.6, detail: MOBILE ? 1 : 2 };
 
 class Game {
   constructor() {
     this.settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('or_settings') || '{}') };
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, [1, 1, 1.25, 1.5][this.settings.detail ?? 2]));
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.shadowMap.enabled = this.settings.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -91,6 +92,7 @@ class Game {
     this.structures = new Structures(this.scene, this.physics, this.effects);
     this.nature = new Nature(this.scene, this.world, this.physics);
     this.structures.onChange = (x, z) => this.nature.grass.invalidate(x, z);
+    this.nature.setDetail(this.settings.detail ?? 2); this.terrain.setDetail(this.settings.detail ?? 2);
     this.entities = new Entities(this.scene, this.effects);
     this.player = new Player(this);
     this.ui = new UI(this);
@@ -110,6 +112,13 @@ class Game {
     $('resume').onclick = () => this.ui.close();
   }
 
+  // Detail level 0-3: dense grass, ground cover, wildlife, tree distance and render resolution
+  applyDetail(v) {
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, [1, 1, 1.25, 1.5][v]));
+    this.renderer.setSize(innerWidth, innerHeight);
+    this.nature?.setDetail(v);
+    this.terrain?.setDetail(v);
+  }
   setupSettings() {
     const s = this.settings;
     const bind = (id, key, fmt, apply) => {
@@ -126,6 +135,7 @@ class Game {
     bind('set-view', 'viewDist', (v) => v + 'm', (v) => this.terrain.setViewDist(v));
     bind('set-sens', 'sens', (v) => (+v).toFixed(1), () => {});
     bind('set-fov', 'fov', (v) => v + '°', () => {});
+    bind('set-detail', 'detail', () => '', (v) => this.applyDetail(v));
     bind('set-shadows', 'shadows', () => '', (v) => { this.renderer.shadowMap.enabled = v; this.sky.sun.castShadow = v; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); });
     bind('set-vol', 'volume', (v) => Math.round(v * 100) + '%', (v) => audio.setVolume(v));
   }
@@ -342,6 +352,7 @@ class Game {
 
   onFx(m) {
     const cam = this.camera.position;
+    if (m.k === 'throw') { this.held.showThrown(m.a, m.v, m.dur); return; }
     if (m.k === 'spray') { if (cam.distanceTo(new THREE.Vector3(...m.p)) < 30) audio.spray(); return; }
     if (m.k === 'shot') {
       const p = this.entities.players.get(m.pid);

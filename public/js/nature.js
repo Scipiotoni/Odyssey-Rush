@@ -5,14 +5,14 @@ import { BIOME, POI_FLAT } from '/shared/worldgen.js';
 import { hashRng } from '/shared/noise.js';
 
 // ---------------------------------------------------------------- wind shader
-export const WIND = { uTime: { value: 0 }, uWind: { value: 1 } };
+export const WIND = { uTime: { value: 0 }, uWind: { value: 1 }, uFade: { value: 60 } };
 // Clone a material and bend its vertices with the wind: more at the top (y / height).
 // fade = distance (m) at which the geometry shrinks into the ground (used by grass).
 export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0, key = '' } = {}) {
   const m = base.clone();
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.uTime = WIND.uTime; sh.uniforms.uWind = WIND.uWind;
-    sh.vertexShader = 'uniform float uTime;\nuniform float uWind;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    sh.uniforms.uTime = WIND.uTime; sh.uniforms.uWind = WIND.uWind; sh.uniforms.uFade = WIND.uFade;
+    sh.vertexShader = 'uniform float uTime;\nuniform float uWind;\nuniform float uFade;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       {
         vec3 wp = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         #ifdef USE_INSTANCING
@@ -26,7 +26,7 @@ export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0
         transformed.x += g * k;
         transformed.z += (cos(t * 0.83 + wp.z * 0.11) * 0.45 + 0.25) * k * gust;
         ${fade ? `float dc = distance(wp.xz, cameraPosition.xz);
-        float fs = 1.0 - smoothstep(${(fade * 0.72).toFixed(1)}, ${fade.toFixed(1)}, dc);
+        float fs = 1.0 - smoothstep(uFade * 0.72, uFade, dc);
         transformed *= fs;` : ''}
       }`);
   };
@@ -35,9 +35,10 @@ export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0
 }
 
 // ---------------------------------------------------------------- grass
-const CELL = 16, RADIUS = 3; // 7x7 cells of 16 m around the player (~56 m)
+const CELL = 16; // grass cells of 16 m; how many around the player depends on the detail setting
+let RADIUS = 3;
 const VC = new THREE.MeshLambertMaterial({ vertexColors: true }); // blades are built two-sided with upward normals so both sides are lit
-const GRASS_MAT = windMaterial(VC, { amp: 0.14, height: 0.55, freq: 1.7, fade: CELL * (RADIUS + 0.4), key: 'grass' });
+const GRASS_MAT = windMaterial(VC, { amp: 0.14, height: 0.55, freq: 1.7, fade: 1, key: 'grass' });
 
 function tuftGeometry(blades, hMin, hMax, seed) {
   const rnd = hashRng(seed, 1, 2, 3);
@@ -89,7 +90,7 @@ class Grass {
     const c = this.cells.get(k);
     if (c) { this.dispose(c); this.cells.delete(k); this.queue.unshift(k); }
   }
-  setDensity(d) { if (d !== this.density) { this.density = d; for (const c of this.cells.values()) this.dispose(c); this.cells.clear(); this.center = [NaN, NaN]; } }
+  setDensity(d, radius) { RADIUS = radius; WIND.uFade.value = CELL * (radius + 0.4); if (d !== this.density || radius !== this.radius) { this.radius = radius; this.density = d; for (const c of this.cells.values()) this.dispose(c); this.cells.clear(); this.center = [NaN, NaN]; } }
   update(px, pz) {
     const cx = Math.floor(px / CELL), cz = Math.floor(pz / CELL);
     if (cx !== this.center[0] || cz !== this.center[1]) {
@@ -249,6 +250,13 @@ export class Nature {
     this.sound = { bird: 2, cricket: 1, owl: 20, wave: 3 };
   }
 
+  setDetail(v) {
+    this.detail = v;
+    this.grass.setDensity([0, 0.45, 1, 1.35][v], [0, 2, 3, 4][v]);
+    this.butterflies.forEach((b, i) => { b.off = i >= [3, 7, 14, 14][v]; if (b.off) { b.alive = false; b.m.visible = false; } });
+    this.rabbits.forEach((r, i) => { r.off = i >= [1, 3, 5, 5][v]; if (r.off) { r.alive = false; r.m.visible = false; } });
+    this.flocks.forEach((f, i) => { f.off = i >= [1, 2, 3, 3][v]; for (const b of f.birds) b.m.visible = !f.off; });
+  }
   update(dt, cam, player, day, light, audio) {
     this.t += dt;
     WIND.uTime.value = this.t;
@@ -261,6 +269,7 @@ export class Nature {
 
     // ---- birds by day (gulls near the coast), bats at night
     for (const f of this.flocks) {
+      if (f.off) continue;
       f.a += f.sp * dt * (night ? 2.2 : 1);
       const cx = px + Math.cos(f.a * 0.37) * f.r * 0.4, cz = pz + Math.sin(f.a * 0.29) * f.r * 0.4;
       f.c.set(cx + Math.cos(f.a) * f.r, 0, cz + Math.sin(f.a) * f.r);
@@ -280,12 +289,13 @@ export class Nature {
         b.m.rotation.set(0, Math.atan2(tang.x, tang.z), Math.sin(this.t * 0.5 + b.ph) * 0.25);
         const flap = night ? Math.sin(this.t * 22 + b.ph) * 0.9 : (Math.sin(this.t * 0.9 + b.ph) > 0.2 ? Math.sin(this.t * 12 + b.ph) * 0.8 : 0.12); // glide now and then
         b.m.userData.wings[0].rotation.z = flap; b.m.userData.wings[1].rotation.z = -flap;
-        b.m.visible = biome !== BIOME.SNOW || !night;
+        b.m.visible = !f.off && (biome !== BIOME.SNOW || !night);
       });
     }
 
     // ---- butterflies over meadows by day
     for (const b of this.butterflies) {
+      if (b.off) continue;
       const want = !night && green && light > 0.5;
       if (!b.alive || b.p.distanceTo(cam) > 34) {
         b.alive = false; b.m.visible = false;
@@ -311,6 +321,7 @@ export class Nature {
 
     // ---- rabbits: hop around, bolt away from you
     for (const r of this.rabbits) {
+      if (r.off) continue;
       const want = !night && green && biome !== BIOME.SWAMP;
       const d = Math.hypot(r.p.x - px, r.p.z - pz);
       if (!r.alive || d > 60) {

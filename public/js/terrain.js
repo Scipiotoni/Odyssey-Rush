@@ -28,7 +28,7 @@ const FLOWER_COLS = [0xf2d23a, 0xe2485e, 0xf4f0ea, 0x9a62d8, 0xf08a2a, 0x5aa0f0,
 const _tc = new THREE.Color();
 
 const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-const NODE_RADIUS = 3;   // chunks around player with resource nodes
+let NODE_RADIUS = 3;     // chunks around player with resource nodes (2 on low detail)
 const DETAIL_RADIUS = 1; // chunks around player with grass / flowers / pebbles
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -63,6 +63,7 @@ export class Terrain {
     this.maxInflight = this.workers.length * 2;
   }
 
+  setDetail(v) { this.detailCount = [220, 420, 700, 950][v]; const nr = v === 0 ? 2 : 3; if (nr !== NODE_RADIUS) { NODE_RADIUS = nr; this.center = [NaN, NaN]; } for (const [, list] of this.details) for (const m of list) { this.scene.remove(m); m.dispose(); } this.details.clear(); this.center = [NaN, NaN]; }
   setViewDist(v) { this.viewDist = v; this.center = [NaN, NaN]; }
   lodFor(d) { return d <= 2 ? 1 : d <= 4 ? 2 : d <= 7 ? 4 : 8; }
 
@@ -220,7 +221,7 @@ export class Terrain {
   buildDetail(cx, cz) {
     const w = this.world, rng = hashRng(cx, cz, 404, w.seed);
     const lists = { flower: [], pebbles: [], fern: [], bush: [], mushroom: [], reeds: [], stick: [] };
-    for (let i = 0; i < 700; i++) {
+    for (let i = 0; i < (this.detailCount || 700); i++) {
       const x = cx * CHUNK + rng() * CHUNK, z = cz * CHUNK + rng() * CHUNK;
       const h = w.ground(x, z);
       if (h < 0.8) continue;

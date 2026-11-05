@@ -212,6 +212,12 @@ export class Held {
     }
     if (d.tool) {
       if (L && performance.now() >= this.coolUntil) this.melee(st, d);
+      if (st.id === 'rock') {
+        g.ui.prompt('<small><kbd>LMB</kbd> hit · <kbd>RMB</kbd> throw the rock (pick it up again with <kbd>E</kbd>)</small>');
+        if (input.mouse.rightPressed && performance.now() >= this.coolUntil) this.throwRock(st);
+        g.builder.hide();
+        return;
+      }
       this.idlePrompt();
       return;
     }
@@ -324,6 +330,39 @@ export class Held {
     mesh.lookAt(b); mesh.rotateX(Math.PI / 2);
     this.game.scene.add(mesh);
     this.projectiles.push({ kind: 'rocket', mesh, a, b, t: 0, dur: Math.max(0.05, a.distanceTo(b) / 60) });
+  }
+
+  // Throw the rock you're holding: simulate its arc against the world and players/animals
+  throwRock(st) {
+    const g = this.game;
+    this.coolUntil = performance.now() + 700;
+    this.swingAnim(0.35);
+    const o = g.camera.position.clone().add(new THREE.Vector3(0.15, -0.05, -0.3).applyQuaternion(g.camera.quaternion));
+    const v = this.dir().multiplyScalar(24).add(new THREE.Vector3(0, 2.2, 0));
+    const targets = this.targets();
+    let pos = o.clone(), t = 0, land = null, hit = null;
+    const step = 0.025;
+    for (; t < 3; t += step) {
+      const tt = t + step;
+      const nx = o.x + v.x * tt, ny = o.y + v.y * tt - 4.9 * tt * tt, nz = o.z + v.z * tt;
+      const seg = new THREE.Vector3(nx - pos.x, ny - pos.y, nz - pos.z), len = seg.length();
+      const h = g.physics.raycast(pos, seg.normalize(), len, targets, { filter: (c) => !c.ghost, step: 0.3 });
+      if (h) { land = h.point; hit = h; t += step * (h.t / len); break; }
+      pos.set(nx, ny, nz);
+    }
+    if (!land) land = pos;
+    const mesh = makeItemModel('rock'); mesh.scale.setScalar(1.1);
+    g.scene.add(mesh);
+    const sel = g.sel, tgt = hit && (hit.kind === 'p' || hit.kind === 'a') ? { k: hit.kind, id: hit.id, hs: !!hit.head } : null;
+    g.net.send({ t: 'throwrock', sel, a: [o.x, o.y, o.z], v: [v.x, v.y, v.z], dur: t });
+    this.projectiles.push({ kind: 'rock', mesh, a: o, v, t: 0, dur: t, done: () => g.net.send({ t: 'rockland', pt: [land.x, land.y + 0.05, land.z], hit: tgt }) });
+    audio.swing();
+  }
+  // someone else's rock flying past
+  showThrown(a, v, dur) {
+    const mesh = makeItemModel('rock'); mesh.scale.setScalar(1.1);
+    this.game.scene.add(mesh);
+    this.projectiles.push({ kind: 'rock', mesh, a: new THREE.Vector3(...a), v: new THREE.Vector3(...v), t: 0, dur });
   }
 
   throwGrenade(st, d) {
