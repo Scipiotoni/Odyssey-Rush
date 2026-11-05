@@ -15,7 +15,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export const CONTROLS = [
   ['WASD', 'Move'], ['Shift', 'Sprint'], ['Ctrl / C', 'Crouch'], ['Space', 'Jump / swim up'], ['LMB', 'Use / attack / build'], ['RMB', 'Aim · build menu · repair'],
   ['E', 'Interact / pick up / enter vehicle'], ['R', 'Reload · rotate piece · flip vehicle'], ['1-6 / wheel', 'Belt slots'], ['Tab', 'Inventory & crafting'],
-  ['Q', 'Crafting'], ['M', 'Map'], ['L', 'Clan'], ['F', 'Drink water (stand in it)'], ['X', 'Demolish (hammer, own piece)'], ['V', 'Vehicle camera'], ['Enter', 'Chat'], ['Esc', 'Pause / settings'],
+  ['Q', 'Crafting'], ['B', 'Build wheel (holding a plan)'], ['M', 'Map'], ['L', 'Clan'], ['F', 'Drink water (stand in it)'], ['X', 'Demolish (hammer, own piece)'], ['V', 'Vehicle camera'], ['Enter', 'Chat'], ['Esc', 'Pause / settings'],
 ];
 
 const BIOME_COLORS = { [BIOME.OCEAN]: [30, 70, 105], [BIOME.BEACH]: [214, 198, 140], [BIOME.GRASS]: [110, 160, 70], [BIOME.FOREST]: [55, 105, 45], [BIOME.DESERT]: [215, 170, 105], [BIOME.SWAMP]: [80, 90, 55], [BIOME.SNOW]: [230, 235, 245], [BIOME.ROCK]: [130, 125, 118] };

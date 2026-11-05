@@ -51,6 +51,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | 1–6, wheel | Belt slots |
 | E | Interact: pick up, loot, open doors/boxes, authorize at a tool cupboard, enter / repair vehicles |
 | Tab or Q | Inventory & crafting (drag items, Shift-click quick move, right-click use/equip, drag out to drop) |
+| B | Open / close the build wheel (holding a building plan; RMB works too) |
 | R | Reload · rotate building piece · flip a vehicle back on its wheels |
 | F | Drink (standing in a river or lake — the ocean is salty) |
 | L | Clan menu (create, invite, accept, kick) · clan chat: type `/c message` |

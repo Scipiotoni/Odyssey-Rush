@@ -525,7 +525,7 @@ class Game {
     else if (code === 'KeyL') { if (ui.open === 'clan') ui.close(); else if (!ui.open) ui.show('clan'); }
     else if (code === 'Escape') { if (ui.open && ui.open !== 'pause') ui.close(); }
     else if (code === 'Enter' && !ui.open) { this.input.unlock(); ui.openChat(); }
-    else if (code === 'KeyB' && ui.open === 'build') ui.close();
+    else if (code === 'KeyB') { if (ui.open === 'build') ui.close(); else if (!ui.open && this.inv[this.sel]?.id === 'building_plan') ui.show('build'); }
   }
 
   // ------------------------------------------------------------------ main loop
