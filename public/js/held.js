@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { ITEMS, NODES, FIST } from '/shared/items.js';
 import { makeItemModel, makeFPArm } from './models.js';
+import { gunStats, modsKey } from '/shared/gunmods.js';
 import { audio } from './audio.js';
 import { countItem } from './ui.js';
 
@@ -43,20 +44,22 @@ export class Held {
   refreshModel() {
     const it = this.item();
     const id = it ? it.st.id : null;
-    if (id === this.vmId) return;
-    this.vmId = id;
+    const key = id ? id + '|' + modsKey(it.st.mods) : null;
+    if (key === this.vmId) return;
+    this.vmId = key;
     if (this.vmItem) this.vm.remove(this.vmItem);
     this.vm.remove(this.arm);
     this.reload = 0; this.useT = 0; this.swing = null; this.game.ui.progress(null);
     this.equip = 0; // play the raise animation
     if (id) audio.click();
     if (!id) { this.vmItem = null; this.vm.add(this.arm); this.isGun = false; this.gun = null; return; } // bare fists
-    this.vmItem = makeItemModel(id);
+    this.vmItem = makeItemModel(id, it.st.mods);
     this.vmItem.traverse((o) => { o.castShadow = false; });
     this.vm.add(this.vmItem);
     this.vm.add(this.arm);
     const d = ITEMS[id];
-    this.isGun = !!d.gun; this.gun = d.gun || null;
+    this.isGun = !!d.gun; this.gun = d.gun ? gunStats(it.st) : null;
+    this.setGunLight(!!this.gun?.light);
     if (d.gun) { this.vmItem.rotation.set(0, 0, 0); this.vmItem.scale.setScalar(1); this.vmItem.position.set(0, 0, 0); }
     else if (d.tool || d.cat === 'weapon' || d.cat === 'tool') { this.vmItem.rotation.set(0.35, -0.3, 0.1); this.vmItem.scale.setScalar(0.62); this.vmItem.position.set(0.02, -0.06, 0); }
     else { this.vmItem.rotation.set(0.4, 0.6, 0); this.vmItem.scale.setScalar(1.1); this.vmItem.position.set(0.0, 0.0, -0.08); }
@@ -124,6 +127,28 @@ export class Held {
     document.getElementById('crosshair')?.classList.toggle('hidden', scoped || this.ads > 0.7);
     this.vm.visible = !scoped && this.vm.visible;
   }
+  // weapon light: a spotlight from the gun, on at night and underground
+  setGunLight(on) {
+    if (on && !this.spot) {
+      this.spot = new THREE.SpotLight(0xfff4dc, 0, 60, 0.42, 0.45, 1.4);
+      this.spot.position.set(0.2, -0.1, -0.4);
+      this.spot.target.position.set(0.1, -0.1, -10);
+      this.game.camera.add(this.spot); this.game.camera.add(this.spot.target);
+    }
+    if (this.spot) this.spot.visible = on;
+  }
+  // red laser dot where the gun points (hip fire)
+  updateLaser(on) {
+    const g = this.game;
+    if (!this.laserDot) {
+      this.laserDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff2010, depthTest: false }));
+      this.laserDot.renderOrder = 9; g.scene.add(this.laserDot);
+    }
+    this.laserDot.visible = on;
+    if (!on) return;
+    const hit = g.physics.raycast(g.camera.position, this.dir(), 120, null, { filter: (c) => !c.ghost, step: 1.5 });
+    if (hit) { this.laserDot.position.copy(hit.point); this.laserDot.scale.setScalar(Math.max(0.6, g.camera.position.distanceTo(hit.point) * 0.06)); } else this.laserDot.visible = false;
+  }
   landed(speed) { if (speed > 3) this.dip.v += Math.min(4, speed * 0.25); }
 
   // ------------------------------------------------------------ projectiles (rockets / grenades)
@@ -148,6 +173,7 @@ export class Held {
     const g = this.game;
     this.refreshModel();
     this.vm.visible = true;
+    if (this.spot?.visible) this.spot.intensity = g.sky.dayLight < 0.45 || g.player.pos.y < -100 ? 70 : 0;
     this.animate(dt, input, active);
     this.updateProjectiles(dt);
     const it = this.item();
@@ -189,11 +215,12 @@ export class Held {
     if (d.tool?.hammer) { g.builder.updateHammer(input); return; }
     if (d.gun) {
       if (input.hit('KeyR')) this.startReload(st, d);
+      this.updateLaser(!!this.gun?.laser && this.ads < 0.5);
       if ((d.gun.auto ? L : LP) && performance.now() >= this.coolUntil && !g.player.sprinting) {
         if ((st.a || 0) > 0) this.fire(st, d);
         else { audio.click(); this.coolUntil = performance.now() + 300; if (countItem(g.inv, d.gun.ammo) > 0) this.startReload(st, d); }
       }
-      if (d.gun.scope) g.ui.prompt(this.ads > 0.85 ? '' : '<small><kbd>RMB</kbd> scope</small>');
+      if (this.gun?.scope) g.ui.prompt(this.ads > 0.85 ? '' : '<small><kbd>RMB</kbd> scope</small>');
       else this.idlePrompt();
       return;
     }
@@ -250,8 +277,9 @@ export class Held {
   }
 
   startReload(st, d) {
-    if ((st.a || 0) >= d.gun.mag || countItem(this.game.inv, d.gun.ammo) <= 0) return;
-    this.reload = this.reloadDur = d.gun.reload;
+    const gs = gunStats(st);
+    if ((st.a || 0) >= gs.mag || countItem(this.game.inv, gs.ammo) <= 0) return;
+    this.reload = this.reloadDur = gs.reload;
     audio.click();
   }
 
@@ -286,13 +314,13 @@ export class Held {
   }
 
   fire(st, d) {
-    const g = this.game, gun = d.gun, p = g.player;
+    const g = this.game, gun = gunStats(st), p = g.player;
     this.coolUntil = performance.now() + 1000 / gun.rate;
     st.a = (st.a || 1) - 1;
-    const rk = gun.recoil * (this.ads > 0.5 ? 0.6 : 1);
+    const rk = gun.recoil * (this.ads > 0.5 ? 0.6 : 1) * (p.crouch ? gun.recoilCrouch : 1);
     this.kick.v += 1.2 + rk * 25; this.kick.rv += 2 + rk * 60;
     const moving = Math.hypot(p.vel.x, p.vel.z) > 1;
-    const spread = gun.spread * (this.ads > 0.5 ? 0.4 : 1) * (moving ? 1.8 : 1) * (p.onGround ? 1 : 2.5) * (p.crouch ? 0.7 : 1);
+    const spread = gun.spread * (this.ads > 0.5 ? 0.4 * gun.spreadAds : gun.spreadHip) * (moving ? 1.8 : 1) * (p.onGround ? 1 : 2.5) * (p.crouch ? 0.7 : 1);
     const pellets = gun.pellets || 1;
     const base = this.dir();
     const o = g.camera.position.clone();
@@ -312,9 +340,9 @@ export class Held {
         if (['p', 'a', 's', 'v', 'n'].includes(hit.kind)) hits.push({ k: hit.kind, id: hit.id, hs: !!hit.hs, pt: [hit.point.x, hit.point.y, hit.point.z] });
       }
     }
-    if (gun.ammo !== 'arrow') { g.effects.flash(muzzle, gun.blast ? 8 : 4); g.effects.burst(muzzle, { count: gun.blast ? 12 : 3, color: 0xffd070, speed: 1.5, size: 0.06, life: 0.06, gravity: 0, glow: true }); }
+    if (gun.ammo !== 'arrow' && !gun.quiet) { g.effects.flash(muzzle, gun.blast ? 8 : 4); g.effects.burst(muzzle, { count: gun.blast ? 12 : 3, color: 0xffd070, speed: 1.5, size: 0.06, life: 0.06, gravity: 0, glow: true }); }
     if (gun.blast) for (let i = 0; i < 8; i++) g.effects.smoke(muzzle.clone().addScaledVector(base, -1.2), 0xaaaaaa, 0.5);
-    audio.shot(gun.ammo === 'arrow' ? 'bow' : gun.pellets || gun.blast || gun.dmg > 60 ? 'shotgun' : st.id);
+    audio.shot(gun.quiet ? 'quiet' : gun.ammo === 'arrow' ? 'bow' : gun.pellets || gun.blast || gun.dmg > 60 ? 'shotgun' : st.id);
     p.recoil += rk;
     p.pitch += rk * 0.5; p.yaw += (Math.random() - 0.5) * rk * 0.4;
     g.net.send({ t: 'fire', sel: g.sel, o: [o.x, o.y, o.z], d: [base.x, base.y, base.z], hits, e: ends });

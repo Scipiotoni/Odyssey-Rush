@@ -7,6 +7,7 @@ import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTr
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
 import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
 import { PAINT_COLORS, DECALS, DECAL_SIZES, MAX_DECALS, SPRAY_RANGE } from '../shared/paint.js';
 import { sanitizeLook, encodeLook } from '../shared/look.js';
@@ -246,6 +247,7 @@ export class Game {
       case 'vpaint': return this.onVehiclePaintReq(p, m);
       case 'agive': return this.onAdminGive(p, m);
       case 'reset_world': return this.onResetWorld(p, m);
+      case 'gunmod': return this.onGunMod(p, m);
       case 'throwrock': return this.onThrowRock(p, m);
       case 'rockland': return this.onRockLand(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
@@ -579,14 +581,14 @@ export class Game {
     const sel = num(m.sel) | 0;
     const h = this.heldItem(p, sel);
     if (!h || !h.def.gun) return;
-    const g = h.def.gun, t = now();
+    const g = gunStats(h.stack), t = now();
     if (t - (p.lastFire || 0) < 0.8 / g.rate) return;
     if ((h.stack.a || 0) <= 0) return;
     p.lastFire = t;
     h.stack.a -= 1;
     const o = Array.isArray(m.o) ? m.o.map((v) => num(v)) : [p.x, p.y + 1.6, p.z];
     const d = Array.isArray(m.d) ? m.d.map((v) => num(v)) : [0, 0, 1];
-    this.toNear(p.x, p.z, 350, { t: 'fx', k: 'shot', pid: p.pid, w: h.stack.id, o, d, e: Array.isArray(m.e) ? m.e.slice(0, 12) : [] }, p);
+    this.toNear(p.x, p.z, g.quiet ? 90 : 350, { t: 'fx', k: 'shot', pid: p.pid, w: h.stack.id, q: g.quiet ? 1 : 0, o, d, e: Array.isArray(m.e) ? m.e.slice(0, 12) : [] }, p);
     if (g.blast) {
       // rocket: explode at the first impact point (validated against range)
       const e0 = Array.isArray(m.e) && Array.isArray(m.e[0]) ? m.e[0].map((v) => num(v)) : null;
@@ -613,7 +615,7 @@ export class Game {
   onReload(p, m) {
     const h = this.heldItem(p, num(m.sel) | 0);
     if (!h || !h.def.gun) return;
-    const g = h.def.gun, need = g.mag - (h.stack.a || 0);
+    const g = gunStats(h.stack), need = g.mag - (h.stack.a || 0);
     if (need <= 0) return;
     const have = Inv.count(p.inv, g.ammo);
     const n = Math.min(need, have);
@@ -1350,6 +1352,34 @@ export class Game {
     this.sendStats(p);
   }
 
+  // ---- Gunsmith Bench: fit / remove attachments and pick a finish
+  onGunMod(p, m) {
+    const bench = this.structs.get(String(m.bench));
+    if (!p.alive || !bench || bench.type !== 'gunsmith' || dist3(bench, p) > STATION_RANGE + 1.5) return this.toast(p, 'Stand at a Gunsmith Bench');
+    const i = num(m.i, -1) | 0, st = p.inv[i];
+    if (!st || !isModdable(st.id)) return;
+    st.mods = st.mods || {};
+    if (m.finish !== undefined) {
+      const f = FINISHES.find((x) => x.id === m.finish);
+      if (!f) return;
+      if (f.id === 'factory') delete st.mods.finish; else st.mods.finish = f.id;
+    } else {
+      const slot = String(m.slot), mod = m.mod ? String(m.mod) : null;
+      const cur = st.mods[slot];
+      if (mod && !canMod(st.id, slot, mod)) return this.toast(p, "That doesn't fit this weapon");
+      if (mod === cur) return;
+      if (mod && Inv.count(p.inv, mod) <= 0) return this.toast(p, `You need a ${ITEMS[mod].name} — craft one at this bench`);
+      if (mod) Inv.remove(p.inv, mod, 1);
+      if (cur) { const left = Inv.add(p.inv, cur, 1); if (left) this.dropBag(p.x, p.y, p.z, [newStack(cur, 1)]); }
+      if (mod) st.mods[slot] = mod; else delete st.mods[slot];
+      // the magazine may hold fewer rounds now: give the extra ammo back
+      const g = gunStats(st);
+      if ((st.a || 0) > g.mag) { const extra = st.a - g.mag; st.a = g.mag; const left = Inv.add(p.inv, g.ammo, extra); if (left) this.dropBag(p.x, p.y, p.z, [newStack(g.ammo, left)]); }
+    }
+    if (!Object.keys(st.mods).length) delete st.mods;
+    this.toNear(p.x, p.z, 20, { t: 'fx', k: 'gunmod', p: [bench.x, bench.y, bench.z] });
+    this.sendInv(p);
+  }
   // Rocks: thrown in an arc, hurt what they hit and land as a pickup
   onThrowRock(p, m) {
     const sel = num(m.sel) | 0, st = p.inv[sel];
@@ -1916,7 +1946,7 @@ export class Game {
       const pl = [], ve = [], an = [];
       for (const o of all) {
         if (o === p || !o.alive || dist2(o, p) > R2) continue;
-        const held = o.inv[o.sel]?.id || '';
+        const hs = o.inv[o.sel], held = hs ? hs.id + (hs.mods ? '|' + modsKey(hs.mods) : '') : '';
         const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0) | (o.air ? 8 : 0) | (o.spr ? 16 : 0) | (this.sameClan(o, p) ? 32 : 0);
         pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1, o.lookStr || '', this.clans.get(o.clan)?.tag || '']);
       }

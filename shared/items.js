@@ -67,7 +67,7 @@ export const ITEMS = {
   pistol: { name: 'Semi-Auto Pistol', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 30, rate: 6, mag: 12, ammo: 'pistol_ammo', spread: 0.01, range: 110, reload: 1.8, recoil: 0.022, auto: false } },
   double_barrel: { name: 'Double Barrel Shotgun', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 16, pellets: 10, rate: 3, mag: 2, ammo: 'shells', spread: 0.07, range: 40, reload: 2.4, recoil: 0.09, auto: false } },
   crossbow: { name: 'Crossbow', cat: 'weapon', stack: 1, icon: '🏹', gun: { dmg: 70, rate: 0.6, mag: 1, ammo: 'arrow', spread: 0.002, range: 120, reload: 2.2, recoil: 0.015, auto: false, zoom: 0.8 } },
-  bolt_rifle: { name: 'Bolt Action Rifle', cat: 'weapon', stack: 1, icon: '🔭', gun: { dmg: 85, rate: 0.7, mag: 4, ammo: 'rifle_ammo', spread: 0.003, range: 400, reload: 3.6, recoil: 0.06, auto: false, zoom: 0.3, scope: true } },
+  bolt_rifle: { name: 'Bolt Action Rifle', cat: 'weapon', stack: 1, icon: '🔭', gun: { dmg: 85, rate: 0.7, mag: 4, ammo: 'rifle_ammo', spread: 0.003, range: 400, reload: 3.6, recoil: 0.06, auto: false, zoom: 0.7 } },
   lmg: { name: 'Light Machine Gun', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 30, rate: 9, mag: 60, ammo: 'rifle_ammo', spread: 0.022, range: 220, reload: 5.5, recoil: 0.014, auto: true } },
   rocket_launcher: { name: 'Rocket Launcher', cat: 'weapon', stack: 1, icon: '🚀', gun: { dmg: 0, rate: 0.5, mag: 1, ammo: 'rocket', spread: 0.004, range: 200, reload: 4, recoil: 0.08, auto: false, blast: { dmg: 280, radius: 3.5, playerDmg: 110 } } },
   rifle: { name: 'Assault Rifle', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 34, rate: 8, mag: 30, ammo: 'rifle_ammo', spread: 0.012, range: 250, reload: 3.0, recoil: 0.018, auto: true } },
@@ -100,6 +100,7 @@ export const ITEMS = {
   workbench1: { name: 'Workbench Level 1', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench1', hp: 500 } },
   workbench2: { name: 'Workbench Level 2', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench2', hp: 750 } },
   workbench3: { name: 'Workbench Level 3', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench3', hp: 1000 } },
+  gunsmith: { name: 'Gunsmith Bench', cat: 'deployable', stack: 1, icon: '🔧', deploy: { kind: 'gunsmith', hp: 700 } },
   small_box: { name: 'Wooden Box', cat: 'deployable', stack: 1, icon: '📦', deploy: { kind: 'small_box', hp: 200, slots: 12 } },
   large_box: { name: 'Large Wood Box', cat: 'deployable', stack: 1, icon: '🗃️', deploy: { kind: 'large_box', hp: 400, slots: 30 } },
   sleeping_bag: { name: 'Sleeping Bag', cat: 'deployable', stack: 1, icon: '🛏️', deploy: { kind: 'sleeping_bag', hp: 100 } },
@@ -215,9 +216,23 @@ RECIPES.push({ out: 'spray_can', n: 1, time: 3, cost: { metal_frags: 25, cloth: 
 RECIPES.push({ out: 'small_bag', n: 1, time: 4, cost: { cloth: 40, rope: 1 } });
 RECIPES.push({ out: 'backpack', n: 1, time: 10, station: 'wb1', cost: { cloth: 80, leather: 30, rope: 2 } });
 RECIPES.push({ out: 'large_backpack', n: 1, time: 20, station: 'wb2', cost: { cloth: 120, leather: 60, metal_frags: 75, rope: 3 } });
+// ---- weapon attachments (fitted at the Gunsmith Bench; stats in shared/gunmods.js)
+const ATTACH = [
+  ['red_dot', 'Red Dot Sight', '🔴', { metal_frags: 60, tech_trash: 1 }, 8], ['holo', 'Holographic Sight', '🟢', { metal_frags: 80, tech_trash: 1, hqm: 2 }, 10],
+  ['scope4', '4x Scope', '🔭', { metal_frags: 120, hqm: 5, tech_trash: 1 }, 14], ['scope8', '8x Sniper Scope', '🔭', { metal_frags: 180, hqm: 10, tech_trash: 2 }, 20],
+  ['suppressor', 'Suppressor', '🔇', { metal_frags: 150, hqm: 6, pipe: 1 }, 14], ['muzzle_brake', 'Muzzle Brake', '💨', { metal_frags: 80, hqm: 2 }, 8], ['compensator', 'Compensator', '💨', { metal_frags: 70, hqm: 2 }, 8],
+  ['long_barrel', 'Long Barrel', '📏', { metal_frags: 120, hqm: 4, pipe: 1 }, 12], ['heavy_barrel', 'Heavy Fluted Barrel', '📏', { metal_frags: 160, hqm: 8, pipe: 1 }, 14],
+  ['vertical_grip', 'Vertical Grip', '✊', { metal_frags: 40, wood: 50 }, 6], ['angled_grip', 'Angled Grip', '✊', { metal_frags: 50 }, 6], ['laser', 'Laser Sight', '🔦', { metal_frags: 60, tech_trash: 1 }, 8],
+  ['flashlight', 'Weapon Light', '🔦', { metal_frags: 50, tech_trash: 1 }, 8], ['bipod', 'Bipod', '🦵', { metal_frags: 90, spring: 1 }, 10],
+  ['ext_mag', 'Extended Magazine', '📦', { metal_frags: 90, spring: 1 }, 10], ['drum_mag', 'Drum Magazine', '🥁', { metal_frags: 180, spring: 2, hqm: 4 }, 16], ['fast_mag', 'Quick-Pull Magazine', '📦', { metal_frags: 70, spring: 1 }, 8],
+  ['tac_stock', 'Tactical Stock', '🪵', { metal_frags: 80, wood: 60 }, 8],
+];
+for (const [id, name, icon, cost, time] of ATTACH) { ITEMS[id] = { name, cat: 'attachment', stack: 5, icon, attachment: true }; RECIPES.push({ out: id, n: 1, time, station: 'gunsmith', cost }); }
+RECIPES.push({ out: 'gunsmith', n: 1, time: 25, station: 'wb2', cost: { metal_frags: 300, hqm: 15, gears: 4, wood: 200 } });
+const ATTACH_LOOT = [['red_dot', 2, 0.06], ['ext_mag', 2, 0.05], ['vertical_grip', 2, 0.05], ['flashlight', 2, 0.05], ['holo', 3, 0.08], ['scope4', 3, 0.07], ['suppressor', 3, 0.05], ['muzzle_brake', 3, 0.06], ['drum_mag', 3, 0.03], ['scope8', 3, 0.02], ['long_barrel', 3, 0.04]];
 RECIPES.forEach((r, i) => (r.id = i));
 
-export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace' };
+export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench' };
 // Which deployable kinds satisfy which station requirement
 export const STATION_PROVIDERS = {
   wb1: ['workbench1', 'workbench2', 'workbench3'],
@@ -225,9 +240,10 @@ export const STATION_PROVIDERS = {
   wb3: ['workbench3'],
   campfire: ['campfire'],
   furnace: ['furnace'],
+  gunsmith: ['gunsmith'],
 };
 export const STATION_RANGE = 4.5;
-export const STATION_KINDS = ['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'];
+export const STATION_KINDS = ['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith'];
 export const STATION_OUTPUT_SLOTS = 12;
 // Recipes a given station (deployable kind) can make. Hand recipes (no station) are made from the inventory.
 export function stationRecipes(kind) { return RECIPES.filter((r) => r.station && STATION_PROVIDERS[r.station].includes(kind)); }
@@ -265,6 +281,7 @@ export const LOOT = {
 export function rollLoot(table, rnd = Math.random) {
   const out = [];
   for (const [id, a, b, p] of LOOT[table]) if (rnd() < p) out.push({ id, n: a + Math.floor(rnd() * (b - a + 1)) });
+  for (const [id, tier, p] of ATTACH_LOOT) if (tier === table && rnd() < p) out.push({ id, n: 1 });
   return out;
 }
 

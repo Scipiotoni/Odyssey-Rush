@@ -15,6 +15,7 @@ import { Player } from './player.js';
 import { Builder } from './building.js';
 import { Painter } from './painter.js';
 import { Nature } from './nature.js';
+import { Gunsmith } from './gunsmith.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -98,6 +99,7 @@ class Game {
     this.ui = new UI(this);
     this.builder = new Builder(this);
     this.painter = new Painter(this);
+    this.gunsmith = new Gunsmith(this);
     this.held = new Held(this);
     this.avatar = makeHumanoid(this.look); this.avatar.visible = false; this.scene.add(this.avatar);
     this.building = this.builder;
@@ -189,7 +191,7 @@ class Game {
       };
       setTimeout(retry, 1000);
     });
-    n.on('inv', (m) => { this.inv = m.inv; this.armor = m.armor; if (this.ui.open === 'inv') this.ui.renderInventory(); else this.ui.renderHotbar(); });
+    n.on('inv', (m) => { this.inv = m.inv; this.armor = m.armor; if (this.ui.open === 'inv') this.ui.renderInventory(); else this.ui.renderHotbar(); if (this.ui.open === 'gunsmith') this.gunsmith.render(); });
     n.on('stats', (m) => { const was = this.stats.lvl; this.stats = m; this.ui.renderStats(m); if (m.lvl > was && was) audio.craftDone(); });
     n.on('queue', (m) => { const done = this.queue.length > m.q.length; this.queue = m.q; this.ui.renderQueue(m.q); if (done) audio.craftDone(); });
     n.on('gain', (m) => { this.ui.gain(m.id, m.n); audio.pickup(); });
@@ -358,7 +360,7 @@ class Game {
       const p = this.entities.players.get(m.pid);
       const o = p ? new THREE.Vector3(p.pos.x, p.pos.y + 1.45, p.pos.z) : new THREE.Vector3(...m.o);
       const dist = cam.distanceTo(o);
-      audio.shot(m.w, dist);
+      audio.shot(m.q ? 'quiet' : m.w, dist);
       const rocket = !!ITEMS[m.w]?.gun?.blast;
       for (const e of m.e || []) {
         const end = new THREE.Vector3(e[0], e[1], e[2]);
@@ -366,7 +368,7 @@ class Game {
         this.effects.tracer(o, end);
         this.effects.burst(end, { count: 3, color: 0xccbb99, speed: 2, size: 0.05, life: 0.4 });
       }
-      if (m.w !== 'bow') this.effects.flash(o, 3);
+      if (m.w !== 'bow' && !m.q) this.effects.flash(o, 3);
       if (p) p.shotT = 0.12;
     } else if (m.k === 'swing') { const p = this.entities.players.get(m.pid); if (p) p.swingT = 0.45; }
     else if (m.k === 'expl') {
@@ -574,10 +576,10 @@ class Game {
         const s = this.structures.map.get(hit.id)?.s;
         if (s) {
           if (s.k === 'door') { text = `<kbd>E</kbd> ${s.open ? 'Close' : 'Open'} door`; if (E) this.net.send({ t: 'use', id: s.id }); }
-          else if (ITEMS[s.type]?.deploy?.slots && !['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'].includes(s.type)) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
+          else if (ITEMS[s.type]?.deploy?.slots && !['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith'].includes(s.type)) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.type === 'tool_cupboard') { const authed = s.auth?.includes(this.pid); text = `<kbd>E</kbd> ${authed ? 'Deauthorize' : 'Authorize'} at Tool Cupboard <small>(${s.auth?.length || 0} authorized)</small>`; if (E) this.net.send({ t: 'use', id: s.id }); }
           else if (s.type === 'sleeping_bag' || s.type === 'bed') { const nm = s.type === 'bed' ? 'bed' : 'sleeping bag'; text = s.o === this.pid ? `Your ${nm} (respawn point)` : `<kbd>E</kbd> Claim ${nm}`; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
-          else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
+          else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name}`; }
           else if (s.k === 'piece') target = `${TIERS[s.tier].name} ${PIECES[s.type].name}<div class="tbar"><div style="width:${(s.hp / s.mhp) * 100}%"></div></div>`;
         }

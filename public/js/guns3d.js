@@ -4,6 +4,7 @@
 // Parts are grouped by material: blued metal, bright metal, polymer, wood, rubber, glass and glow.
 import * as THREE from 'three';
 import { part, merge } from './models.js';
+import { MODS, FINISHES, modsKey } from '/shared/gunmods.js';
 
 // ---------------------------------------------------------------- materials
 const MATS = {
@@ -117,10 +118,37 @@ function scope(b, zBack, zFront, y, r = 0.02) {
   }
 }
 
+// ---------------------------------------------------------------- magazines
+const bigMag = (o) => o?.mods?.mag === 'ext_mag' || o?.mods?.mag === 'drum_mag';
+// AR-style curved magazine; len > 1 = extended
+function curvedMag(b, len = 1, color = K.tan) {
+  const L = 0.17 * len, mag = [];
+  const f = (t) => [0.088 + t * 0.03 * len + t * t * 0.03 * len, -0.005 - t * L];
+  const r = (t) => [0.15 + t * 0.035 * len + t * t * 0.035 * len, -0.005 - t * L];
+  for (let i = 0; i <= 6; i++) mag.push(f(i / 6));
+  for (let i = 6; i >= 0; i--) mag.push(r(i / 6));
+  b.add('poly', prof(mag, 0.026, 0.003), color, { y: -0.03 });
+  for (const t0 of [0.25, 0.5, 0.75]) b.add('poly', prof([f(t0), f(t0 + 0.05), r(t0 + 0.05), r(t0)], 0.029, 0.001), new THREE.Color(color).multiplyScalar(0.82).getHex(), { y: -0.03 });
+  const e0 = f(1), e1 = r(1);
+  b.add('poly', prof([[e0[0] - 0.002, e0[1]], [e1[0] + 0.002, e1[1]], [e1[0] + 0.004, e1[1] - 0.014], [e0[0] - 0.004, e0[1] - 0.014]], 0.03, 0.002), K.black, { y: -0.03 });
+}
+// straight box magazine (smg / pistol / bolt)
+function straightMag(b, z, top, len, depth, color = K.polyB, ang = 0) {
+  b.add('poly', prof([[-z - depth / 2, top], [-z + depth / 2, top], [-z + depth / 2 + Math.sin(ang) * len, top - len], [-z - depth / 2 + Math.sin(ang) * len, top - len]], 0.026, 0.003), color, {});
+  b.add('poly', box(0.03, 0.012, depth + 0.008), K.black, { y: top - len - 0.004, z: z - Math.sin(ang) * len, rx: -ang });
+}
+function drumMag(b, z, y, r = 0.065) {
+  b.add('poly', cyl(r, r, 0.05, 16), K.polyB, { y, z, rz: Math.PI / 2 });
+  b.add('poly', cyl(r * 0.94, r * 0.94, 0.054, 16), K.polyG, { y, z, rz: Math.PI / 2 });
+  b.add('metal', cyl(r * 0.25, r * 0.25, 0.058, 8), K.steel, { y, z, rz: Math.PI / 2 });
+  b.add('poly', box(0.026, 0.07, 0.04), K.polyB, { y: y + r * 0.9, z: z + 0.01 });
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.add('poly', box(0.056, 0.01, 0.01), K.black, { y: y + Math.sin(a) * r * 0.98, z: z + Math.cos(a) * r * 0.98, rx: a }); }
+}
+
 // ---------------------------------------------------------------- weapons
 const W = {};
 
-W.rifle = () => {
+W.rifle = (o) => {
   const b = new B(), y = 0.055;
   // lower receiver with magwell
   b.add('metal', prof([[-0.06, 0.035], [0.215, 0.035], [0.215, 0.012], [0.165, 0.008], [0.16, -0.035], [0.085, -0.035], [0.08, 0.004], [0.0, 0.0], [-0.06, 0.006]], 0.038, 0.003), K.gun, { y: 0.0 });
@@ -142,38 +170,22 @@ W.rifle = () => {
   // barrel + gas block + muzzle brake
   b.tube('metal', 0.0095, 0.009, -0.5, -0.64, y, K.blued, 0, 10);
   b.add('metal', box(0.018, 0.024, 0.022), K.black, { y: y + 0.004, z: -0.52 });
-  muzzleBrake(b, -0.64, y, 0.0125, 0.055);
   // pistol grip + trigger guard + trigger, safety and mag release
   pistolGrip(b, 'poly', K.polyB, 0.03, 0.002, 0.32, 0.115, 0.03);
   triggerGuard(b, -0.075, 0.005, 0.002);
   b.add('metal', cyl(0.006, 0.006, 0.005, 8), K.steel, { x: 0.021, y: 0.018, z: 0.002, rz: Math.PI / 2 });
   b.add('metal', box(0.004, 0.008, 0.008), K.black, { x: 0.021, y: 0.004, z: -0.095 });
-  // curved 30-round magazine with ribs and base plate
-  const mag = [];
-  for (let i = 0; i <= 6; i++) { const t = i / 6; mag.push([0.088 + t * 0.03 + t * t * 0.03, -0.005 - t * 0.17]); }
-  for (let i = 6; i >= 0; i--) { const t = i / 6; mag.push([0.15 + t * 0.035 + t * t * 0.035, -0.005 - t * 0.17]); }
-  b.add('poly', prof(mag, 0.026, 0.003), K.tan, { y: -0.03 });
-  // raised ribs: slightly wider thin slices of the same curved profile
-  for (const t0 of [0.25, 0.5, 0.75]) {
-    const sl = [];
-    for (const t of [t0, t0 + 0.05]) sl.push([0.088 + t * 0.03 + t * t * 0.03, -0.005 - t * 0.17]);
-    for (const t of [t0 + 0.05, t0]) sl.push([0.15 + t * 0.035 + t * t * 0.035, -0.005 - t * 0.17]);
-    b.add('poly', prof(sl, 0.029, 0.001), new THREE.Color(K.tan).multiplyScalar(0.82).getHex(), { y: -0.03 });
-  }
-  b.add('poly', prof([[0.146, -0.172], [0.226, -0.172], [0.228, -0.186], [0.144, -0.186]], 0.03, 0.002), K.black, { y: -0.03 });
+  // curved 30-round magazine (or the fitted extended / drum magazine)
+  if (!bigMag(o)) curvedMag(b, 1);
   // buffer tube + adjustable stock with cheek riser and rubber butt pad
   b.tube('metal', 0.015, 0.015, 0.2, -0.045, 0.05, K.black, 0, 10);
   b.add('poly', prof(smooth([[-0.13, 0.035], [-0.13, 0.08, 0.01], [-0.31, 0.088, 0.012], [-0.33, 0.07], [-0.33, -0.065, 0.01], [-0.3, -0.07], [-0.2, 0.0], [-0.15, 0.02]]), 0.036, 0.004), K.tan, {});
   b.add('rubber', box(0.04, 0.155, 0.018), K.rubber, { y: 0.01, z: 0.335 });
   b.add('metal', box(0.04, 0.008, 0.008), K.steel, { y: -0.035, z: 0.24 });           // sling loop
-  // optic
-  redDot(b, -0.08, 0.083);
-  // angled foregrip
-  b.add('poly', prof([[0, 0], [0.06, 0], [0.05, -0.05], [0.015, -0.05]], 0.026, 0.004), K.polyB, { y: y - 0.03, z: -0.33 });
-  return b.build();
+  return b;
 };
 
-W.smg = () => {
+W.smg = (o) => {
   const b = new B(), y = 0.055;
   b.add('metal', prof([[-0.08, 0.02], [0.24, 0.02], [0.24, 0.085], [0.18, 0.09], [-0.05, 0.09], [-0.08, 0.07]], 0.042, 0.004), K.gun, {});
   b.add('metal', box(0.002, 0.02, 0.05), K.black, { x: 0.022, y: 0.065, z: -0.07 });
@@ -182,28 +194,21 @@ W.smg = () => {
   // barrel shroud with cooling holes + suppressor-style muzzle
   b.tube('metal', 0.022, 0.022, -0.24, -0.34, y, K.black, 0, 10);
   for (let i = 0; i < 5; i++) for (const s of [-1, 1]) b.add('metal', cyl(0.005, 0.005, 0.004, 6), K.rubber, { x: s * 0.021, y, z: -0.25 - i * 0.018, rz: Math.PI / 2 });
-  b.tube('metal', 0.016, 0.016, -0.34, -0.44, y, K.blued, 0, 12);
-  b.tube('metal', 0.017, 0.017, -0.438, -0.445, y, K.steel, 0, 12);
+  b.tube('metal', 0.009, 0.009, -0.34, -0.37, y, K.blued, 0, 10);
   // straight double-stack magazine in the grip area front
-  b.add('poly', prof([[0.07, 0.02], [0.115, 0.02], [0.12, -0.15], [0.073, -0.15]], 0.026, 0.003), K.polyB, {});
-  b.add('poly', box(0.03, 0.012, 0.055), K.black, { y: -0.155, z: -0.096 });
+  if (!bigMag(o)) straightMag(b, -0.095, 0.02, 0.15, 0.047);
   pistolGrip(b, 'poly', K.polyB, 0.03, 0.02, 0.22, 0.11, 0.032);
   triggerGuard(b, -0.065, 0.005, 0.02);
-  // vertical foregrip + folding wire stock
-  b.add('poly', prof(smooth([[0, 0], [0.04, 0], [0.04, -0.075, 0.01], [0.002, -0.08, 0.01]]), 0.028, 0.004), K.polyB, { y: 0.02, z: -0.17 });
+  // folding wire stock
   for (const s of [-1, 1]) b.add('metal', box(0.006, 0.006, 0.24), K.steel, { x: s * 0.018, y: 0.05, z: 0.19 });
   b.add('metal', box(0.042, 0.006, 0.006), K.steel, { y: 0.05, z: 0.07 });
   b.add('rubber', box(0.046, 0.1, 0.014), K.rubber, { y: 0.01, z: 0.31 });
   b.add('metal', box(0.006, 0.07, 0.006), K.steel, { x: 0.018, y: 0.015, z: 0.305 }); b.add('metal', box(0.006, 0.07, 0.006), K.steel, { x: -0.018, y: 0.015, z: 0.305 });
-  // holographic sight
-  b.add('metal', box(0.032, 0.012, 0.06), K.black, { y: 0.1, z: -0.06 });
-  b.add('metal', prof([[0, 0], [0.065, 0], [0.065, 0.045], [0.05, 0.045], [0.05, 0.008], [0.015, 0.008], [0.015, 0.045], [0, 0.045]], 0.036, 0.002), K.black, { y: 0.104, z: -0.025 });
-  b.add('glass', new THREE.PlaneGeometry(0.03, 0.03), 0xffffff, { y: 0.128, z: -0.06 });
-  b.add('glow', tor(0.005, 0.0008, Math.PI * 2, 10), 0xffffff, { y: 0.128, z: -0.061 });
-  return b.build();
+  b.add('metal', box(0.006, 0.016, 0.006), K.black, { y: 0.1, z: -0.19 }); // front post
+  return b;
 };
 
-W.pistol = () => {
+W.pistol = (o) => {
   const b = new B();
   // slide with rear + front serrations, ejection port, sights
   b.add('metal', prof([[-0.02, 0.045], [0.19, 0.045], [0.19, 0.072, 0.004], [0.17, 0.08], [-0.008, 0.08], [-0.02, 0.07]].map((p) => p.slice(0, p.length)), 0.03, 0.003), K.gun, {});
@@ -219,9 +224,9 @@ W.pistol = () => {
   b.rail(-0.08, -0.155, 0.024, 0.018, K.polyB);
   triggerGuard(b, -0.07, -0.005, 0.02, K.polyB);
   pistolGrip(b, 'poly', K.polyB, 0.0, 0.004, 0.25, 0.115, 0.03);
-  b.add('metal', box(0.03, 0.01, 0.042), K.black, { y: -0.115, z: 0.012, rx: -0.25 }); // mag base
+  if (!bigMag(o)) b.add('metal', box(0.03, 0.01, 0.042), K.black, { y: -0.115, z: 0.012, rx: -0.25 }); // mag base
   b.add('metal', box(0.004, 0.008, 0.012), K.black, { x: 0.016, y: 0.035, z: -0.03 }); // slide stop
-  return b.build();
+  return b;
 };
 
 W.revolver = () => {
@@ -244,7 +249,7 @@ W.revolver = () => {
   b.add('wood', prof(smooth([[0.02, 0.035], [-0.03, 0.035], [-0.07, -0.08, 0.012], [-0.03, -0.09, 0.012], [0.0, -0.06], [0.018, 0.0]]), 0.034, 0.005), K.wood, { z: 0.01 });
   for (let i = 0; i < 5; i++) for (const s of [-1, 1]) b.add('wood', box(0.002, 0.004, 0.03), K.woodD, { x: s * 0.0175, y: -0.012 - i * 0.012, z: 0.03 + i * 0.006, rx: 0.35 });
   b.screw(0.018, -0.02, 0.035, 0.004);
-  return b.build();
+  return b;
 };
 
 W.shotgun = () => {
@@ -271,7 +276,7 @@ W.shotgun = () => {
   b.add('rubber', prof([[-0.41, 0.064], [-0.43, 0.064], [-0.43, -0.09], [-0.41, -0.09]], 0.044, 0.002), K.rubber, {});
   triggerGuard(b, -0.06, 0.02, 0.025);
   b.add('bright', cyl(0.0045, 0.0045, 0.006, 8), K.steel, { y: -0.02, z: 0.33 }); // sling stud
-  return b.build();
+  return b;
 };
 
 W.double_barrel = () => {
@@ -290,10 +295,10 @@ W.double_barrel = () => {
   b.add('rubber', prof([[-0.43, 0.072], [-0.446, 0.072], [-0.446, -0.084], [-0.43, -0.084]], 0.046, 0.002), K.rubber, {});
   triggerGuard(b, -0.06, 0.02, 0.04, K.chrome);
   b.add('bright', prof([[0, 0], [0.004, 0], [0.006, -0.018], [0.0, -0.022]], 0.006, 0.001), K.steel, { y: 0.036, z: 0.0 }); // second trigger
-  return b.build();
+  return b;
 };
 
-W.bolt_rifle = () => {
+W.bolt_rifle = (o) => {
   const b = new B(), y = 0.06;
   // walnut stock: forend, grip, cheek piece, recoil pad
   b.add('wood', prof(smooth([[0.6, 0.052], [0.62, 0.03, 0.012], [0.4, 0.016], [0.12, 0.004], [0.04, -0.004], [-0.06, -0.05, 0.03], [-0.13, -0.045, 0.03], [-0.4, -0.088], [-0.4, 0.074], [-0.15, 0.084, 0.03], [-0.04, 0.05, 0.02], [0.12, 0.052]]), 0.046, 0.007), K.wood, {});
@@ -305,37 +310,34 @@ W.bolt_rifle = () => {
   b.add('metal', new THREE.SphereGeometry(0.0095, 8, 6), K.black, { x: 0.068, y: y - 0.003, z: 0.03 });
   b.tube('bright', 0.015, 0.015, 0.085, 0.06, y + 0.01, K.steel, 0, 12);
   b.tube('metal', 0.012, 0.0085, -0.15, -0.86, y + 0.01, K.blued, 0, 12);
-  muzzleBrake(b, -0.86, y + 0.01, 0.012, 0.045);
+  // iron sights (an optic replaces them)
+  if (!o.mods?.optic) { b.add('metal', box(0.02, 0.016, 0.01), K.black, { y: y + 0.027, z: -0.16 }); b.add('metal', box(0.004, 0.02, 0.006), K.black, { y: y + 0.024, z: -0.84 }); b.add('metal', box(0.018, 0.008, 0.02), K.black, { y: y + 0.014, z: -0.84 }); }
   triggerGuard(b, -0.06, 0.02, 0.0, K.blued);
   b.add('metal', box(0.03, 0.006, 0.09), K.blued, { y: -0.004, z: -0.07 }); // floor plate
-  scope(b, 0.08, -0.26, 0.14, 0.018);
   b.add('bright', cyl(0.0045, 0.0045, 0.006, 8), K.steel, { y: -0.075, z: 0.3 }); b.add('bright', cyl(0.0045, 0.0045, 0.006, 8), K.steel, { y: 0.02, z: -0.5 });
-  return b.build();
+  return b;
 };
 
-W.lmg = () => {
+W.lmg = (o) => {
   const b = new B(), y = 0.06;
   b.add('metal', prof([[-0.08, 0.015], [0.3, 0.015], [0.3, 0.1], [-0.06, 0.1], [-0.08, 0.08]], 0.064, 0.004), K.gun, {});
   b.add('metal', prof([[-0.04, 0.1], [0.24, 0.1], [0.22, 0.12], [-0.02, 0.12]], 0.06, 0.003), K.black, {}); // feed cover
   b.rail(0.02, -0.22, 0.121, 0.024);
   for (let i = 0; i < 5; i++) b.screw(0.033, 0.05, -0.02 - i * 0.06, 0.004);
   // ammo box with belt feeding in
-  b.add('poly', prof(smooth([[0.04, 0.015], [0.21, 0.015], [0.21, -0.11, 0.01], [0.04, -0.11, 0.01]]), 0.1, 0.005), K.olive, { x: -0.02 });
-  b.add('metal', box(0.102, 0.012, 0.17), K.black, { x: -0.02, y: -0.04, z: -0.125 });
+  if (!bigMag(o)) { b.add('poly', prof(smooth([[0.04, 0.015], [0.21, 0.015], [0.21, -0.11, 0.01], [0.04, -0.11, 0.01]]), 0.1, 0.005), K.olive, { x: -0.02 }); b.add('metal', box(0.102, 0.012, 0.17), K.black, { x: -0.02, y: -0.04, z: -0.125 }); }
   for (let i = 0; i < 5; i++) b.add('bright', cyl(0.004, 0.004, 0.03, 6), K.brass, { x: 0.04 + i * 0.006, y: 0.03 + i * 0.012, z: -0.12, rz: Math.PI / 2 });
   // perforated heat shield, heavy barrel, flash hider, carry handle, bipod
   b.tube('metal', 0.028, 0.028, -0.3, -0.58, y, K.black, 0, 10);
   for (let i = 0; i < 6; i++) for (const s of [-1, 1]) b.add('metal', box(0.006, 0.012, 0.022), K.rubber, { x: s * 0.027, y: y + 0.006, z: -0.32 - i * 0.042 });
   b.tube('metal', 0.012, 0.012, -0.58, -0.72, y, K.blued, 0, 10);
-  muzzleBrake(b, -0.72, y, 0.015, 0.06);
+  if (!o.mods?.muzzle) b.tube('metal', 0.015, 0.014, -0.72, -0.76, y, K.black, 0, 6); // bare flash hider
   b.add('metal', prof([[0, 0], [0.012, 0], [0.03, 0.05], [0.13, 0.05], [0.15, 0], [0.162, 0], [0.14, 0.062], [0.02, 0.062]], 0.014, 0.002), K.black, { y: 0.1, z: -0.33 });
-  for (const s of [-1, 1]) { b.add('metal', cyl(0.006, 0.006, 0.22, 6), K.steel, { x: s * 0.03, y: y - 0.04, z: -0.62, rx: 1.35, rz: s * 0.1 }); b.add('rubber', cyl(0.009, 0.009, 0.02, 6), K.rubber, { x: s * 0.034, y: y - 0.06, z: -0.51, rx: 1.35 }); }
-  b.add('metal', box(0.05, 0.02, 0.03), K.black, { y: y - 0.03, z: -0.62 });
   pistolGrip(b, 'poly', K.polyB, 0.04, 0.016, 0.3, 0.115, 0.034);
   triggerGuard(b, -0.06, 0.02, 0.016);
   b.add('poly', prof(smooth([[-0.08, 0.09], [-0.36, 0.08, 0.012], [-0.38, -0.07, 0.01], [-0.3, -0.07], [-0.14, 0.0], [-0.08, 0.02]]), 0.05, 0.005), K.polyB, {});
   b.add('rubber', box(0.052, 0.15, 0.018), K.rubber, { y: 0.005, z: 0.385 });
-  return b.build();
+  return b;
 };
 
 W.rocket_launcher = () => {
@@ -358,10 +360,10 @@ W.rocket_launcher = () => {
   b.add('glass', new THREE.PlaneGeometry(0.014, 0.02), 0xffffff, { x: 0.066, y: y + 0.075, z: -0.12 });
   b.add('rubber', box(0.08, 0.035, 0.14), K.rubber, { y: y - 0.06, z: 0.16 });
   for (const z of [-0.62, -0.66]) b.tube('poly', 0.0565, 0.0565, z, z - 0.012, y, K.orange, 0, 16);
-  return b.build();
+  return b;
 };
 
-W.crossbow = () => {
+W.crossbow = (o) => {
   const b = new B(), y = 0.05;
   b.add('wood', prof(smooth([[-0.5, 0.06], [0.12, 0.065], [0.18, 0.03, 0.01], [0.26, -0.06, 0.01], [0.34, -0.07, 0.01], [0.36, 0.06, 0.01], [0.2, 0.08], [0.12, 0.08], [0.04, 0.0], [-0.04, -0.1, 0.012], [-0.08, -0.1, 0.012], [-0.06, 0.03], [-0.5, 0.03]]).map(([u, v]) => [-u, v]), 0.045, 0.006), K.wood, {});
   b.add('metal', box(0.012, 0.006, 0.55), K.steel, { y: 0.067, z: -0.22 }); // flight groove rail
@@ -380,9 +382,8 @@ W.crossbow = () => {
   b.add('bright', new THREE.ConeGeometry(0.008, 0.04, 4), K.steel, { y: 0.075, z: -0.61, rx: -Math.PI / 2 });
   for (const a of [0, 2.1, 4.2]) b.add('poly', box(0.001, 0.014, 0.04), K.red, { x: Math.cos(a) * 0.006, y: 0.075 + Math.sin(a) * 0.006, z: -0.19, rz: a });
   b.rail(-0.02, -0.12, 0.082, 0.02);
-  scope(b, -0.0, -0.17, 0.115, 0.014);
   b.add('metal', prof([[0, 0], [0.004, 0], [0.006, -0.02], [0, -0.024]], 0.006, 0.001), K.steel, { y: 0.0, z: 0.03 });
-  return b.build();
+  return b;
 };
 
 W.bow = () => {
@@ -398,7 +399,7 @@ W.bow = () => {
   for (let i = 0; i < 7; i++) b.add('poly', tor(0.023, 0.003, Math.PI * 2, 8), K.rubber, { y: -0.05 + i * 0.016, rx: Math.PI / 2 }); // grip wrap
   b.add('bright', box(0.014, 0.012, 0.02), K.brass, { x: -0.022, y: 0.07, z: 0.0 }); // arrow rest
   b.add('poly', cyl(0.0012, 0.0012, 0.98, 3), 0xf0ead8, { z: 0.02, y: 0.0 }); // string
-  return b.build();
+  return b;
 };
 
 // ---- melee
@@ -408,7 +409,7 @@ W.machete = () => {
   b.add('metal', box(0.007, 0.36, 0.008), K.blued, { y: 0.25, z: 0.022 });
   b.add('poly', prof(smooth([[0, 0], [0.04, 0.0], [0.045, 0.11, 0.01], [-0.005, 0.12, 0.01], [-0.008, 0.06]]).map(([u, v]) => [u - 0.02, v - 0.06]), 0.032, 0.006), K.polyB, {});
   for (let i = 0; i < 3; i++) b.screw(0.017, -0.03 + i * 0.035, 0.0, 0.004);
-  return b.build();
+  return b;
 };
 W.sword = () => {
   const b = new B();
@@ -418,7 +419,7 @@ W.sword = () => {
   b.add('poly', cyl(0.016, 0.016, 0.14, 8), K.woodD, {});
   for (let i = 0; i < 6; i++) b.add('poly', tor(0.017, 0.002, Math.PI * 2, 8), K.brass, { y: -0.06 + i * 0.024, rx: Math.PI / 2 });
   b.add('bright', new THREE.IcosahedronGeometry(0.028, 0), K.brass, { y: -0.085 });
-  return b.build();
+  return b;
 };
 W.battle_axe = () => {
   const b = new B();
@@ -428,7 +429,7 @@ W.battle_axe = () => {
   b.add('metal', box(0.05, 0.11, 0.05), K.blued, { y: 0.52 });
   b.add('bright', new THREE.ConeGeometry(0.02, 0.09, 6), K.steel, { y: 0.62 });
   for (let i = 0; i < 2; i++) b.screw(0.027, 0.5 + i * 0.04, 0.0, 0.005);
-  return b.build();
+  return b;
 };
 W.wooden_spear = () => {
   const b = new B();
@@ -436,12 +437,136 @@ W.wooden_spear = () => {
   b.add('bright', prof(smooth([[-0.02, 0.0], [0.03, 0.08, 0.02], [0.0, 0.22], [-0.03, 0.08, 0.02]].map(([u, v]) => [u, v])).map(([u, v]) => [u - 0.0, v]), 0.008, 0.002), K.steel, { y: 1.13 });
   for (let i = 0; i < 4; i++) b.add('poly', tor(0.02, 0.004, Math.PI * 2, 8), 0xb89a62, { y: 1.08 + i * 0.012, rx: Math.PI / 2 });
   for (let i = 0; i < 4; i++) b.add('poly', tor(0.021, 0.004, Math.PI * 2, 8), K.woodD, { y: 0.05 + i * 0.014, rx: Math.PI / 2 });
-  return b.build();
+  return b;
 };
+
+// Where attachments go on each weapon (model space).
+//  optic: top of rail/receiver; rail: does the gun already have a rail there; muzzle: end of the bare barrel;
+//  under: bottom of the handguard; mag: magazine kind + position; stock: butt position
+const MOUNTS = {
+  rifle: { optic: [0.087, -0.08], rail: true, muzzle: [0.055, -0.64, 0.0095], under: [0.025, -0.36], mag: { kind: 'curved' }, stock: [0.088, 0.22] },
+  smg: { optic: [0.099, -0.07], rail: true, muzzle: [0.055, -0.37, 0.009], under: [0.035, -0.17], mag: { kind: 'straight', z: -0.095, top: 0.02, len: 0.15, d: 0.047 }, stock: [0.06, 0.28] },
+  pistol: { optic: [0.08, -0.045], muzzle: [0.062, -0.195, 0.0065], under: [0.018, -0.12], mag: { kind: 'pistol' } },
+  revolver: { optic: [0.088, -0.14], muzzle: [0.069, -0.244, 0.011], under: [0.04, -0.17] },
+  shotgun: { optic: [0.092, -0.09], muzzle: [0.077, -0.75, 0.0125], under: [0.035, -0.6], mag: { kind: 'tube' }, stock: [0.08, 0.3] },
+  double_barrel: { muzzle: [0.07, -0.68, 0.013, true] },
+  bolt_rifle: { optic: [0.088, -0.05], muzzle: [0.07, -0.86, 0.0085], under: [0.01, -0.45], mag: { kind: 'box', z: -0.07, top: 0.0, len: 0.07, d: 0.07 } },
+  lmg: { optic: [0.13, -0.09], rail: true, muzzle: [0.06, -0.72, 0.012], under: [0.025, -0.62], mag: { kind: 'lmg' } },
+  crossbow: { optic: [0.09, -0.07], rail: true },
+  rocket_launcher: { optic: [0.16, -0.16] },
+};
+function fit(b, id, mods) {
+  const M = MOUNTS[id];
+  if (!M || !mods) return;
+  // ---- optics
+  if (mods.optic && M.optic) {
+    const [y, z] = M.optic;
+    if (!M.rail) b.rail(z + 0.05, z - 0.07, y - 0.008, 0.02);
+    if (mods.optic === 'red_dot') redDot(b, z, y - 0.004);
+    else if (mods.optic === 'holo') {
+      b.add('metal', box(0.032, 0.012, 0.07), K.black, { y: y + 0.006, z });
+      b.add('metal', prof([[0, 0], [0.07, 0], [0.07, 0.05], [0.055, 0.05], [0.055, 0.008], [0.015, 0.008], [0.015, 0.05], [0, 0.05]], 0.038, 0.002), K.black, { y: y + 0.012, z: z + 0.035 });
+      b.add('glass', new THREE.PlaneGeometry(0.032, 0.034), 0xffffff, { y: y + 0.036, z: z - 0.002 });
+      b.add('glow', tor(0.005, 0.0008, Math.PI * 2, 10), 0xffffff, { y: y + 0.036, z: z - 0.004 });
+      b.add('metal', box(0.012, 0.012, 0.02), K.black, { x: 0.024, y: y + 0.02, z: z + 0.02 });
+    } else {
+      const big = mods.optic === 'scope8', r = big ? 0.02 : 0.016, h = y + (big ? 0.045 : 0.035);
+      scope(b, z + (big ? 0.12 : 0.09), z - (big ? 0.24 : 0.14), h, r);
+      if (big) { b.tube('rubber', r * 1.7, r * 1.7, z - 0.24, z - 0.3, h, K.rubber, 0, 16); }  // sunshade
+    }
+  }
+  // ---- barrel
+  let mz = M.muzzle ? M.muzzle[1] : 0;
+  if (M.muzzle && mods.barrel) {
+    const [y, z, r, dbl] = M.muzzle;
+    const xs = dbl ? [-0.0135, 0.0135] : [0];
+    if (mods.barrel === 'long_barrel') { for (const x of xs) b.tube('metal', r, r * 0.95, z, z - 0.16, y, K.blued, x, 10); b.tube('metal', r * 1.4, r * 1.4, z + 0.005, z - 0.012, y, K.black, 0, 10); mz = z - 0.16; }
+    else if (mods.barrel === 'heavy_barrel') {
+      b.tube('metal', r * 1.55, r * 1.45, z + 0.13, z, y, K.blued, 0, 12);
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; b.add('metal', box(0.003, 0.003, 0.12), K.rubber, { x: Math.cos(a) * r * 1.5, y: y + Math.sin(a) * r * 1.5, z: z + 0.065 }); }
+    }
+  }
+  // ---- muzzle devices
+  if (M.muzzle && mods.muzzle) {
+    const [y, , r] = M.muzzle, z = mz;
+    if (mods.muzzle === 'suppressor') {
+      b.tube('metal', r * 1.3, r * 1.3, z + 0.01, z - 0.012, y, K.black, 0, 10);
+      b.tube('metal', 0.021, 0.021, z - 0.012, z - 0.19, y, K.black, 0, 14);
+      for (let k = 0; k < 3; k++) b.tube('metal', 0.0215, 0.0215, z - 0.04 - k * 0.05, z - 0.046 - k * 0.05, y, K.gun, 0, 14);
+      b.tube('metal', 0.006, 0.006, z - 0.19, z - 0.192, y, K.rubber, 0, 8);
+    } else if (mods.muzzle === 'muzzle_brake') muzzleBrake(b, z, y, r * 1.35, 0.055);
+    else {
+      b.tube('metal', r * 1.3, r * 1.3, z, z - 0.05, y, K.black, 0, 8);
+      for (let k = 0; k < 3; k++) b.add('metal', box(0.006, 0.004, 0.008), K.rubber, { y: y + r * 1.25, z: z - 0.012 - k * 0.012 });
+    }
+  } else if (M.muzzle && !mods.muzzle && mods.barrel === 'long_barrel') b.tube('metal', M.muzzle[2] * 1.2, M.muzzle[2] * 1.2, mz, mz - 0.01, M.muzzle[0], K.black, 0, 8);
+  // ---- underbarrel
+  if (M.under && mods.under) {
+    const [y, z] = M.under;
+    if (mods.under === 'vertical_grip') { b.add('poly', prof(smooth([[0, 0], [0.04, 0], [0.04, -0.08, 0.01], [0.002, -0.085, 0.01]]), 0.028, 0.004), K.polyB, { y, z: z + 0.02 }); for (let k = 0; k < 4; k++) b.add('poly', box(0.03, 0.004, 0.044), K.black, { y: y - 0.02 - k * 0.016, z: z + 0.0 }); }
+    else if (mods.under === 'angled_grip') b.add('poly', prof([[0, 0], [0.065, 0], [0.055, -0.045], [0.018, -0.05]], 0.026, 0.004), K.polyB, { y, z: z + 0.03 });
+    else if (mods.under === 'laser') { b.add('metal', box(0.026, 0.024, 0.07), K.black, { y: y - 0.012, z }); b.add('glow', cyl(0.004, 0.004, 0.002, 8), 0xffffff, { y: y - 0.008, z: z - 0.036, rx: Math.PI / 2 }); b.add('metal', cyl(0.006, 0.006, 0.01, 8), K.steel, { x: 0.014, y: y - 0.012, z: z + 0.01, rz: Math.PI / 2 }); }
+    else if (mods.under === 'flashlight') { b.add('metal', box(0.018, 0.012, 0.03), K.black, { y: y - 0.006, z }); b.tube('metal', 0.016, 0.018, z + 0.035, z - 0.05, y - 0.028, K.black, 0, 12); b.add('glass', new THREE.CircleGeometry(0.016, 12), 0xffffff, { y: y - 0.028, z: z - 0.051, ry: Math.PI }); b.add('metal', tor(0.017, 0.002, Math.PI * 2, 12), K.steel, { y: y - 0.028, z: z - 0.05 }); }
+    else if (mods.under === 'bipod') {
+      b.add('metal', box(0.04, 0.02, 0.035), K.black, { y: y - 0.01, z });
+      for (const sx of [-1, 1]) { b.add('metal', cyl(0.005, 0.005, 0.2, 6), K.steel, { x: sx * 0.022, y: y - 0.022, z: z + 0.1, rx: Math.PI / 2 - 0.12, rz: sx * 0.08 }); b.add('rubber', cyl(0.008, 0.008, 0.02, 6), K.rubber, { x: sx * 0.022, y: y - 0.035, z: z + 0.2, rx: Math.PI / 2 }); }
+    }
+  }
+  // ---- magazines
+  if (M.mag && mods.mag) {
+    const k = M.mag.kind, m = mods.mag;
+    if (k === 'curved') { if (m === 'ext_mag') curvedMag(b, 1.5); else if (m === 'drum_mag') drumMag(b, -0.15, -0.1, 0.075); else { /* quick-pull tab + tape */ b.add('poly', tor(0.012, 0.003, Math.PI, 8), K.red, { y: -0.225, z: -0.2 }); for (const yy of [-0.08, -0.15]) b.add('poly', box(0.03, 0.01, 0.06), K.black, { y: yy, z: -0.14 + yy * 0.25, rx: -0.3 }); } }
+    else if (k === 'straight') { const mg = M.mag; if (m === 'ext_mag') straightMag(b, mg.z, mg.top, mg.len * 1.6, mg.d); else if (m === 'drum_mag') { b.add('poly', box(0.026, 0.04, mg.d), K.polyB, { y: mg.top - 0.02, z: mg.z }); drumMag(b, mg.z, mg.top - 0.1, 0.065); } else b.add('poly', tor(0.012, 0.003, Math.PI, 8), K.red, { y: mg.top - mg.len - 0.016, z: mg.z }); }
+    else if (k === 'pistol') { if (m === 'ext_mag') { b.add('poly', prof([[-0.058, -0.106], [-0.014, -0.106], [-0.026, -0.178], [-0.07, -0.178]], 0.028, 0.003), K.polyB, {}); b.add('metal', box(0.03, 0.012, 0.048), K.black, { y: -0.184, z: 0.048, rx: -0.2 }); } else b.add('poly', tor(0.01, 0.0025, Math.PI, 8), K.red, { y: -0.125, z: 0.012 }); }
+    else if (k === 'box') { const mg = M.mag; straightMag(b, mg.z, mg.top, m === 'ext_mag' ? mg.len * 1.8 : mg.len, mg.d, K.blued); if (m === 'fast_mag') b.add('poly', tor(0.01, 0.0025, Math.PI, 8), K.red, { y: mg.top - mg.len - 0.016, z: mg.z }); }
+    else if (k === 'tube' && m === 'ext_mag') { b.tube('metal', 0.0115, 0.0115, -0.68, -0.74, 0.049, K.blued, 0, 12); b.add('metal', box(0.012, 0.03, 0.014), K.black, { y: 0.063, z: -0.73 }); }
+    else if (k === 'lmg') { if (m === 'drum_mag') drumMag(b, -0.12, -0.06, 0.085); else { b.add('poly', prof(smooth([[0.04, 0.015], [0.21, 0.015], [0.21, -0.11, 0.01], [0.04, -0.11, 0.01]]), 0.1, 0.005), K.olive, { x: -0.02 }); b.add('poly', tor(0.014, 0.003, Math.PI, 8), K.red, { x: -0.02, y: -0.125, z: -0.12 }); } }
+  }
+  // ---- stock
+  if (M.stock && mods.stock === 'tac_stock') {
+    const [y, z] = M.stock;
+    b.add('poly', prof(smooth([[0, 0], [-0.12, 0.004, 0.01], [-0.12, 0.022], [0, 0.02]]).map(([u, v]) => [u - z, v + y]), 0.034, 0.004), K.polyB, {});  // cheek riser
+    b.add('rubber', box(0.046, 0.17, 0.03), K.rubber, { y: y - 0.075, z: z + 0.125 });
+    for (let k = 0; k < 4; k++) b.add('rubber', box(0.048, 0.006, 0.032), K.black, { y: y - 0.02 - k * 0.035, z: z + 0.125 });
+  }
+}
+// finishes: rebuild with a swapped palette
+function withFinish(fid, fn) {
+  const f = FINISHES.find((x) => x.id === fid);
+  if (!f || f.id === 'factory') return fn();
+  const saved = { ...K };
+  if (f.poly) { K.polyB = f.poly; K.polyG = new THREE.Color(f.poly).multiplyScalar(1.25).getHex(); }
+  if (f.tan) K.tan = f.tan;
+  if (f.olive) K.olive = f.olive;
+  if (f.metal) { K.gun = f.metal; K.blued = new THREE.Color(f.metal).multiplyScalar(0.85).getHex(); K.black = new THREE.Color(f.metal).multiplyScalar(0.7).getHex(); MATS.metal = MATS.bright; }
+  try { return fn(); } finally { Object.assign(K, saved); MATS.metal = METAL; }
+}
+const METAL = MATS.metal;
 
 export function hasWeaponModel(id) { return !!W[id]; }
 const cache = new Map();
-export function makeWeaponModel(id) {
-  if (!cache.has(id)) cache.set(id, W[id]());
-  return cache.get(id).clone();
+export function makeWeaponModel(id, mods = null) {
+  const key = id + '|' + modsKey(mods);
+  if (!cache.has(key)) cache.set(key, withFinish(mods?.finish, () => { const b = W[id]({ mods: mods || {} }); fit(b, id, mods); return b.build(); }));
+  return cache.get(key).clone();
+}
+// Attachments on their own (inventory icons, dropped items): shown fitted to a ghost-free mount
+export function hasModModel(id) { return !!MODS[id]; }
+export function makeModModel(id) {
+  const key = 'mod|' + id;
+  if (!cache.has(key)) {
+    const b = new B();
+    const slot = MODS[id].slot;
+    // reuse the rifle mounts but draw only the attachment itself
+    fit(b, 'rifle', { [slot]: id });
+    if (slot === 'mag' && id === 'fast_mag') curvedMag(b, 1);
+    if (slot === 'barrel') b.tube('metal', 0.0095, 0.009, -0.52, -0.64, 0.055, K.blued, 0, 10);
+    if (slot === 'stock') b.add('poly', prof(smooth([[-0.13, 0.035], [-0.13, 0.08, 0.01], [-0.31, 0.088, 0.012], [-0.33, 0.07], [-0.33, -0.065, 0.01], [-0.3, -0.07], [-0.2, 0.0], [-0.15, 0.02]]), 0.036, 0.004), K.polyB, {});
+    const g = b.build();
+    // centre it
+    const bb = new THREE.Box3().setFromObject(g), c = bb.getCenter(new THREE.Vector3());
+    g.children.forEach((m) => m.position.sub(c));
+    cache.set(key, g);
+  }
+  return cache.get(key).clone();
 }

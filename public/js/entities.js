@@ -8,6 +8,7 @@ import { decodeLook } from '/shared/look.js';
 import { ITEMS as ITEMDEFS } from '/shared/items.js';
 import { makeHumanoid, makeAnimal, makeItemModel, deployGeometry, MAT } from './models.js';
 import { animateAnimal } from './animals.js';
+import { parseModsKey } from '/shared/gunmods.js';
 
 const _v = new THREE.Vector3();
 const _o = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -55,7 +56,9 @@ export class Entities {
       if (p.heldId !== held) {
         p.heldId = held;
         if (p.held) p.model.userData.hand.remove(p.held);
-        p.held = held ? makeItemModel(held) : null;
+        const [hid, hmods] = held ? held.split('|') : [];
+        p.heldItem = hid || '';
+        p.held = hid ? makeItemModel(hid, parseModsKey(hmods)) : null;
         if (p.held) { p.held.rotation.x = -Math.PI / 2; p.model.userData.hand.add(p.held); }
       }
     }
@@ -99,7 +102,7 @@ export class Entities {
         // stride: ~1.5 m per walk cycle, ~2.4 m per run cycle
         p.walk += p.sv.s * dt * (Math.PI * 2) / (run ? 2.4 : crouch ? 1.1 : 1.5);
         p.amt = (p.amt || 0) + (Math.min(1, p.sv.s / 3.5) - (p.amt || 0)) * Math.min(1, dt * 8);
-        const d = ITEMDEFS[p.heldId];
+        const d = ITEMDEFS[p.heldItem];
         poseHumanoid(ud, { mode: 'stand', walk: p.walk, amt: p.amt, fwd, side, run, air, vy: p.sv.vy, land: p.land, accel: (p.sv.s - prevS) / Math.max(dt, 1e-3) * 0.1, turn: p.sv.turn, t: p.t, crouch: !!crouch, held: !!p.held, gun: !!d?.gun, pitch: p.pitch, swing: p.swingT > 0 ? 1 - p.swingT / 0.45 : 0, shot: Math.max(0, p.shotT || 0) / 0.12 }, dt);
         p.shotT = (p.shotT || 0) - dt;
       }

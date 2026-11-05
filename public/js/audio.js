@@ -38,6 +38,7 @@ export class Audio {
     o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + 0.05);
   }
   shot(weapon, dist = 0) {
+    if (weapon === 'quiet') { this._noise(0.12, { freq: 900, q: 1.2, type: 'bandpass', gain: 0.22 / (1 + dist * 0.05), dist }); return this._tone(220, 0.05, { type: 'triangle', gain: 0.06, slide: 0.5 }); }
     if (weapon === 'bow') return this._noise(0.18, { freq: 700, q: 2, type: 'bandpass', gain: 0.25, dist });
     const big = weapon === 'shotgun' || weapon === 'rifle';
     this._noise(big ? 0.45 : 0.3, { freq: big ? 1600 : 2200, gain: big ? 0.9 : 0.7, dist, sweep: 0.15 });

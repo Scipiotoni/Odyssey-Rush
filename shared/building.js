@@ -81,6 +81,7 @@ export function pieceBoxes(type, open = false) {
     case 'door': return open ? [] : [[0, 1.1, 0, 0.6, 1.1, 0.06]];
     // deployables
     case 'workbench1': case 'workbench2': case 'workbench3': return [[0, 0.45, 0, 1.0, 0.45, 0.5]];
+    case 'gunsmith': return [[0, 0.47, 0, 1.05, 0.47, 0.5]];
     case 'small_box': return [[0, 0.3, 0, 0.45, 0.3, 0.3]];
     case 'large_box': return [[0, 0.4, 0, 0.75, 0.4, 0.45]];
     case 'furnace': return [[0, 0.7, 0, 0.6, 0.7, 0.6]];

@@ -92,6 +92,15 @@
     <p>Step 2 — type this code: <b id="resetcode" class="code"></b> <input id="resetcodein" autocomplete="off" maxlength="6"></p>
     <div class="row"><button id="resetcancel" class="alt">Cancel</button><button id="resetgo" class="danger" disabled>Reset everything</button></div>
   </div></div>
+  <div id="gunsmithscreen" class="hidden panelscreen center"><div class="adminbox gsbox">
+    <h2>🔧 Gunsmith Bench — <span id="gsname"></span></h2>
+    <div class="gsrow">
+      <div class="gslist" id="gslist"></div>
+      <div class="gscenter"><canvas id="gsprev" width="520" height="280"></canvas><div class="hint">Drag to turn the weapon</div><div id="gsstats"></div></div>
+      <div class="gsslots" id="gsslots"></div>
+    </div>
+    <div class="hint">Craft attachments in this bench's Fabrication list, then fit them here. Removing one gives it back. Esc to close.</div>
+  </div></div>
   <div id="paintscreen" class="hidden panelscreen center"><div id="paintbox" class="adminbox"></div></div>
   <div id="itemscreen" class="hidden panelscreen center"><div class="adminbox"><h2>🧰 Item spawner <small>(admin)</small></h2><div class="itemtools"><input id="itemsearch" placeholder="Search items…" autocomplete="off"><label>Amount <select id="itemamt"><option value="0">Full stack</option><option value="1">1</option><option value="10">10</option><option value="100">100</option><option value="1000">1000</option></select></label></div><div id="itemgrid"></div><div class="hint">Click an item to get it · Esc to close</div></div></div>
 

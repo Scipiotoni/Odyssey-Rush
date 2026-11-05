@@ -346,6 +346,28 @@ export function deployGeometry(kind) {
           part(box(1.9, 0.05, 0.9), kind === 'workbench3' ? 0x8a2020 : kind === 'workbench2' ? 0x2a5a8a : 0x5a8a2a, { y: 0.3 }),
         ]);
       }
+      case 'gunsmith': {
+        const steel = 0x5a6068, dark = 0x2a2c30, wood = 0x7a5534;
+        const parts = [
+          part(box(2.1, 0.08, 1.0), dark, { y: 0.9 }), part(box(2.08, 0.04, 0.98), wood, { y: 0.96 }),
+          ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => part(box(0.08, 0.9, 0.08), steel, { x: sx * 0.98, y: 0.45, z: sz * 0.44 })),
+          part(box(2.0, 0.05, 0.9), steel, { y: 0.25 }), part(box(0.6, 0.35, 0.8), 0x7a2020, { x: -0.65, y: 0.45 }),   // drawer cabinet
+          ...[0.33, 0.47, 0.6].map((y) => part(box(0.58, 0.02, 0.02), 0xc0c0c0, { x: -0.65, y, z: -0.41 })),
+          part(box(2.0, 1.0, 0.06), 0x9a8a6a, { y: 1.5, z: 0.48 }),                                                       // pegboard
+          ...Array.from({ length: 24 }, (_, i) => part(box(0.02, 0.02, 0.02), 0x3a3020, { x: -0.9 + (i % 8) * 0.25, y: 1.15 + Math.floor(i / 8) * 0.3, z: 0.44 })),
+          // a rifle on the wall rack
+          part(box(1.1, 0.05, 0.04), dark, { x: 0.1, y: 1.72, z: 0.42 }), part(box(0.3, 0.1, 0.045), wood, { x: -0.55, y: 1.68, z: 0.42 }), part(box(0.05, 0.14, 0.04), dark, { x: 0.05, y: 1.62, z: 0.42 }),
+          ...[-0.4, 0.4].map((x) => part(box(0.04, 0.08, 0.08), steel, { x, y: 1.68, z: 0.44 })),
+          // vise
+          part(box(0.18, 0.12, 0.14), 0x2a5a8a, { x: 0.75, y: 1.04, z: -0.3 }), part(box(0.2, 0.1, 0.06), 0x2a5a8a, { x: 0.75, y: 1.1, z: -0.4 }), part(cyl(0.012, 0.012, 0.3, 6), 0xc0c0c0, { x: 0.75, y: 1.08, z: -0.52, rx: Math.PI / 2 }),
+          // tools, parts and a scope on the bench
+          part(box(0.3, 0.04, 0.08), 0xb02a20, { x: 0.2, y: 1.0, z: -0.2, ry: 0.3 }), part(cyl(0.03, 0.03, 0.25, 10), dark, { x: -0.2, y: 1.01, z: -0.15, rz: Math.PI / 2 }), part(cyl(0.04, 0.03, 0.05, 10), dark, { x: -0.06, y: 1.01, z: -0.15, rz: Math.PI / 2 }),
+          part(box(0.12, 0.08, 0.2), 0x4a4e52, { x: 0.45, y: 1.02, z: 0.1 }), part(box(0.06, 0.12, 0.03), 0x1e1f21, { x: 0.25, y: 1.04, z: 0.15, rz: 0.3 }),
+          // lamp arm
+          part(cyl(0.015, 0.015, 0.7, 6), steel, { x: -0.85, y: 1.3, z: -0.1 }), part(cyl(0.012, 0.012, 0.5, 6), steel, { x: -0.65, y: 1.62, z: -0.1, rz: -1.1 }), part(cone(0.1, 0.12, 8), 0xd8b030, { x: -0.43, y: 1.6, z: -0.1, rz: Math.PI }),
+        ];
+        return merge(parts);
+      }
       case 'small_box': return merge([part(box(0.9, 0.6, 0.6), 0x8a6238, { y: 0.3 }, 0.08), part(box(0.92, 0.06, 0.62), 0x5a3e22, { y: 0.45 })]);
       case 'large_box': return merge([part(box(1.5, 0.8, 0.9), 0x7a5532, { y: 0.4 }, 0.08), part(box(1.52, 0.06, 0.92), 0x4a3420, { y: 0.6 }), part(box(0.1, 0.82, 0.92), 0x4a3420, { y: 0.4 })]);
       case 'sleeping_bag': return merge([part(box(0.8, 0.15, 2), 0x4a6a8a, { y: 0.075 }, 0.05), part(box(0.7, 0.18, 0.4), 0xd8d0c0, { y: 0.1, z: -0.75 })]);

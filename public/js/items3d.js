@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { ITEMS } from '/shared/items.js';
 import { MAT, part, merge, deployGeometry } from './models.js';
-import { hasWeaponModel, makeWeaponModel } from './guns3d.js';
+import { hasWeaponModel, makeWeaponModel, hasModModel, makeModModel } from './guns3d.js';
 
 const C = {
   wood: 0x8a5a32, dwood: 0x5e3c22, lwood: 0xb08050, metal: 0xaab0b6, dmetal: 0x3c3f44, black: 0x1f2022, steel: 0x7d848b,
@@ -169,11 +169,12 @@ export function itemGeometry(id) {
   return geoCache.get(id);
 }
 
-export function makeItemModel(id) {
+export function makeItemModel(id, mods = null) {
   const g = new THREE.Group();
   const d = ITEMS[id];
   if (!d) return g;
-  if (hasWeaponModel(id)) { g.add(makeWeaponModel(id)); return g; }
+  if (hasWeaponModel(id)) { g.add(makeWeaponModel(id, mods)); return g; }
+  if (hasModModel(id)) { const m = makeModModel(id); m.rotation.y = -Math.PI / 2; m.scale.setScalar(1.6); g.add(m); return g; }
   const geo = itemGeometry(id);
   if (geo) { const m = new THREE.Mesh(geo, MAT); m.castShadow = true; g.add(m); }
   else if (d.deploy) { const m = new THREE.Mesh(deployGeometry(d.deploy.kind), MAT); m.scale.setScalar(0.2); m.castShadow = true; g.add(m); }
