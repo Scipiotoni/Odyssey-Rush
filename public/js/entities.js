@@ -3,7 +3,10 @@ import * as THREE from 'three';
 import { ANIMALS } from '/shared/items.js';
 import { VEHICLES } from '/shared/vehicles.js';
 import { Interp, INTERP_DELAY } from './interp.js';
-import { makeHumanoid, setHumanoidArmor, makeAnimal, makeItemModel, deployGeometry, MAT } from './models.js';
+import { poseHumanoid } from './character.js';
+import { decodeLook } from '/shared/look.js';
+import { ITEMS as ITEMDEFS } from '/shared/items.js';
+import { makeHumanoid, makeAnimal, makeItemModel, deployGeometry, MAT } from './models.js';
 
 const _v = new THREE.Vector3();
 const _o = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -32,20 +35,20 @@ export class Entities {
   syncPlayers(list, vehicles) {
     const seen = new Set();
     for (const a of list) {
-      const [pid, x, y, z, yaw, pitch, flags, held, armor, name, vid, seat] = a;
+      const [pid, x, y, z, yaw, pitch, flags, held, armor, name, vid, seat, lookStr = ''] = a;
       seen.add(pid);
       let p = this.players.get(pid);
+      if (p && (p.lookStr !== lookStr || p.armor !== armor)) { this.scene.remove(p.model); this.players.delete(pid); p = null; }
       if (!p) {
-        const model = makeHumanoid();
+        const model = makeHumanoid(decodeLook(lookStr), armor.split(','));
         this.scene.add(model);
         const tag = nameSprite(name); tag.position.y = 2.15; model.add(tag);
-        p = { pid, model, tag, pos: new THREE.Vector3(x, y, z), target: new THREE.Vector3(x, y, z), yaw, tyaw: yaw, pitch, walk: 0, held: null, heldId: '', armor: '', name };
+        p = { pid, model, tag, lookStr, pos: new THREE.Vector3(x, y, z), yaw, pitch, walk: 0, held: null, heldId: '', armor, name };
         this.players.set(pid, p);
       }
       if (!p.interp) p.interp = new Interp();
       p.interp.push(performance.now(), x, y, z, yaw);
       p.pitch = pitch; p.flags = flags; p.vid = vid; p.seat = seat;
-      if (p.armor !== armor) { p.armor = armor; setHumanoidArmor(p.model, armor.split(',')); }
       if (p.heldId !== held) {
         p.heldId = held;
         if (p.held) p.model.userData.hand.remove(p.held);
@@ -64,28 +67,19 @@ export class Entities {
       const speed = before.distanceTo(p.pos) / Math.max(dt, 1e-3);
       p.model.position.copy(p.pos);
       p.model.rotation.set(0, p.yaw, 0);
-      ud.hips.rotation.set(0, 0, 0);
-      ud.hips.position.y = crouch ? 0.7 : 0.95;
-      if (sleeping) {
-        ud.hips.rotation.x = -Math.PI / 2; ud.hips.position.y = 0.2;
-        ud.legL.rotation.x = ud.legR.rotation.x = 0; ud.armL.rotation.x = ud.armR.rotation.x = 0;
-      } else if (inVeh) {
+      if (sleeping) poseHumanoid(ud, { mode: 'sleep' });
+      else if (inVeh) {
         const v = vehicleViews.get(p.vid);
         if (v && p.seat >= 0) {
           const s = VEHICLES[v.type].seats[p.seat] || [0, 0.5, 0];
           _v.set(s[0], s[1] - 0.45, s[2]).applyQuaternion(v.q).add(v.pos);
           p.model.position.copy(_v); p.model.quaternion.copy(v.q);
         }
-        ud.legL.rotation.x = ud.legR.rotation.x = Math.PI / 2; ud.armL.rotation.x = ud.armR.rotation.x = 1.1;
-        ud.hips.position.y = 0.45;
+        poseHumanoid(ud, { mode: 'sit', pitch: p.pitch });
       } else {
-        p.walk += Math.min(speed, 8) * dt * 1.6;
-        const sw = Math.min(1, speed / 3) * 0.7;
-        ud.legL.rotation.x = Math.sin(p.walk) * sw; ud.legR.rotation.x = -Math.sin(p.walk) * sw;
-        ud.armL.rotation.x = -Math.sin(p.walk) * sw * 0.7;
-        ud.armR.rotation.x = p.held ? 1.25 + p.pitch * 0.8 + (p.swingT > 0 ? Math.sin((1 - p.swingT / 0.35) * Math.PI) * 1.2 : 0) : Math.sin(p.walk) * sw * 0.7;
-        ud.head.rotation.x = p.pitch * 0.5;
-        if (crouch) { ud.legL.rotation.x += 0.8; ud.legR.rotation.x += 0.8; }
+        p.walk += Math.min(speed, 8) * dt * 1.55;
+        const amt = Math.min(1, speed / 4);
+        poseHumanoid(ud, { mode: 'stand', walk: p.walk, amt, crouch: !!crouch, held: !!p.held, gun: !!ITEMDEFS[p.heldId]?.gun, pitch: p.pitch, swing: p.swingT > 0 ? 1 - p.swingT / 0.35 : 0 });
       }
       if (p.swingT > 0) p.swingT -= dt;
       p.tag.visible = !sleeping && camPos.distanceTo(p.pos) < 22;
@@ -97,7 +91,7 @@ export class Entities {
       const c = p.model.position, yaw = p.yaw;
       if (p.flags & 2) { out.push({ kind: 'p', id: p.pid, shapes: [{ t: 'box', x: c.x, y: c.y + 0.25, z: c.z, hx: 0.35, hy: 0.25, hz: 0.95, yaw }] }); continue; }
       const crouch = p.flags & 1;
-      const hipY = p.flags & 4 ? 0.45 : crouch ? 0.7 : 0.95;
+      const hipY = p.flags & 4 ? 0.45 : crouch ? 0.62 : 0.92;
       out.push({ kind: 'p', id: p.pid, shapes: [
         { t: 'box', x: c.x, y: c.y + hipY * 0.5 + 0.15, z: c.z, hx: 0.3, hy: hipY * 0.5 + 0.15, hz: 0.18, yaw },
         { t: 'box', x: c.x, y: c.y + hipY + 0.33, z: c.z, hx: 0.3, hy: 0.33, hz: 0.18, yaw },

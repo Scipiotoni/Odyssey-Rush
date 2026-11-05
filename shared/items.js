@@ -93,6 +93,7 @@ export const ITEMS = {
 // Station requirement strings: null | 'wb1' | 'wb2' | 'wb3' | 'campfire' | 'furnace'
 export const RECIPES = [
   // basics
+  { out: 'rock', n: 1, time: 1, cost: { stone: 10 } },
   { out: 'stone_hatchet', n: 1, time: 3, cost: { wood: 200, stone: 100 } },
   { out: 'stone_pickaxe', n: 1, time: 3, cost: { wood: 200, stone: 100 } },
   { out: 'torch', n: 1, time: 2, cost: { wood: 30, cloth: 5 } },
@@ -179,11 +180,15 @@ export const NODES = {
   rock_stone: { kind: 'ore', hp: 150, yield: { stone: 1.2 }, radius: 1.1, height: 1.6 },
   rock_metal: { kind: 'ore', hp: 150, yield: { metal_ore: 0.7, stone: 0.4 }, radius: 1.1, height: 1.6 },
   rock_sulfur: { kind: 'ore', hp: 150, yield: { sulfur_ore: 0.7, stone: 0.3 }, radius: 1.1, height: 1.6 },
+  loose_rock: { kind: 'pick', yield: {}, radius: 0.35, height: 0.35, givesRock: true },
+  branch: { kind: 'pick', yield: { wood: 15 }, radius: 0.6, height: 0.3 },
   hemp: { kind: 'pick', yield: { cloth: 10 }, radius: 0.4, height: 1.2 },
   berry: { kind: 'pick', yield: { berries: 3 }, radius: 0.6, height: 1 },
   barrel: { kind: 'barrel', hp: 40, radius: 0.5, height: 1.2 },
 };
 export const NODE_RESPAWN = 20 * 60; // seconds
+// Bare hands: weak, can't gather
+export const FIST = { tree: 0, ore: 0, dmg: 6, range: 1.9, rate: 1.7 };
 
 // Terrain editing
 export const DIG = { step: 0.45, min: -6, max: 4, raiseCost: { stone: 5 }, reach: 5 };

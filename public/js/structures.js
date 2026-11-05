@@ -23,7 +23,7 @@ export class Structures {
     }
     let obj;
     if (s.k === 'piece') {
-      obj = new THREE.Mesh(pieceGeometry(s.type), TIER_MATS[s.tier] || TIER_MATS[0]);
+      obj = new THREE.Mesh(pieceGeometry(s.type, s.tier || 0), MAT);
       if (s.b) {
         let b = this.buildings.get(s.bid);
         if (!b) { b = { id: s.bid, x: s.b[0], y: s.b[1], z: s.b[2], yaw: s.b[3], pieces: new Map() }; this.buildings.set(s.bid, b); }

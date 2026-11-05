@@ -112,6 +112,7 @@ export class VehicleSim {
     const canDrive = this.engineOk && this.fuel > 0;
     if (!canDrive) thr = 0;
     this.throttle = thr;
+    this.braking = !!brake || !!input.handbrake;
     const steerTarget = input.steer * def.steer / (1 + Math.abs(vLongBody) * 0.045);
     this.steer += (steerTarget - this.steer) * Math.min(1, dt * 6);
     const maxV = thr >= 0 ? def.maxSpeed : def.maxSpeed * 0.35;
@@ -313,9 +314,12 @@ export class VehicleView {
       else { const fwd = _d.set(0, 0, 1).applyQuaternion(this.q); w.spin.rotation.x += (this.vel.dot(fwd) / this.def.wheelR) * dt; }
     });
     const tint = this.broken ? 0x6b4a32 : this.def.color;
-    if (ud._tint !== tint) { ud.paintMat.color.set(tint); ud._tint = tint; }
+    if (ud._tint !== tint) { ud.paintMat.color.set(tint); ud.paintMat.roughness = this.broken ? 0.85 : 0.3; ud.paintMat.metalness = this.broken ? 0.15 : 0.55; ud._tint = tint; }
     const drivenNow = sim || this.driver;
-    ud.headlight.intensity = drivenNow && night ? 30 : 0;
+    ud.headlight.intensity = drivenNow && night ? 40 : 0;
+    if (ud.headMat) ud.headMat.emissiveIntensity = drivenNow ? (night ? 3 : 0.9) : 0.12;
+    if (ud.tailMat) ud.tailMat.emissiveIntensity = sim && sim.braking ? 3 : drivenNow ? (night ? 1 : 0.4) : 0.1;
+    if (ud.fog) ud.fog.emissiveIntensity = drivenNow && night ? 2 : 0.15;
     // collider for players / other vehicles
     const fwd = _d.set(0, 0, 1).applyQuaternion(this.q);
     const c = this.collider;

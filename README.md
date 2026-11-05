@@ -62,7 +62,11 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 ## How to play
 
-1. **Gather.** Hit trees for wood and rocks for stone, metal ore and sulfur ore (orange / yellow speckled rocks).
+0. **Create your survivor.** The main menu has a character creator with a live 3D preview: body type, height,
+   skin tone, 8 hair styles and 11 colours, facial hair, eye colour, tops, legs and shoes. Everyone sees your look.
+1. **Start with nothing.** You wake up empty-handed. Find a **loose rock** on the ground (beaches have plenty) and
+   press E to pick it up — that's your first tool. Branches give wood. Bare fists can fight but can't gather.
+   Hit trees for wood and rocks for stone, metal ore and sulfur ore (orange / yellow speckled rocks).
    Press E on hemp for cloth and on bushes for berries. Smash blue barrels for scrap and parts.
 2. **Craft.** Stone hatchet & pickaxe first, then a building plan, hammer, camp fire, furnace, sleeping bag and boxes.
    Stand near stations to unlock recipes: **Camp Fire** (cooking, charcoal, fuel), **Furnace** (smelting),
@@ -78,7 +82,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 6. **Develop.** Gathering, crafting and fighting earn XP: every level adds max health and gather rate.
    Armor (burlap → hide → metal) reduces damage and keeps you warm in the tundra and at night.
 7. **Explore & drive.** ~117 monuments (ruins, gas stations, farms, radio towers, military outposts, junkyards)
-   hold loot crates that respawn, and **broken vehicles**: a Quad Bike, Dune Buggy or Offroad Pickup. Look at one
+   hold loot crates that respawn, and **broken vehicles**: an ATV, a Rally Hatchback, an Offroad SUV or a Double-Cab Pickup. Look at one
    and press E to install the parts it needs (wheels, engine parts, scrap, metal), add Low Grade Fuel, and drive.
 
 ### Vehicle physics

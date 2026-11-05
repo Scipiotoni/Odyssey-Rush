@@ -270,7 +270,7 @@ export class World {
           lootAt(bx, bz, rng() < 0.2 ? 2 : 1);
         }
         for (let i = 0; i < 6; i++) box((rng() - 0.5) * 70, 0.4, (rng() - 0.5) * 70, 1 + rng() * 2, 0.8, 1 + rng() * 2, 0x777068, rng() * 3);
-        if (rng() < 0.7) vehAt((rng() - 0.5) * 50, 38, rng() * 6, rng() < 0.5 ? 'buggy' : 'quad');
+        if (rng() < 0.7) vehAt((rng() - 0.5) * 50, 38, rng() * 6, ['buggy', 'quad', 'suv'][Math.floor(rng() * 3)]);
         break;
       }
       case 'gas': {
@@ -284,7 +284,7 @@ export class World {
         box(-4.5, 2, 15, 5, 4, 0.4, CONC); box(4.5, 2, 15, 5, 4, 0.4, CONC); box(0, 3.4, 15, 4, 1.2, 0.4, CONC);
         box(0, 4.15, 19, 14.4, 0.3, 8.4, 0x6b6b6b);
         lootAt(-3, 20, 1); lootAt(4, 21, 2); lootAt(10, -8, 1);
-        vehAt(-14, 0, 0.2, rng() < 0.5 ? 'truck' : 'buggy');
+        vehAt(-14, 0, 0.2, ['truck', 'buggy', 'suv'][Math.floor(rng() * 3)]);
         if (rng() < 0.5) vehAt(14, 10, 1.4, 'quad');
         break;
       }
@@ -311,7 +311,7 @@ export class World {
         box(10, 1.5, 0, 0.5, 3, 8, CONC); box(18, 1.5, 0, 0.5, 3, 8, CONC); box(14, 1.5, 4, 8.5, 3, 0.5, CONC);
         box(11.8, 1.5, -4, 4, 3, 0.5, CONC); box(16.8, 1.5, -4, 2.8, 3, 0.5, CONC); box(14, 3.15, 0, 8.5, 0.3, 8.5, CONC);
         lootAt(14, 1, 2); lootAt(15.5, 2, 2); lootAt(-5, 6, 1);
-        if (rng() < 0.5) vehAt(-16, -10, 0.4, 'buggy');
+        if (rng() < 0.5) vehAt(-16, -10, 0.4, rng() < 0.5 ? 'buggy' : 'suv');
         break;
       }
       case 'military': {
@@ -321,7 +321,7 @@ export class World {
         box(16, 7.1, 14, 3.6, 0.2, 3.6, WOOD); box(16, 7.7, 15.7, 3.6, 1, 0.2, WOOD); box(16, 7.7, 12.3, 3.6, 1, 0.2, WOOD);
         box(-14, 1.3, 10, 6, 2.6, 2.4, 0x5c6b4a); box(-14, 1.3, 13, 6, 2.6, 2.4, 0x4a5a6b);
         lootAt(16, 14, 3, 7.2);
-        vehAt(-12, -16, 0.3, 'truck');
+        vehAt(-12, -16, 0.3, rng() < 0.5 ? 'truck' : 'suv');
         break;
       }
       case 'junkyard': {
@@ -336,7 +336,7 @@ export class World {
         }
         box(22, 1.3, 0, 2.6, 2.6, 6, 0x2e5d8a); box(22, 3.9, 0.5, 2.6, 2.6, 6, 0x8a2e2e);
         lootAt(18, 5, 2); lootAt(-18, 10, 1); lootAt(5, -22, 2);
-        vehAt(-8, 18, 1.2, 'buggy'); vehAt(10, 20, 0.1, 'truck'); vehAt(-20, -18, 2.4, 'quad');
+        vehAt(-8, 18, 1.2, 'buggy'); vehAt(10, 20, 0.1, 'truck'); vehAt(-20, -18, 2.4, rng() < 0.5 ? 'quad' : 'suv');
         break;
       }
     }
@@ -352,7 +352,7 @@ export class World {
     for (let i = 0; i < per; i++) for (let j = 0; j < per; j++) {
       const rng = hashRng(cx * per + i, cz * per + j, 7, this.seed);
       const r = rng();
-      if (r > 0.5) continue; // nothing in most cells; densities below sum < 0.5
+      if (r > 0.55) continue; // nothing in most cells; densities below sum < 0.55
       const x = cx * CHUNK + (i + 0.15 + rng() * 0.7) * NODE_CELL;
       const z = cz * CHUNK + (j + 0.15 + rng() * 0.7) * NODE_CELL;
       const h = this.height(x, z);
@@ -396,13 +396,13 @@ export class World {
 
 // Biome -> node density table [type, cumulative probability threshold]
 const NODE_TABLE = {
-  [BIOME.BEACH]: [['tree_palm', 0.025], ['rock_stone', 0.035], ['barrel', 0.038]],
-  [BIOME.GRASS]: [['tree_oak', 0.05], ['rock_stone', 0.075], ['rock_metal', 0.085], ['rock_sulfur', 0.09], ['hemp', 0.13], ['berry', 0.15], ['barrel', 0.153]],
-  [BIOME.FOREST]: [['tree_oak', 0.22], ['tree_pine', 0.36], ['rock_stone', 0.39], ['rock_metal', 0.405], ['rock_sulfur', 0.41], ['hemp', 0.435], ['berry', 0.465], ['barrel', 0.467]],
-  [BIOME.DESERT]: [['cactus', 0.035], ['rock_stone', 0.07], ['rock_metal', 0.085], ['rock_sulfur', 0.11], ['barrel', 0.114]],
-  [BIOME.SWAMP]: [['tree_dead', 0.1], ['hemp', 0.16], ['rock_stone', 0.17], ['berry', 0.19], ['barrel', 0.193]],
-  [BIOME.SNOW]: [['tree_pine', 0.14], ['rock_stone', 0.18], ['rock_metal', 0.205], ['rock_sulfur', 0.22]],
-  [BIOME.ROCK]: [['rock_stone', 0.06], ['rock_metal', 0.1], ['rock_sulfur', 0.125], ['tree_pine', 0.14]],
+  [BIOME.BEACH]: [['loose_rock', 0.07], ['branch', 0.09], ['tree_palm', 0.115], ['rock_stone', 0.125], ['barrel', 0.128], ['hemp', 0.14]],
+  [BIOME.GRASS]: [['loose_rock', 0.025], ['branch', 0.04], ['tree_oak', 0.09], ['rock_stone', 0.115], ['rock_metal', 0.125], ['rock_sulfur', 0.13], ['hemp', 0.17], ['berry', 0.19], ['barrel', 0.193]],
+  [BIOME.FOREST]: [['loose_rock', 0.02], ['branch', 0.07], ['tree_oak', 0.29], ['tree_pine', 0.43], ['rock_stone', 0.46], ['rock_metal', 0.475], ['rock_sulfur', 0.48], ['hemp', 0.505], ['berry', 0.535], ['barrel', 0.537]],
+  [BIOME.DESERT]: [['loose_rock', 0.03], ['cactus', 0.065], ['rock_stone', 0.1], ['rock_metal', 0.115], ['rock_sulfur', 0.14], ['barrel', 0.144]],
+  [BIOME.SWAMP]: [['loose_rock', 0.02], ['branch', 0.05], ['tree_dead', 0.15], ['hemp', 0.21], ['rock_stone', 0.22], ['berry', 0.24], ['barrel', 0.243]],
+  [BIOME.SNOW]: [['loose_rock', 0.03], ['branch', 0.05], ['tree_pine', 0.19], ['rock_stone', 0.23], ['rock_metal', 0.255], ['rock_sulfur', 0.27]],
+  [BIOME.ROCK]: [['loose_rock', 0.05], ['rock_stone', 0.11], ['rock_metal', 0.15], ['rock_sulfur', 0.175], ['tree_pine', 0.19]],
 };
 function pickNode(b, r) {
   const t = NODE_TABLE[b];

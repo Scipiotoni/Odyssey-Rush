@@ -1,11 +1,12 @@
 // Authoritative game simulation: players, inventory, crafting, building, raiding,
 // loot, animals, vehicles and persistence.
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
-import { DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
+import { FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
 import { TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, restHeight } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { sanitizeLook, encodeLook } from '../shared/look.js';
 
 const VIEW_REGIONS = 2;           // regions (128m) around the player that are streamed
 const SNAP_RANGE = 420;           // dynamic entity visibility (m)
@@ -17,7 +18,7 @@ const DOOR_TIER = { wood: 1, metal: 3, armored: 4 };
 const CRATE_RESPAWN = 12 * 60;
 const BAG_LIFETIME = 25 * 60;
 const CORPSE_LIFETIME = 6 * 60;
-const STARTER = [['rock', 1], ['torch', 1], ['bandage', 2]];
+const STARTER = []; // you wake up with nothing
 
 const now = () => Date.now() / 1000;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
@@ -135,6 +136,7 @@ export class Game {
       this.players.set(token, p); this.byPid.set(p.pid, p);
       console.log(`[join] new player ${name} (#${p.pid})`);
     } else console.log(`[join] ${name} (#${p.pid}) returned${p.alive ? '' : ' to find themselves dead'}`);
+    p.look = sanitizeLook(msg.look || p.look); p.lookStr = encodeLook(p.look);
     p.name = name; p.ws = ws; p.online = true; p.regions = new Set(); p.openCont = null; p.vehicle = null; p.lastSt = now();
     ws.player = p;
     this.send(p, { t: 'welcome', terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
@@ -184,6 +186,7 @@ export class Game {
       case 'v_hit': return this.onVehicleHit(p, m);
       case 'demolish': return this.onDemolish(p, m);
       case 'dig': return this.onDig(p, m);
+      case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
   }
@@ -285,8 +288,8 @@ export class Game {
         const g = this.world.ground(wx, wz);
         const npp = this.world.nearestPOI(wx, wz);
         if (g > 1 && (!npp || npp.d > 100)) {
-          const types = ['quad', 'buggy', 'truck'];
-          this.spawnWreck(`veh_${wk}`, types[Math.floor(rng() * 3)], wx, wz, rng() * 6.28);
+          const types = ['quad', 'buggy', 'truck', 'suv'];
+          this.spawnWreck(`veh_${wk}`, types[Math.floor(rng() * 4)], wx, wz, rng() * 6.28);
           // a stash of parts near the wreck
           this.addLoot({ id: `cr_${wk}`, kind: 'crate', tier: 1, x: wx + 3, y: this.world.ground(wx + 3, wz + 2), z: wz + 2, yaw: rng() * 6, slots: this.lootSlots(1), respawn: 0 });
         }
@@ -385,8 +388,9 @@ export class Game {
 
   onSwing(p, m) {
     if (!p.alive || p.vehicle) return;
-    const h = this.heldItem(p, num(m.sel) | 0);
-    if (!h || !h.def.tool) return;
+    let h = this.heldItem(p, num(m.sel) | 0);
+    if (!h) h = { def: { tool: FIST } }; // bare hands
+    if (!h.def.tool) return;
     const tool = h.def.tool, t = now();
     if (t - (p.lastSwing || 0) < 0.75 / tool.rate) return;
     p.lastSwing = t;
@@ -576,9 +580,13 @@ export class Game {
     if (def.kind !== 'pick') return;
     if (Math.hypot(node.x - p.x, node.z - p.z) > 4) return;
     if (this.nodeState.get(id)?.hp <= 0) return;
+    if (def.givesRock) {
+      if (Inv.count(p.inv, 'rock') === 0) this.give(p, 'rock', 1);
+      else this.give(p, 'stone', 8);
+    }
     for (const k in def.yield) this.give(p, k, Math.round(def.yield[k] * this.gatherMul(p)));
     this.addXp(p, 1);
-    this.setNodeState(id, { hp: 0, until: now() + NODE_RESPAWN * 0.5 });
+    this.setNodeState(id, { hp: 0, until: now() + NODE_RESPAWN * (def.givesRock ? 0.25 : 0.5) });
     this.toRegion(id.split('_').slice(0, 2).join(','), { t: 'node', id, dep: 1 });
   }
 
@@ -1302,7 +1310,7 @@ export class Game {
         if (o === p || !o.alive || dist2(o, p) > R2) continue;
         const held = o.inv[o.sel]?.id || '';
         const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0);
-        pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1]);
+        pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1, o.lookStr || '']);
       }
       for (const v of this.vehicles.values()) {
         if (dist2(v, p) > R2) continue;

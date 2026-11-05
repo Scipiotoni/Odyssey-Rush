@@ -84,13 +84,23 @@
 
   <!-- Main menu -->
   <div id="menu">
-    <div class="menubox">
+    <div class="menubox wide">
       <h1>ODYSSEY <span>RUSH</span></h1>
-      <p class="tag">Wake up on a beach. Gather. Build. Hide. Raid. Repair a wreck and drive into the unknown.</p>
-      <input id="nameinput" maxlength="16" placeholder="Your name" />
-      <button id="playbtn">Wake Up</button>
+      <p class="tag">Wake up on a beach with nothing. Find a rock. Gather, build, hide, raid — repair a wreck and drive into the unknown.</p>
+      <div class="creator">
+        <div class="previewwrap"><canvas id="preview"></canvas><div class="hint">Drag to rotate</div></div>
+        <div class="lookcol">
+          <h3>Your survivor</h3>
+          <div id="lookopts"></div>
+          <button id="randlook" class="alt">🎲 Randomize</button>
+        </div>
+      </div>
+      <div class="playrow">
+        <input id="nameinput" maxlength="16" placeholder="Your name" />
+        <button id="playbtn">Wake Up</button>
+      </div>
       <div id="menustatus"></div>
-      <div id="menucontrols"></div>
+      <details><summary>Controls</summary><div id="menucontrols"></div></details>
     </div>
   </div>
   <div id="loading" class="hidden"><div>Generating the island… <span id="loadpct">0%</span></div></div>

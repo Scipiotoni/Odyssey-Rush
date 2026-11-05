@@ -3,11 +3,14 @@
 import * as THREE from 'three';
 import { CHUNK, GRID, POI_CELL, HALF, chunkKey } from '/shared/worldgen.js';
 import { NODES } from '/shared/items.js';
-import { MAT, nodeGeometry, poiGeometry } from './models.js';
+import { MAT, MAT_DS, nodeGeometry, poiGeometry, detailGeometry } from './models.js';
+import { BIOME } from '/shared/worldgen.js';
+import { hashRng } from '/shared/noise.js';
 import { buildChunkData } from './chunkgen.js';
 
 const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const NODE_RADIUS = 3;   // chunks around player with resource nodes
+const DETAIL_RADIUS = 1; // chunks around player with grass / flowers / pebbles
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
@@ -20,7 +23,7 @@ export class Terrain {
     this.depleted = new Set();
     this.nodeIndex = new Map();   // nodeId -> {mesh, i, node}
     this.viewDist = 900;
-    this.queue = []; this.nodeQueue = [];
+    this.queue = []; this.nodeQueue = []; this.details = new Map(); this.detailQueue = [];
     this.wantT = new Map(); this.wantN = new Set();
     this.ver = new Map();         // chunk key -> edit version
     this.inflight = new Set();
@@ -83,6 +86,16 @@ export class Terrain {
       for (const [k, nc] of this.nodeChunks) if (!this.wantN.has(k)) { this.disposeNodes(nc); this.nodeChunks.delete(k); }
       this.nodeQueue = [...this.wantN].filter((k) => !this.nodeChunks.has(k)).map((k) => { const [x, z] = k.split(',').map(Number); return { k, x, z, d: Math.hypot(x - cx, z - cz) }; }).sort((a, b) => a.d - b.d);
       this.updatePOIs(px, pz);
+      // cosmetic detail chunks
+      const dwant = new Set();
+      for (let i = -DETAIL_RADIUS; i <= DETAIL_RADIUS; i++) for (let j = -DETAIL_RADIUS; j <= DETAIL_RADIUS; j++) dwant.add(chunkKey(cx + i, cz + j));
+      for (const [k, list] of this.details) if (!dwant.has(k)) { for (const m of list) { this.scene.remove(m); m.dispose(); } this.details.delete(k); }
+      this.detailQueue = [...dwant].filter((k) => !this.details.has(k));
+    }
+    if (this.detailQueue.length && this.details) {
+      const k = this.detailQueue.shift();
+      const [x, z] = k.split(',').map(Number);
+      this.details.set(k, this.buildDetail(x, z));
     }
     if (this.workers.length) this.dispatch();
     else this.buildSync(budgetMs);
@@ -171,6 +184,39 @@ export class Terrain {
       meshes.push(im);
     }
     return { k, meshes, nodes, group };
+  }
+  // Cosmetic ground cover: deterministic tufts of grass, flowers and pebbles
+  buildDetail(cx, cz) {
+    const w = this.world, rng = hashRng(cx, cz, 404, w.seed);
+    const lists = { grass: [], flower: [], drygrass: [], pebbles: [] };
+    for (let i = 0; i < 900; i++) {
+      const x = cx * CHUNK + rng() * CHUNK, z = cz * CHUNK + rng() * CHUNK;
+      const h = w.ground(x, z);
+      if (h < 0.8) continue;
+      const b = w.biome(x, z, h);
+      const r = rng();
+      let kind = null;
+      if (b === BIOME.GRASS) kind = r < 0.08 ? 'flower' : r < 0.7 ? 'grass' : r < 0.74 ? 'pebbles' : null;
+      else if (b === BIOME.FOREST) kind = r < 0.5 ? 'grass' : r < 0.53 ? 'flower' : r < 0.58 ? 'pebbles' : null;
+      else if (b === BIOME.SWAMP) kind = r < 0.6 ? 'drygrass' : r < 0.7 ? 'grass' : null;
+      else if (b === BIOME.DESERT) kind = r < 0.12 ? 'drygrass' : r < 0.2 ? 'pebbles' : null;
+      else if (b === BIOME.BEACH) kind = r < 0.1 ? 'pebbles' : r < 0.14 ? 'drygrass' : null;
+      else if (b === BIOME.ROCK || b === BIOME.SNOW) kind = r < 0.12 ? 'pebbles' : null;
+      if (!kind) continue;
+      if (w.groundNormal(x, z)[1] < 0.8) continue;
+      lists[kind].push([x, h, z, rng() * 6.28, 0.7 + rng() * 0.7]);
+    }
+    const out = [];
+    for (const kind in lists) {
+      const L = lists[kind];
+      if (!L.length) continue;
+      const im = new THREE.InstancedMesh(detailGeometry(kind), kind === 'pebbles' ? MAT : MAT_DS, L.length);
+      L.forEach(([x, y, z, r, sc], i) => { _q.setFromAxisAngle(_up, r); _s.set(sc, sc, sc); _p.set(x, y - 0.02, z); _m.compose(_p, _q, _s); im.setMatrixAt(i, _m); });
+      im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere();
+      im.castShadow = false; im.receiveShadow = true;
+      this.scene.add(im); out.push(im);
+    }
+    return out;
   }
   disposeNodes(nc) {
     for (const m of nc.meshes) { this.scene.remove(m); m.dispose(); }

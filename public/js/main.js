@@ -16,7 +16,10 @@ import { Builder } from './building.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
-import { UI, countItem } from './ui.js';
+import { UI, countItem, CONTROLS } from './ui.js';
+import { Creator } from './creator.js';
+import { makeHumanoid, poseHumanoid } from './character.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -29,9 +32,15 @@ class Game {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.shadowMap.enabled = this.settings.shadows;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
     $('game').appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
+    // soft studio reflections for glossy materials (car paint, glass, chrome)
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.6;
     this.camera = new THREE.PerspectiveCamera(this.settings.fov, innerWidth / innerHeight, 0.05, 5000);
     this.scene.add(this.camera);
     addEventListener('resize', () => { this.renderer.setSize(innerWidth, innerHeight); this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); });
@@ -61,7 +70,7 @@ class Game {
     $('menustatus').textContent = 'Connecting…';
     await this.net.connect(url);
     this.bindNet();
-    this.net.send({ t: 'hello', token, name });
+    this.net.send({ t: 'hello', token, name, look: this.look });
   }
 
   initWorld(seed) {
@@ -81,6 +90,7 @@ class Game {
     this.ui = new UI(this);
     this.builder = new Builder(this);
     this.held = new Held(this);
+    this.avatar = makeHumanoid(this.look); this.avatar.visible = false; this.scene.add(this.avatar);
     this.building = this.builder;
     this.input.onKey = (code) => this.onKey(code);
     this.input.onUnlock = () => { if (this.ready && !this.ui.open) this.ui.show('pause'); };
@@ -179,7 +189,7 @@ class Game {
       if (m.dep) {
         const e = this.terrain.nodeIndex.get(m.id);
         if (e && NODES[e.node.type].kind === 'tree') this.effects.burst({ x: e.node.x, y: e.node.y + 3, z: e.node.z }, { count: 30, color: 0x3f7a2c, speed: 3, size: 0.25, life: 1.5, gravity: 6, jitter: 3 });
-        else if (e) this.effects.burst({ x: e.node.x, y: e.node.y + 0.6, z: e.node.z }, { count: 20, color: 0x8a8680, speed: 4, size: 0.2, life: 1.2, gravity: 12 });
+        else if (e && NODES[e.node.type].kind === 'ore') this.effects.burst({ x: e.node.x, y: e.node.y + 0.6, z: e.node.z }, { count: 20, color: 0x8a8680, speed: 4, size: 0.2, life: 1.2, gravity: 12 });
       }
     });
     n.on('nodehit', (m) => this.nodeFrac.set(m.id, m.frac));
@@ -415,6 +425,17 @@ class Game {
     if (this.effects.shake > 0) { cam.position.x += (Math.random() - 0.5) * this.effects.shake * 0.15; cam.position.y += (Math.random() - 0.5) * this.effects.shake * 0.15; }
   }
 
+  // own body is only visible when driving with the chase camera
+  updateAvatar() {
+    const v = this.vehicle, a = this.avatar;
+    a.visible = !!(v && v.camMode === 'third');
+    if (!a.visible) return;
+    const def = VEHICLES[v.view.type], s = def.seats[v.seat] || [0, 0.5, 0];
+    a.position.copy(new THREE.Vector3(s[0], s[1] - 0.45, s[2]).applyQuaternion(v.view.q).add(v.view.pos));
+    a.quaternion.copy(v.view.q);
+    poseHumanoid(a.userData, { mode: 'sit' });
+  }
+
   // ------------------------------------------------------------------ interaction
   interact(active) {
     if (this.vehicle) return;
@@ -426,7 +447,7 @@ class Game {
     if (hit) {
       if (hit.kind === 'n') {
         const node = hit.ref.node, def = NODES[node.type];
-        if (def.kind === 'pick') { text = `<kbd>E</kbd> Pick ${node.type === 'hemp' ? 'Hemp (cloth)' : 'Berries'}`; if (E) this.net.send({ t: 'pick', id: node.id }); }
+        if (def.kind === 'pick') { text = `<kbd>E</kbd> Pick up ${{ hemp: 'Hemp (cloth)', berry: 'Berries', loose_rock: 'Rock', branch: 'Branch (wood)' }[node.type]}`; if (E) this.net.send({ t: 'pick', id: node.id }); }
         else {
           const f = this.nodeFrac.get(node.id);
           const nm = { tree: 'Tree', ore: node.type === 'rock_metal' ? 'Metal Ore' : node.type === 'rock_sulfur' ? 'Sulfur Ore' : 'Stone', barrel: 'Barrel' }[def.kind];
@@ -508,7 +529,7 @@ class Game {
         this.player.pos.y = Math.max(this.player.pos.y, this.physics.groundAt(this.player.pos.x, this.player.pos.z, this.player.pos.y + 50, 100) + 0.1);
         this.input.lock();
         this.ui.renderHotbar(); this.ui.renderStats(this.stats);
-        this.ui.chat('', 'Welcome to Odyssey Rush. Hit trees and rocks with your rock, craft a hatchet (Tab), build a base before night falls. Press M for the map.');
+        this.ui.chat('', 'You wake up with nothing. Look for a loose rock on the ground and press E to pick it up, then hit trees and boulders. Craft tools with Tab and build a base before night falls. Press M for the map.');
         if (this.pendingDeath || !this.alive) { const m = this.pendingDeath || { by: 'unknown', bags: [] }; this.ui.death(m.by, m.bags); }
       }
       this.renderer.render(this.scene, this.camera);
@@ -535,6 +556,7 @@ class Game {
     const night = this.sky.dayLight < 0.35;
     for (const v of this.vehicleViews.values()) v.update(dt, this.vehicle?.id === v.id ? this.vehicle.sim : null, this.effects, night);
     // camera
+    this.updateAvatar();
     if (this.vehicle) this.vehicleCamera(dt);
     else {
       this.player.applyCamera(this.camera);
@@ -582,6 +604,9 @@ class Game {
 
 // ------------------------------------------------------------------ menu
 const game = new Game();
+$('menucontrols').innerHTML = CONTROLS.map(([k, v]) => `<div><kbd>${k}</kbd> ${v}</div>`).join('');
+const creator = new Creator((look) => (game.look = look));
+game.look = creator.look;
 document.addEventListener('mousedown', () => audio.resume());
 document.addEventListener('keydown', () => audio.resume());
 window.__game = game;
@@ -589,7 +614,7 @@ $('nameinput').value = localStorage.getItem('or_name') || '';
 const play = async () => {
   const name = $('nameinput').value.trim() || 'Survivor';
   $('playbtn').disabled = true;
-  try { await game.start(name); } catch (e) { $('menustatus').textContent = 'Could not connect to the server — it may be waking up, try again in a few seconds.'; $('playbtn').disabled = false; console.error(e); }
+  try { await game.start(name); creator.dispose(); } catch (e) { $('menustatus').textContent = 'Could not connect to the server — it may be waking up, try again in a few seconds.'; $('playbtn').disabled = false; console.error(e); }
 };
 $('playbtn').onclick = play;
 $('nameinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') play(); });

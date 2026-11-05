@@ -1,7 +1,7 @@
 // Held item behaviour: melee, gathering, guns, explosives, consumables and the first-person viewmodel.
 import * as THREE from 'three';
-import { ITEMS, NODES } from '/shared/items.js';
-import { makeItemModel } from './models.js';
+import { ITEMS, NODES, FIST } from '/shared/items.js';
+import { makeItemModel, makeFPArm } from './models.js';
 import { audio } from './audio.js';
 import { countItem } from './ui.js';
 
@@ -13,8 +13,7 @@ export class Held {
     this.vm = new THREE.Group();
     game.camera.add(this.vm);
     this.vmItem = null; this.vmId = null;
-    this.arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.42), new THREE.MeshLambertMaterial({ color: 0xd9a77e, flatShading: true }));
-    this.arm.position.set(0.04, -0.1, 0.22);
+    this.arm = makeFPArm(game.look);
     this.coolUntil = 0; this.swingT = 0; this.reload = 0; this.useT = 0; this.ads = 0; this.kick = 0;
     this.torchLight = new THREE.PointLight(0xffa050, 0, 18, 1.5);
     this.torchLight.position.set(0.1, 0.6, -1.4);
@@ -30,7 +29,7 @@ export class Held {
     if (this.vmItem) this.vm.remove(this.vmItem);
     this.vm.remove(this.arm);
     this.reload = 0; this.useT = 0; this.game.ui.progress(null);
-    if (!id) { this.vmItem = null; return; }
+    if (!id) { this.vmItem = null; this.vm.add(this.arm); this.isGun = false; return; } // bare fists
     this.vmItem = makeItemModel(id);
     this.vmItem.traverse((o) => { o.castShadow = false; if (o.material) { o.material = o.material.clone(); o.material.depthTest = true; } });
     this.vm.add(this.vmItem);
@@ -64,6 +63,11 @@ export class Held {
     this.vm.rotation.set(-sw * 1.3 + this.kick * 0.15 + rx, sw * 0.4, 0);
     g.camera.fov += ((g.settings.fov * (1 - this.ads * 0.25)) - g.camera.fov) * (1 - Math.exp(-14 * dt));
     g.camera.updateProjectionMatrix();
+    if (!it && active) {
+      g.builder.hide();
+      if (input.mouse.left && performance.now() >= this.coolUntil) this.melee(null, { tool: FIST });
+      return;
+    }
     if (!it || !active) { if (!it) g.builder.hide(); return this.idlePrompt(); }
     const { st, d } = it;
     // reload / use progress
@@ -163,6 +167,7 @@ export class Held {
         msg.pt = [hit.point.x, hit.point.y, hit.point.z];
         if (hit.kind === 'n') {
           const node = hit.ref.node, nd = NODES[node.type];
+          if (!st && (nd.kind === 'tree' || nd.kind === 'ore') && performance.now() - (this._fistTip || 0) > 6000) { this._fistTip = performance.now(); g.ui.toast('Your bare hands won\'t do much — find a loose rock on the ground and press E to pick it up'); }
           if (nd.kind === 'tree') { audio.chop(); g.effects.burst(hit.point, { count: 8, color: 0x8a6a40, speed: 3, size: 0.07, life: 0.7 }); g.terrain.shakeNode(node.id); }
           else if (nd.kind === 'ore') { audio.mine(); g.effects.burst(hit.point, { count: 10, color: node.type === 'rock_sulfur' ? 0xd8c840 : node.type === 'rock_metal' ? 0xa86030 : 0x8a8680, speed: 4, size: 0.08, life: 0.7 }); g.effects.burst(hit.point, { count: 3, color: 0xffe0a0, speed: 5, size: 0.03, life: 0.25, glow: true }); }
           else if (nd.kind === 'barrel') { audio.hitStruct(); g.effects.burst(hit.point, { count: 6, color: 0x2d5d8a, speed: 3, size: 0.07 }); }

@@ -21,7 +21,10 @@ export class Sky {
           c += sunCol * (pow(s, 900.0) * 1.6 + pow(s, 12.0) * 0.18);
           vec3 md = -sunDir; float m = max(dot(normalize(vDir), md), 0.0);
           c += vec3(0.85,0.9,1.0) * pow(m, 1500.0) * 1.2;
-          gl_FragColor = vec4(c, 1.0); }`,
+          gl_FragColor = vec4(c, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
     });
     this.dome = new THREE.Mesh(geo, mat);
     this.dome.renderOrder = -1;
