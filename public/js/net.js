@@ -7,7 +7,7 @@ export class Net {
       this.ws = ws;
       ws.onopen = () => { this.open = true; resolve(); };
       ws.onerror = (e) => reject(e);
-      ws.onclose = () => { this.open = false; this.handlers.close?.(); };
+      ws.onclose = (e) => { this.open = false; this.handlers.close?.(e); };
       ws.onmessage = (ev) => {
         let m; try { m = JSON.parse(ev.data); } catch { return; }
         const h = this.handlers[m.t];

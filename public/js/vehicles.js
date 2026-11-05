@@ -6,6 +6,8 @@ import { VEHICLES } from '/shared/vehicles.js';
 import { SURFACE_BUILT } from '/shared/worldgen.js';
 import { invRotY, rotY } from '/shared/building.js';
 import { makeVehicle } from './models.js';
+import { Interp, INTERP_DELAY } from './interp.js';
+const _io = { x: 0, y: 0, z: 0, yaw: 0 };
 
 const V3 = THREE.Vector3;
 const G = 9.81;
@@ -280,6 +282,8 @@ export class VehicleView {
     this.tPos.set(a[2], a[3], a[4]); this.tQ.set(a[5][0], a[5][1], a[5][2], a[5][3]);
     this.hp = a[6]; this.broken = !!a[7]; this.steer = a[8]; this.rpm = a[9]; this.driver = a[10]; this.fuel = a[11]; this.needs = a[12] || null;
     this.vel.set(a[13][0], a[13][1], a[13][2]);
+    if (!this.interp) this.interp = new Interp();
+    this.interp.push(performance.now(), a[2], a[3], a[4], 0, a[5]);
     if (this.first) { this.pos.copy(this.tPos); this.q.copy(this.tQ); this.first = false; }
     this.lastNet = performance.now();
   }
@@ -287,10 +291,8 @@ export class VehicleView {
     const g = this.group, ud = g.userData;
     if (sim) { this.pos.copy(sim.pos); this.q.copy(sim.q); this.steer = sim.steer; }
     else {
-      const k = 1 - Math.exp(-dt * 12);
-      const ext = _a.copy(this.tPos).addScaledVector(this.vel, 0.05);
-      if (this.pos.distanceTo(ext) > 15) this.pos.copy(ext);
-      this.pos.lerp(ext, k); this.q.slerp(this.tQ, k);
+      if (this.interp && this.interp.sample(performance.now() - INTERP_DELAY, _io, this.q)) this.pos.set(_io.x, _io.y, _io.z);
+      else { this.pos.copy(this.tPos); this.q.copy(this.tQ); }
     }
     g.position.copy(this.pos); g.quaternion.copy(this.q);
     const up = _b.set(0, 1, 0).applyQuaternion(this.q);

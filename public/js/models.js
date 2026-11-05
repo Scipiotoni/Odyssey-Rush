@@ -326,6 +326,7 @@ export function makeItemModel(id) {
     } break;
     case 'stone_hatchet': case 'metal_hatchet': M(merge([part(cyl(0.022, 0.026, 0.6, 5), wood, { y: 0.1 }), part(box(0.04, 0.12, 0.16), id === 'stone_hatchet' ? stone : metal, { y: 0.34, z: -0.06 })])); break;
     case 'stone_pickaxe': case 'metal_pickaxe': M(merge([part(cyl(0.022, 0.026, 0.62, 5), wood, { y: 0.1 }), part(box(0.04, 0.05, 0.42), id === 'stone_pickaxe' ? stone : metal, { y: 0.38 })])); break;
+    case 'shovel': M(merge([part(cyl(0.02, 0.024, 0.8, 5), wood, { y: 0.15 }), part(box(0.14, 0.03, 0.03), wood, { y: -0.24 }), part(box(0.16, 0.2, 0.02), metal, { y: 0.62, rx: 0.15 })])); break;
     case 'hammer': M(merge([part(cyl(0.02, 0.025, 0.45, 5), wood, { y: 0.05 }), part(box(0.07, 0.07, 0.2), metal, { y: 0.26 })])); break;
     case 'building_plan': M(merge([part(box(0.25, 0.01, 0.32), 0x3a6aa8, { rx: -0.5 }), part(box(0.2, 0.012, 0.02), 0xffffff, { rx: -0.5, y: 0.01 })])); break;
     case 'wooden_spear': M(merge([part(cyl(0.02, 0.025, 1.6, 5), wood, { y: 0.3 }), part(cone(0.03, 0.15, 4), 0x9a8060, { y: 1.15 })])); break;

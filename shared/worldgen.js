@@ -45,6 +45,21 @@ export class World {
     this.nColor = new Simplex2(s + 11);
     this._poiCache = new Map();
     this._hCache = new Map();
+    this.mods = new Map(); // terrain edits (digging / explosions): grid key -> height offset
+  }
+
+  // ---------- Terrain edits ----------
+  static gridKey(ix, iz) { return (ix + 4096) * 8192 + (iz + 4096); }
+  getMod(ix, iz) { return this.mods.get(World.gridKey(ix, iz)) || 0; }
+  setMod(ix, iz, v) {
+    const k = World.gridKey(ix, iz);
+    if (Math.abs(v) < 1e-3) this.mods.delete(k); else this.mods.set(k, Math.round(v * 100) / 100);
+    this._hCache.delete(k);
+  }
+  modList() {
+    const out = [];
+    for (const [k, v] of this.mods) out.push([Math.floor(k / 8192) - 4096, (k % 8192) - 4096, v]);
+    return out;
   }
 
   // ---------- Terrain ----------
@@ -92,7 +107,7 @@ export class World {
     let v = this._hCache.get(key);
     if (v === undefined) {
       if (this._hCache.size > 400000) this._hCache.clear();
-      v = this.height(ix * GRID, iz * GRID);
+      v = this.height(ix * GRID, iz * GRID) + (this.mods.get(key) || 0);
       this._hCache.set(key, v);
     }
     return v;

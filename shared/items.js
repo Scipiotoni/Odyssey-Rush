@@ -45,6 +45,7 @@ export const ITEMS = {
   stone_pickaxe: { name: 'Stone Pickaxe', cat: 'tool', stack: 1, icon: '⛏️', tool: { tree: 4, ore: 18, dmg: 12, range: 2.4, rate: 1.3 } },
   metal_hatchet: { name: 'Metal Hatchet', cat: 'tool', stack: 1, icon: '🪓', tool: { tree: 32, ore: 6, dmg: 20, range: 2.5, rate: 1.6 }, tint: 0x9aa4ad },
   metal_pickaxe: { name: 'Metal Pickaxe', cat: 'tool', stack: 1, icon: '⛏️', tool: { tree: 6, ore: 32, dmg: 20, range: 2.5, rate: 1.5 }, tint: 0x9aa4ad },
+  shovel: { name: 'Shovel', cat: 'tool', stack: 1, icon: '🪏', tool: { tree: 2, ore: 4, dmg: 12, range: 3.2, rate: 2.2 }, dig: true },
   hammer: { name: 'Hammer', cat: 'tool', stack: 1, icon: '🔨', tool: { tree: 0, ore: 0, dmg: 5, range: 3.5, rate: 2 }, hammer: true },
   building_plan: { name: 'Building Plan', cat: 'tool', stack: 1, icon: '📐', plan: true },
   // --- melee weapons ---
@@ -97,6 +98,7 @@ export const RECIPES = [
   { out: 'torch', n: 1, time: 2, cost: { wood: 30, cloth: 5 } },
   { out: 'building_plan', n: 1, time: 2, cost: { wood: 20 } },
   { out: 'hammer', n: 1, time: 2, cost: { wood: 100 } },
+  { out: 'shovel', n: 1, time: 3, cost: { wood: 150, stone: 50 } },
   { out: 'wooden_spear', n: 1, time: 4, cost: { wood: 300 } },
   { out: 'bow', n: 1, time: 6, cost: { wood: 200, cloth: 50 } },
   { out: 'arrow', n: 4, time: 2, cost: { wood: 25, stone: 10 } },
@@ -182,6 +184,9 @@ export const NODES = {
   barrel: { kind: 'barrel', hp: 40, radius: 0.5, height: 1.2 },
 };
 export const NODE_RESPAWN = 20 * 60; // seconds
+
+// Terrain editing
+export const DIG = { step: 0.45, min: -6, max: 4, raiseCost: { stone: 5 }, reach: 5 };
 
 export const LOOT = {
   barrel: [['scrap', 2, 6, 1], ['metal_frags', 10, 30, 0.4], ['fuel', 2, 6, 0.3], ['rope', 1, 1, 0.15], ['pipe', 1, 1, 0.1], ['gears', 1, 1, 0.08], ['spring', 1, 1, 0.06], ['pistol_ammo', 4, 10, 0.1], ['bandage', 1, 2, 0.15], ['cloth', 5, 15, 0.2]],

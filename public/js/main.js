@@ -67,6 +67,7 @@ class Game {
   initWorld(seed) {
     this.seed = seed;
     this.world = new World(seed);
+    for (const [ix, iz, v] of this.pendingTerr || []) this.world.setMod(ix, iz, v);
     this.physics = new Physics(this.world);
     this.sky = new Sky(this.scene);
     this.sky.sun.castShadow = this.settings.shadows;
@@ -116,6 +117,7 @@ class Game {
   bindNet() {
     const n = this.net;
     n.on('welcome', (m) => {
+      this.pendingTerr = m.terr || [];
       this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen;
       this.initWorld(m.seed);
       this.player.pos.set(m.p[0], m.p[1], m.p[2]);
@@ -126,7 +128,18 @@ class Game {
       this.loadStart = performance.now();
       requestAnimationFrame(() => this.loop());
     });
-    n.on('close', () => { this.ui?.toast('Disconnected from server'); $('menu').classList.remove('hidden'); $('menustatus').textContent = 'Disconnected. Refresh to reconnect.'; this.input.unlock(); });
+    n.on('close', (ev) => {
+      if (ev && ev.code === 4000) { this.input.unlock(); $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'You joined from another tab or device. Close this one.'; return; }
+      // Connection lost (server restart / network blip): wait for the server, then rejoin automatically.
+      this.input.unlock();
+      $('loading').classList.remove('hidden');
+      $('loading').firstElementChild.textContent = 'Connection lost — reconnecting…';
+      const retry = async () => {
+        try { const r = await fetch('/health', { cache: 'no-store' }); if (r.ok) { sessionStorage.setItem('or_autoplay', '1'); location.reload(); return; } } catch {}
+        setTimeout(retry, 2000);
+      };
+      setTimeout(retry, 1000);
+    });
     n.on('inv', (m) => { this.inv = m.inv; this.armor = m.armor; if (this.ui.open === 'inv') this.ui.renderInventory(); else this.ui.renderHotbar(); });
     n.on('stats', (m) => { const was = this.stats.lvl; this.stats = m; this.ui.renderStats(m); if (m.lvl > was && was) audio.craftDone(); });
     n.on('queue', (m) => { const done = this.queue.length > m.q.length; this.queue = m.q; this.ui.renderQueue(m.q); if (done) audio.craftDone(); });
@@ -197,6 +210,7 @@ class Game {
       this.terrain.center = [NaN, NaN];
     });
     n.on('snap', (m) => this.onSnap(m));
+    n.on('terr', (m) => this.terrain.applyMods(m.m));
     n.on('fx', (m) => this.onFx(m));
     n.on('ex', (m) => this.entities.addExplosive(m));
     n.on('v_seat', (m) => this.onSeat(m));
@@ -249,6 +263,12 @@ class Game {
       if (m.id) this.entities.removeExplosive(m.id);
     } else if (m.k === 'upgrade') this.effects.burst(new THREE.Vector3(...m.p), { count: 25, color: TIERS[m.tier]?.color ?? 0xaaaaaa, speed: 3, size: 0.12, life: 0.9, jitter: 2 });
     else if (m.k === 'door') audio.door();
+    else if (m.k === 'dig') {
+      const p = new THREE.Vector3(...m.p);
+      this.effects.burst(p, { count: 14, color: m.up ? 0x7a6040 : this.world.surface(p.x, p.z).dust, speed: 3.5, up: 1.6, size: 0.12, life: 0.9, gravity: 12 });
+      this.effects.burst(p, { count: 4, color: 0x5a4632, speed: 1, up: 1, size: 0.35, life: 1.4, gravity: -0.5, grow: 1, drag: 1.5 });
+      audio.dig(cam.distanceTo(p));
+    }
     else if (m.k === 'bite') audio.growl();
   }
 
@@ -289,7 +309,7 @@ class Game {
     };
     const p = tryPos(side) || tryPos(-side) || v.view.pos.clone().add(new THREE.Vector3(0, def.half[1] + 0.6, 0));
     this.player.pos.copy(p); this.player.vel.set(0, 0, 0);
-    if (v.sim) { v.view.vel.copy(v.sim.vel); v.view.tPos.copy(v.sim.pos); v.view.tQ.copy(v.sim.q); }
+    if (v.sim) { v.view.vel.copy(v.sim.vel); v.view.tPos.copy(v.sim.pos); v.view.tQ.copy(v.sim.q); v.view.interp = null; }
     return p;
   }
   exitVehicle() {
@@ -562,12 +582,15 @@ class Game {
 
 // ------------------------------------------------------------------ menu
 const game = new Game();
+document.addEventListener('mousedown', () => audio.resume());
+document.addEventListener('keydown', () => audio.resume());
 window.__game = game;
 $('nameinput').value = localStorage.getItem('or_name') || '';
 const play = async () => {
   const name = $('nameinput').value.trim() || 'Survivor';
   $('playbtn').disabled = true;
-  try { await game.start(name); } catch (e) { $('menustatus').textContent = 'Could not connect to the server.'; $('playbtn').disabled = false; console.error(e); }
+  try { await game.start(name); } catch (e) { $('menustatus').textContent = 'Could not connect to the server — it may be waking up, try again in a few seconds.'; $('playbtn').disabled = false; console.error(e); }
 };
 $('playbtn').onclick = play;
 $('nameinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') play(); });
+if (sessionStorage.getItem('or_autoplay') && localStorage.getItem('or_name')) { sessionStorage.removeItem('or_autoplay'); play(); }

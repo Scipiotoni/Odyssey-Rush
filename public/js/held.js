@@ -99,6 +99,19 @@ export class Held {
       this.idlePrompt();
       return;
     }
+    if (d.dig) {
+      const hit = this.ray(4.5);
+      const onGround = hit && hit.kind === 'terrain';
+      g.ui.prompt(onGround ? '<kbd>LMB</kbd> dig · <kbd>RMB</kbd> pile up dirt (5 stone)' : '<small>Aim at the ground to dig</small>');
+      const R = input.mouse.right;
+      if ((L || R) && performance.now() >= this.coolUntil) {
+        this.coolUntil = performance.now() + 420;
+        this.swingT = 0.35;
+        if (onGround) setTimeout(() => g.net.send({ t: 'dig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z], up: R && !L }), 120);
+        else if (L) this.melee(st, d);
+      }
+      return;
+    }
     if (d.tool) {
       if (L && performance.now() >= this.coolUntil) this.melee(st, d);
       this.idlePrompt();

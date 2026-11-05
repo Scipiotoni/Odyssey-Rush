@@ -59,6 +59,7 @@ export class Audio {
     const f = { sand: 900, snow: 1500, mud: 300, grass: 1200, dirt: 700, rock: 2500, concrete: 2800, water: 500 }[surface] || 1000;
     this._noise(0.08, { freq: f, q: 1.2, type: 'bandpass', gain: surface === 'water' ? 0.12 : 0.06 });
   }
+  dig(dist = 0) { this._noise(0.22, { freq: 350, q: 0.8, gain: 0.45, dist, sweep: 0.5 }); this._noise(0.08, { freq: 1800, q: 3, type: 'bandpass', gain: 0.15, dist }); }
   splash() { this._noise(0.5, { freq: 800, q: 0.7, gain: 0.35, sweep: 0.3 }); }
   craftDone() { this._tone(520, 0.08, { gain: 0.08 }); setTimeout(() => this._tone(780, 0.1, { gain: 0.08 }), 80); }
   growl() { this._tone(90, 0.5, { type: 'sawtooth', gain: 0.15, slide: 0.7 }); }

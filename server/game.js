@@ -1,9 +1,7 @@
 // Authoritative game simulation: players, inventory, crafting, building, raiding,
 // loot, animals, vehicles and persistence.
-import fs from 'fs';
-import path from 'path';
-import { World, CHUNK, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
-import { ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
+import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
+import { DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
 import { TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, restHeight } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
@@ -30,8 +28,7 @@ const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
 const r2 = (v) => Math.round(v * 100) / 100;
 
 export class Game {
-  constructor({ seed = 1337, dataFile }) {
-    this.dataFile = dataFile;
+  constructor({ seed = 1337, saved = null }) {
     this.seed = seed;
     this.world = new World(seed);
     this.players = new Map();   // token -> player
@@ -49,7 +46,7 @@ export class Game {
     this.nextPid = 1;
     this.day = 0.3;
     this.chunkCache = new Map();
-    this.load();
+    this.load(saved);
     this.lastTick = now();
     this.acc = { stats: 0, save: 0, slow: 0 };
   }
@@ -63,10 +60,9 @@ export class Game {
   }
 
   // ------------------------------------------------------------ persistence
-  load() {
-    if (!this.dataFile || !fs.existsSync(this.dataFile)) return;
+  load(d) {
+    if (!d) return;
     try {
-      const d = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
       if (d.seed !== this.seed) { console.log('[world] seed changed, starting fresh world'); return; }
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
       for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.players.set(p.token, p); this.byPid.set(p.pid, p); }
@@ -76,11 +72,12 @@ export class Game {
       for (const v of d.vehicles || []) { v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); this.vehicles.set(v.id, v); }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
       for (const k of d.spawned || []) this.spawned.add(k);
+      for (const [ix, iz, v] of d.terrain || []) this.world.setMod(ix, iz, v);
       console.log(`[world] loaded: ${this.players.size} players, ${this.structs.size} structures, ${this.vehicles.size} vehicles`);
     } catch (e) { console.error('[world] failed to load save:', e.message); }
   }
-  save() {
-    if (!this.dataFile) return;
+  // Serializable snapshot of the whole persistent world.
+  serialize() {
     const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, ...rest } = p; return rest; };
     const d = {
       seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day,
@@ -91,12 +88,11 @@ export class Game {
       vehicles: [...this.vehicles.values()].map(({ seats, ...v }) => v),
       nodes: [...this.nodeState.entries()],
       spawned: [...this.spawned],
+      terrain: this.world.modList(),
     };
-    fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
-    const tmp = this.dataFile + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(d));
-    fs.renameSync(tmp, this.dataFile);
+    return d;
   }
+
 
   // ------------------------------------------------------------ networking
   send(p, msg) { if (p && p.ws && p.ws.readyState === 1) p.ws.send(JSON.stringify(msg)); }
@@ -131,7 +127,7 @@ export class Game {
     const name = String(msg.name || 'Survivor').replace(/[<>&"]/g, '').trim().slice(0, 16) || 'Survivor';
     if (token.length < 8) return;
     let p = this.players.get(token);
-    if (p && p.online && p.ws && p.ws !== ws) { try { p.ws.close(); } catch {} }
+    if (p && p.online && p.ws && p.ws !== ws) { const old = p.ws; old.player = null; try { old.close(4000, 'replaced'); } catch {} }
     if (!p) {
       const [x, y, z] = this.world.randomSpawn();
       p = { token, pid: this.nextPid++, name, x, y, z, yaw: 0, pitch: 0, hp: 100, food: 80, water: 80, xp: 0, alive: true, inv: Inv.emptySlots(INV_SIZE), armor: { head: null, chest: null, legs: null }, queue: [], sel: 0, kills: 0, deaths: 0, cr: 0, regions: new Set() };
@@ -141,7 +137,7 @@ export class Game {
     } else console.log(`[join] ${name} (#${p.pid}) returned${p.alive ? '' : ' to find themselves dead'}`);
     p.name = name; p.ws = ws; p.online = true; p.regions = new Set(); p.openCont = null; p.vehicle = null; p.lastSt = now();
     ws.player = p;
-    this.send(p, { t: 'welcome', seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
+    this.send(p, { t: 'welcome', terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
@@ -187,6 +183,7 @@ export class Game {
       case 'v_crash': return this.onVehicleCrash(p, m);
       case 'v_hit': return this.onVehicleHit(p, m);
       case 'demolish': return this.onDemolish(p, m);
+      case 'dig': return this.onDig(p, m);
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
   }
@@ -798,6 +795,62 @@ export class Game {
     return false;
   }
 
+  // ------------------------------------------------------------ terrain editing
+  // Why is a grid vertex not editable? (null = ok)
+  digBlocked(ix, iz) {
+    const x = ix * GRID, z = iz * GRID;
+    if (this.inPOI(x, z)) return "Can't dig in monuments";
+    if (Math.hypot(x, z) > HALF * 0.97) return 'Too close to the edge of the world';
+    for (const s of this.structsNear(x, z, 1)) {
+      const r = s.kind === 'piece' ? 4.5 : 3;
+      if (Math.hypot(s.x - x, s.z - z) < r + GRID) return 'Too close to a structure';
+    }
+    const [cx, cz] = regionOf(x, z);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const k = chunkKey(cx + i, cz + j);
+      let list = this.chunkCache.get(k);
+      if (!list) { list = this.world.chunkNodes(cx + i, cz + j); this.chunkCache.set(k, list); }
+      for (const n of list) if (Math.abs(n.x - x) < GRID + 1.5 && Math.abs(n.z - z) < GRID + 1.5 && !(this.nodeState.get(n.id)?.hp <= 0)) return 'Too close to a tree or rock';
+    }
+    return null;
+  }
+  editTerrain(ix, iz, delta) {
+    const cur = this.world.getMod(ix, iz);
+    const v = Math.max(DIG.min, Math.min(DIG.max, cur + delta));
+    if (Math.abs(v - cur) < 0.01) return false;
+    this.world.setMod(ix, iz, v);
+    this.toAll({ t: 'terr', m: [[ix, iz, this.world.getMod(ix, iz)]] });
+    return true;
+  }
+  onDig(p, m) {
+    if (!p.alive || p.vehicle) return;
+    const st = p.inv[num(m.sel) | 0];
+    if (!st || !ITEMS[st.id].dig) return;
+    const t = now();
+    if (t - (p.lastDig || 0) < 0.35) return;
+    p.lastDig = t;
+    const pt = Array.isArray(m.pt) ? m.pt.map((v) => num(v)) : null;
+    if (!pt || Math.hypot(pt[0] - p.x, pt[2] - p.z) > DIG.reach + 1) return;
+    const ix = Math.round(pt[0] / GRID), iz = Math.round(pt[2] / GRID);
+    if (Math.hypot(ix * GRID - p.x, iz * GRID - p.z) < 1.2 && !m.up) return this.toast(p, "Don't dig right under your feet");
+    const err = this.digBlocked(ix, iz);
+    if (err) return this.toast(p, err);
+    if (m.up) {
+      if (!Inv.hasAll(p.inv, DIG.raiseCost)) return this.toast(p, `Piling up dirt needs ${DIG.raiseCost.stone} Stone`);
+      if (!this.editTerrain(ix, iz, DIG.step)) return this.toast(p, "Can't raise the ground any higher here");
+      Inv.removeAll(p.inv, DIG.raiseCost); this.sendInv(p);
+    } else {
+      if (!this.editTerrain(ix, iz, -DIG.step)) return this.toast(p, "Can't dig any deeper here — bedrock");
+      this.give(p, 'stone', 3 + Math.floor(Math.random() * 3));
+      const r = Math.random();
+      if (r < 0.06) this.give(p, 'metal_ore', 5 + Math.floor(Math.random() * 6));
+      else if (r < 0.1) this.give(p, 'sulfur_ore', 5 + Math.floor(Math.random() * 6));
+      else if (r < 0.11) this.give(p, 'scrap', 3);
+      this.addXp(p, 1);
+    }
+    this.toNear(pt[0], pt[2], 60, { t: 'fx', k: 'dig', p: pt, up: !!m.up });
+  }
+
   // ------------------------------------------------------------ interaction
   onUse(p, m) {
     const s = this.structs.get(String(m.id));
@@ -969,6 +1022,9 @@ export class Game {
         if (d < ex.radius * 1.6) this.damagePlayer(p, ex.playerDmg * (1 - d / (ex.radius * 1.6)), src || 'an explosion');
       }
       for (const a of [...this.animals.values()]) { const d = dist3(a, e); if (d < ex.radius * 1.6) this.damageAnimal(a, ex.playerDmg, src); }
+      // craters (only when the blast is near the ground and away from buildings)
+      const ix = Math.round(e.x / GRID), iz = Math.round(e.z / GRID);
+      if (e.y - this.world.ground(e.x, e.z) < 1.2 && !this.digBlocked(ix, iz)) this.editTerrain(ix, iz, -ex.radius * 0.18);
       for (const v of this.vehicles.values()) { const d = dist3(v, e); if (d < ex.radius * 1.6) this.damageVehicle(v, ex.dmg * 0.6 * (1 - d / (ex.radius * 1.6))); }
     }
   }
@@ -1184,7 +1240,7 @@ export class Game {
     this.acc.stats += dt; this.acc.save += dt; this.acc.slow += dt;
     if (this.acc.stats >= 1) { this.tickStats(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }
-    if (this.acc.save >= 60) { this.acc.save = 0; try { this.save(); } catch (e) { console.error('save failed', e); } }
+    if (this.acc.save >= 60 && this.onSave) { this.acc.save = 0; this.onSave(); }
     this.sendSnapshots();
     for (const p of this.players.values()) if (p.invDirty && p.online) this.sendInv(p);
   }

@@ -423,6 +423,7 @@ export function itemDesc(st, short) {
   if (!d) return st.id;
   let s = short ? '' : `<b>${d.icon} ${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
   if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
+  else if (d.dig) s += 'LMB dig the ground (finds stone, sometimes ore) · RMB pile up dirt. Everyone sees your holes and mounds.';
   else if (d.tool && d.tool.hammer) s += 'LMB upgrade building piece · RMB repair · X demolish';
   else if (d.tool) s += `Damage ${d.tool.dmg} · tree ${d.tool.tree} · ore ${d.tool.ore}`;
   else if (d.plan) s += 'Place foundations, walls, floors… RMB to choose piece, R to rotate.';

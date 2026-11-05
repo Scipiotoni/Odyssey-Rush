@@ -1,8 +1,10 @@
 // Streams terrain chunks (with LOD), resource node instances and POI props around the camera.
+// Heavy generation runs in a pool of Web Workers so the frame rate stays smooth while exploring.
 import * as THREE from 'three';
 import { CHUNK, GRID, POI_CELL, HALF, chunkKey } from '/shared/worldgen.js';
 import { NODES } from '/shared/items.js';
 import { MAT, nodeGeometry, poiGeometry } from './models.js';
+import { buildChunkData } from './chunkgen.js';
 
 const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const NODE_RADIUS = 3;   // chunks around player with resource nodes
@@ -12,125 +14,137 @@ const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 export class Terrain {
   constructor(scene, world, physics) {
     this.scene = scene; this.world = world; this.physics = physics;
-    this.chunks = new Map();
+    this.chunks = new Map();      // k -> {cx, cz, lod, ver, mesh}
     this.nodeChunks = new Map();
     this.pois = new Map();
     this.depleted = new Set();
-    this.nodeIndex = new Map(); // nodeId -> {mesh, i, node}
+    this.nodeIndex = new Map();   // nodeId -> {mesh, i, node}
     this.viewDist = 900;
-    this.queue = [];
+    this.queue = []; this.nodeQueue = [];
+    this.wantT = new Map(); this.wantN = new Set();
+    this.ver = new Map();         // chunk key -> edit version
+    this.inflight = new Set();
     this.center = [NaN, NaN];
     this.shadows = true;
+    this.workers = [];
+    this.rr = 0;
+    try {
+      const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 1));
+      for (let i = 0; i < n; i++) {
+        const w = new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' });
+        w.onmessage = (e) => this.onWorker(e.data);
+        w.onerror = (e) => { console.warn('terrain worker failed, using main thread', e.message); this.workers = []; this.inflight.clear(); this.center = [NaN, NaN]; };
+        w.postMessage({ type: 'init', seed: world.seed, mods: world.modList() });
+        this.workers.push(w);
+      }
+    } catch (e) { console.warn('Web Workers unavailable, generating on main thread', e); this.workers = []; }
+    this.maxInflight = this.workers.length * 2;
   }
 
   setViewDist(v) { this.viewDist = v; this.center = [NaN, NaN]; }
-
   lodFor(d) { return d <= 2 ? 1 : d <= 4 ? 2 : d <= 7 ? 4 : 8; }
+
+  // Terrain edits from the server: [[ix, iz, value], ...]
+  applyMods(list) {
+    const dirty = new Set();
+    for (const [ix, iz, v] of list) {
+      this.world.setMod(ix, iz, v);
+      const x = ix * GRID, z = iz * GRID;
+      for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) dirty.add(chunkKey(Math.floor((x + dx * GRID) / CHUNK), Math.floor((z + dz * GRID) / CHUNK)));
+    }
+    for (const w of this.workers) w.postMessage({ type: 'mods', list });
+    for (const k of dirty) {
+      this.ver.set(k, (this.ver.get(k) || 0) + 1);
+      const lod = this.wantT.get(k);
+      if (lod) { const [cx, cz] = k.split(',').map(Number); this.queue.unshift({ k, x: cx, z: cz, lod, d: 0 }); }
+    }
+  }
 
   update(px, pz, budgetMs = 6) {
     const cx = Math.floor(px / CHUNK), cz = Math.floor(pz / CHUNK);
     const R = Math.ceil(this.viewDist / CHUNK);
     if (cx !== this.center[0] || cz !== this.center[1]) {
       this.center = [cx, cz];
-      const want = new Map();
+      this.wantT = new Map();
+      const jobs = [];
       for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) {
-        const d = Math.max(Math.abs(i), Math.abs(j));
         if (Math.hypot(i, j) > R + 0.5) continue;
         const x = cx + i, z = cz + j;
         if ((x + 0.5) * CHUNK < -HALF - 600 || (x + 0.5) * CHUNK > HALF + 600 || (z + 0.5) * CHUNK < -HALF - 600 || (z + 0.5) * CHUNK > HALF + 600) continue;
-        want.set(chunkKey(x, z), { x, z, lod: this.lodFor(d), d });
-      }
-      for (const [k, c] of this.chunks) if (!want.has(k)) { this.disposeChunk(c); this.chunks.delete(k); }
-      this.queue = [];
-      for (const [k, w] of want) {
+        const d = Math.max(Math.abs(i), Math.abs(j)), lod = this.lodFor(d), k = chunkKey(x, z);
+        this.wantT.set(k, lod);
         const c = this.chunks.get(k);
-        if (!c || c.lod !== w.lod) this.queue.push({ k, ...w });
+        if (!c || c.lod !== lod) jobs.push({ k, x, z, lod, d: Math.hypot(i, j) });
       }
-      this.queue.sort((a, b) => a.d - b.d);
-      // resource nodes
-      const nwant = new Set();
-      for (let i = -NODE_RADIUS; i <= NODE_RADIUS; i++) for (let j = -NODE_RADIUS; j <= NODE_RADIUS; j++) nwant.add(chunkKey(cx + i, cz + j));
-      for (const [k, nc] of this.nodeChunks) if (!nwant.has(k)) { this.disposeNodes(nc); this.nodeChunks.delete(k); }
-      this.nodeQueue = [...nwant].filter((k) => !this.nodeChunks.has(k)).map((k) => { const [x, z] = k.split(',').map(Number); return { k, x, z, d: Math.hypot(x - cx, z - cz) }; }).sort((a, b) => a.d - b.d);
+      for (const [k, c] of this.chunks) if (!this.wantT.has(k)) { this.disposeChunk(c); this.chunks.delete(k); }
+      this.queue = jobs.sort((a, b) => a.d - b.d);
+      this.wantN = new Set();
+      for (let i = -NODE_RADIUS; i <= NODE_RADIUS; i++) for (let j = -NODE_RADIUS; j <= NODE_RADIUS; j++) this.wantN.add(chunkKey(cx + i, cz + j));
+      for (const [k, nc] of this.nodeChunks) if (!this.wantN.has(k)) { this.disposeNodes(nc); this.nodeChunks.delete(k); }
+      this.nodeQueue = [...this.wantN].filter((k) => !this.nodeChunks.has(k)).map((k) => { const [x, z] = k.split(',').map(Number); return { k, x, z, d: Math.hypot(x - cx, z - cz) }; }).sort((a, b) => a.d - b.d);
       this.updatePOIs(px, pz);
     }
+    if (this.workers.length) this.dispatch();
+    else this.buildSync(budgetMs);
+  }
+
+  dispatch() {
+    while (this.inflight.size < this.maxInflight && (this.queue.length || this.nodeQueue.length)) {
+      const takeNodes = this.nodeQueue.length && (!this.queue.length || this.nodeQueue[0].d <= this.queue[0].d + 1);
+      const job = takeNodes ? this.nodeQueue.shift() : this.queue.shift();
+      const type = takeNodes ? 'nodes' : 'chunk';
+      if (type === 'chunk' && this.wantT.get(job.k) !== job.lod) continue;
+      if (type === 'nodes' && (!this.wantN.has(job.k) || this.nodeChunks.has(job.k))) continue;
+      const ver = this.ver.get(job.k) || 0;
+      const id = `${type}:${job.k}:${job.lod || 0}:${ver}`;
+      if (this.inflight.has(id)) continue;
+      this.inflight.add(id);
+      this.workers[this.rr++ % this.workers.length].postMessage({ type, id, k: job.k, cx: job.x, cz: job.z, lod: job.lod, ver });
+    }
+  }
+  onWorker(m) {
+    this.inflight.delete(m.id);
+    if (m.type === 'chunk') {
+      if (this.wantT.get(m.k) !== m.lod || (this.ver.get(m.k) || 0) !== m.ver) return;
+      this.installChunk(m.k, m.lod, m.ver, m);
+    } else if (m.type === 'nodes') {
+      if (!this.wantN.has(m.k) || this.nodeChunks.has(m.k)) return;
+      this.nodeChunks.set(m.k, this.buildNodes(m.nodes, m.k));
+    }
+  }
+  buildSync(budgetMs) {
     const t0 = performance.now();
-    while ((this.nodeQueue?.length || this.queue.length) && performance.now() - t0 < budgetMs) {
-      if (this.nodeQueue?.length && (!this.queue.length || this.nodeQueue[0].d <= this.queue[0].d + 1)) {
+    while ((this.nodeQueue.length || this.queue.length) && performance.now() - t0 < budgetMs) {
+      if (this.nodeQueue.length && (!this.queue.length || this.nodeQueue[0].d <= this.queue[0].d + 1)) {
         const n = this.nodeQueue.shift();
-        this.nodeChunks.set(n.k, this.buildNodes(n.x, n.z, n.k));
+        if (this.wantN.has(n.k) && !this.nodeChunks.has(n.k)) this.nodeChunks.set(n.k, this.buildNodes(this.world.chunkNodes(n.x, n.z), n.k));
       } else {
         const q = this.queue.shift();
-        const old = this.chunks.get(q.k);
-        const c = this.buildChunk(q.x, q.z, q.lod);
-        if (old) this.disposeChunk(old);
-        this.chunks.set(q.k, c);
+        if (this.wantT.get(q.k) !== q.lod) continue;
+        this.installChunk(q.k, q.lod, this.ver.get(q.k) || 0, buildChunkData(this.world, q.x, q.z, q.lod));
       }
     }
   }
-  pending() { return this.queue.length + (this.nodeQueue?.length || 0); }
+  pending() { return this.queue.length + this.nodeQueue.length + this.inflight.size; }
 
-  buildChunk(cx, cz, lod) {
-    const w = this.world;
-    const seg = CHUNK / (GRID * lod);
-    const n = seg + 1;
-    const ix0 = cx * (CHUNK / GRID), iz0 = cz * (CHUNK / GRID);
-    const H = new Float32Array(n * n), C = new Float32Array(n * n * 3);
-    const col = [0, 0, 0];
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      const gx = ix0 + i * lod, gz = iz0 + j * lod;
-      H[j * n + i] = w.gridH(gx, gz);
-    }
-    const step = GRID * lod;
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      const h = H[j * n + i];
-      const hx = H[j * n + Math.min(n - 1, i + 1)] - H[j * n + Math.max(0, i - 1)];
-      const hz = H[Math.min(n - 1, j + 1) * n + i] - H[Math.max(0, j - 1) * n + i];
-      const slope = Math.min(1, Math.hypot(hx, hz) / (2 * step));
-      w.color((ix0 + i * lod) * GRID, (iz0 + j * lod) * GRID, h, slope, col);
-      C.set(col, (j * n + i) * 3);
-    }
-    const tris = seg * seg * 2 + seg * 4 * 2;
-    const pos = new Float32Array(tris * 9), cols = new Float32Array(tris * 9);
-    let o = 0;
-    const ox = cx * CHUNK, oz = cz * CHUNK;
-    const pushTri = (a, b, c, pa, pb, pc) => {
-      // a,b,c: grid indices; colour = average
-      const r = (C[a * 3] + C[b * 3] + C[c * 3]) / 3, g = (C[a * 3 + 1] + C[b * 3 + 1] + C[c * 3 + 1]) / 3, bl = (C[a * 3 + 2] + C[b * 3 + 2] + C[c * 3 + 2]) / 3;
-      for (const P of [pa, pb, pc]) { pos[o] = P[0]; pos[o + 1] = P[1]; pos[o + 2] = P[2]; cols[o] = r; cols[o + 1] = g; cols[o + 2] = bl; o += 3; }
-    };
-    const P = (i, j) => [ox + i * step, H[j * n + i], oz + j * step];
-    for (let j = 0; j < seg; j++) for (let i = 0; i < seg; i++) {
-      const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
-      // split along b-c diagonal (matches World.ground)
-      pushTri(a, c, b, P(i, j), P(i, j + 1), P(i + 1, j));
-      pushTri(b, c, d, P(i + 1, j), P(i, j + 1), P(i + 1, j + 1));
-    }
-    // skirts hide LOD cracks
-    const skirt = 6 * lod;
-    const edge = (i0, j0, i1, j1) => {
-      const a = j0 * n + i0, b = j1 * n + i1;
-      const pa = P(i0, j0), pb = P(i1, j1);
-      const qa = [pa[0], pa[1] - skirt, pa[2]], qb = [pb[0], pb[1] - skirt, pb[2]];
-      pushTri(a, b, a, pa, qa, pb); pushTri(b, a, b, pb, qa, qb);
-      pushTri(a, b, a, pa, pb, qa); pushTri(b, a, b, pb, qb, qa);
-    };
-    for (let i = 0; i < seg; i++) { edge(i, 0, i + 1, 0); edge(i, seg, i + 1, seg); edge(0, i, 0, i + 1); edge(seg, i, seg, i + 1); }
+  installChunk(k, lod, ver, d) {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, o), 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(cols.subarray(0, o), 3));
-    geo.computeVertexNormals();
+    geo.setAttribute('position', new THREE.BufferAttribute(d.pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(d.col, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(d.nrm, 3));
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, TERRAIN_MAT);
     mesh.receiveShadow = lod <= 2;
     mesh.matrixAutoUpdate = false; mesh.updateMatrix();
     this.scene.add(mesh);
-    return { cx, cz, lod, mesh };
+    const old = this.chunks.get(k);
+    if (old) this.disposeChunk(old);
+    const [cx, cz] = k.split(',').map(Number);
+    this.chunks.set(k, { cx, cz, lod, ver, mesh });
   }
   disposeChunk(c) { this.scene.remove(c.mesh); c.mesh.geometry.dispose(); }
 
-  buildNodes(cx, cz, k) {
-    const nodes = this.world.chunkNodes(cx, cz);
+  buildNodes(nodes, k) {
     const byType = new Map();
     for (const n of nodes) { if (!byType.has(n.type)) byType.set(n.type, []); byType.get(n.type).push(n); }
     const meshes = [];
@@ -139,21 +153,17 @@ export class Terrain {
       const im = new THREE.InstancedMesh(nodeGeometry(type), MAT, list.length);
       im.castShadow = this.shadows && NODES[type].kind !== 'pick';
       im.receiveShadow = false;
+      const def = NODES[type];
       list.forEach((n, i) => {
         _q.setFromAxisAngle(_up, n.rot); _s.set(n.s, n.s, n.s); _p.set(n.x, n.y - 0.1, n.z);
         _m.compose(_p, _q, _s);
         n._mat = _m.clone();
-        im.setMatrixAt(i, this.depleted.has(n.id) ? ZERO : n._mat);
+        const dep = this.depleted.has(n.id);
+        im.setMatrixAt(i, dep ? ZERO : n._mat);
         this.nodeIndex.set(n.id, { mesh: im, i, node: n });
-        const def = NODES[type];
-        if (def.kind !== 'pick') {
-          n._col = this.physics.add(group, { t: 'cyl', x: n.x, y: n.y - 0.2, z: n.z, r: def.radius * n.s, h: def.height * n.s, ref: { kind: 'n', id: n.id, node: n } });
-          if (this.depleted.has(n.id)) n._col.disabled = true, n._col.h = -100;
-        } else {
-          // pickables are raycast-only (thin cylinder that the body ignores)
-          n._col = this.physics.add(group, { t: 'cyl', x: n.x, y: n.y, z: n.z, r: 0.5, h: def.height, ref: { kind: 'n', id: n.id, node: n }, ghost: true });
-          if (this.depleted.has(n.id)) n._col.h = -100;
-        }
+        if (def.kind !== 'pick') n._col = this.physics.add(group, { t: 'cyl', x: n.x, y: n.y - 0.2, z: n.z, r: def.radius * n.s, h: dep ? -100 : def.height * n.s, ref: { kind: 'n', id: n.id, node: n } });
+        // pickables are raycast-only (the body ignores ghost colliders)
+        else n._col = this.physics.add(group, { t: 'cyl', x: n.x, y: n.y, z: n.z, r: 0.5, h: dep ? -100 : def.height, ref: { kind: 'n', id: n.id, node: n }, ghost: true });
       });
       im.instanceMatrix.needsUpdate = true;
       im.computeBoundingSphere();
@@ -174,17 +184,16 @@ export class Terrain {
     e.mesh.setMatrixAt(e.i, dep ? ZERO : e.node._mat);
     e.mesh.instanceMatrix.needsUpdate = true;
     const def = NODES[e.node.type];
-    if (e.node._col) e.node._col.h = dep ? -100 : def.height * e.node.s;
+    if (e.node._col) e.node._col.h = dep ? -100 : def.height * (def.kind === 'pick' ? 1 : e.node.s);
   }
   // brief shake when a node is hit
   shakeNode(id, amt = 0.06) {
     const e = this.nodeIndex.get(id);
     if (!e || this.depleted.has(id)) return;
-    const m = e.node._mat.clone();
     const n = e.node;
-    _q.setFromAxisAngle(new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize(), amt);
-    const r = new THREE.Quaternion().setFromAxisAngle(_up, n.rot).premultiply(_q);
-    m.compose(_p.set(n.x, n.y - 0.1, n.z), r, _s.set(n.s, n.s, n.s));
+    const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize(), amt);
+    const r = new THREE.Quaternion().setFromAxisAngle(_up, n.rot).premultiply(tilt);
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(n.x, n.y - 0.1, n.z), r, new THREE.Vector3(n.s, n.s, n.s));
     e.mesh.setMatrixAt(e.i, m); e.mesh.instanceMatrix.needsUpdate = true;
     clearTimeout(e._t);
     e._t = setTimeout(() => { if (!this.depleted.has(id)) { e.mesh.setMatrixAt(e.i, n._mat); e.mesh.instanceMatrix.needsUpdate = true; } }, 120);

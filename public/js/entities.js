@@ -2,9 +2,11 @@
 import * as THREE from 'three';
 import { ANIMALS } from '/shared/items.js';
 import { VEHICLES } from '/shared/vehicles.js';
+import { Interp, INTERP_DELAY } from './interp.js';
 import { makeHumanoid, setHumanoidArmor, makeAnimal, makeItemModel, deployGeometry, MAT } from './models.js';
 
 const _v = new THREE.Vector3();
+const _o = { x: 0, y: 0, z: 0, yaw: 0 };
 
 function nameSprite(name) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 48;
@@ -40,7 +42,9 @@ export class Entities {
         p = { pid, model, tag, pos: new THREE.Vector3(x, y, z), target: new THREE.Vector3(x, y, z), yaw, tyaw: yaw, pitch, walk: 0, held: null, heldId: '', armor: '', name };
         this.players.set(pid, p);
       }
-      p.target.set(x, y, z); p.tyaw = yaw; p.pitch = pitch; p.flags = flags; p.vid = vid; p.seat = seat;
+      if (!p.interp) p.interp = new Interp();
+      p.interp.push(performance.now(), x, y, z, yaw);
+      p.pitch = pitch; p.flags = flags; p.vid = vid; p.seat = seat;
       if (p.armor !== armor) { p.armor = armor; setHumanoidArmor(p.model, armor.split(',')); }
       if (p.heldId !== held) {
         p.heldId = held;
@@ -56,10 +60,7 @@ export class Entities {
       const ud = p.model.userData;
       const sleeping = p.flags & 2, inVeh = p.flags & 4, crouch = p.flags & 1;
       const before = p.pos.clone();
-      const k = 1 - Math.exp(-dt * 14);
-      if (p.pos.distanceTo(p.target) > 10) p.pos.copy(p.target); else p.pos.lerp(p.target, k);
-      let dy = p.tyaw - p.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
-      p.yaw += dy * k;
+      if (p.interp.sample(performance.now() - INTERP_DELAY, _o)) { p.pos.set(_o.x, _o.y, _o.z); p.yaw = _o.yaw; }
       const speed = before.distanceTo(p.pos) / Math.max(dt, 1e-3);
       p.model.position.copy(p.pos);
       p.model.rotation.set(0, p.yaw, 0);
@@ -120,17 +121,16 @@ export class Entities {
         e = { id, type, model, pos: new THREE.Vector3(x, y, z), target: new THREE.Vector3(x, y, z), yaw, tyaw: yaw, walk: 0 };
         this.animals.set(id, e);
       }
-      e.target.set(x, y, z); e.tyaw = yaw; e.st = st; e.hp = hp;
+      if (!e.interp) e.interp = new Interp();
+      e.interp.push(performance.now(), x, y, z, yaw);
+      e.st = st; e.hp = hp;
     }
     for (const [id, e] of this.animals) if (!seen.has(id)) { this.scene.remove(e.model); this.animals.delete(id); }
   }
   updateAnimals(dt) {
     for (const e of this.animals.values()) {
       const before = e.pos.clone();
-      const k = 1 - Math.exp(-dt * 8);
-      e.pos.lerp(e.target, k);
-      let dy = e.tyaw - e.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
-      e.yaw += dy * k;
+      if (e.interp.sample(performance.now() - INTERP_DELAY, _o)) { e.pos.set(_o.x, _o.y, _o.z); e.yaw = _o.yaw; }
       const speed = before.distanceTo(e.pos) / Math.max(dt, 1e-3);
       e.model.position.copy(e.pos); e.model.rotation.y = e.yaw;
       e.walk += speed * dt * 2.2;
