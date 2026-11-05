@@ -47,9 +47,10 @@
       <div class="hint">Drag to move · Shift+click quick-move · Right-click use/equip · Drag outside to drop</div>
     </div>
     <div class="invcol right">
-      <div id="contpanel" class="hidden"><h3 id="conttitle">Container</h3><div id="contgrid" class="grid"></div></div>
+      <div id="contpanel" class="hidden"><h3 id="conttitle">Container</h3><div id="contgrid" class="grid"></div><div id="contjobs"></div></div>
       <div id="craftpanel">
         <h3>Crafting <small id="craftstation"></small></h3>
+        <div id="craftjobs" class="hidden"></div>
         <input id="craftsearch" placeholder="Search recipes…" />
         <div id="craftlist"></div>
         <div id="craftdetail"></div>
@@ -59,7 +60,7 @@
   </div>
 
   <!-- Build menu -->
-  <div id="buildmenu" class="hidden panelscreen center"><h3>Building Plan — choose a piece</h3><div id="buildgrid"></div><div class="hint">All pieces start as Twig. Use a Hammer to upgrade (LMB) or repair (RMB).</div></div>
+  <div id="buildmenu" class="hidden panelscreen center"><h3 id="bwtitle">Building</h3><div id="buildwheel"></div><div id="bwinfo"></div><div class="hint">Pick what to build on the ring. Upgrade or repair pieces later with a Hammer.</div></div>
 
   <!-- Clan -->
   <div id="clanscreen" class="hidden panelscreen center"><div id="clanbox"></div></div>

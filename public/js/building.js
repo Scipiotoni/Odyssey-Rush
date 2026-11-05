@@ -12,7 +12,9 @@ const BAD = new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, op
 export class Builder {
   constructor(game) {
     this.game = game;
-    this.piece = 'foundation';
+    this.piece = 'foundation';  // selected construction piece (when deploy is null)
+    this.deploy = null;         // selected furniture / door item id (from the build wheel)
+    this.tier = 0;              // material the pieces are built from (index into TIERS)
     this.rot = 0;
     this.ghost = new THREE.Mesh(new THREE.BufferGeometry(), OK);
     this.ghost.visible = false;
@@ -67,7 +69,7 @@ export class Builder {
       err = canPlaceAny(type, gx, gz, level, g.structures.index(b.id), false);
       if (!err && type === 'foundation') err = this.foundationGround(b, gx, gz);
       const t = pieceTransform(b, { type, gx, gz, level, rot: this.rot });
-      plan = { type, bid: b.id, gx, gz, level, rot: this.rot, t };
+      plan = { type, bid: b.id, gx, gz, level, rot: this.rot, tier: this.tier, t };
     } else if (type === 'foundation') {
       if (!hit || hit.kind !== 'terrain') err = 'Aim at the ground';
       const yaw = g.player.yaw;
@@ -75,9 +77,9 @@ export class Builder {
       for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 0]]) { const [dx, dz] = rotY(cx, cz, yaw); maxG = Math.max(maxG, g.world.ground(point.x + dx, point.z + dz)); }
       const nb = { x: point.x, y: maxG + 0.1, z: point.z, yaw };
       if (!err) err = this.foundationGround(nb, 0, 0);
-      plan = { type, x: nb.x, y: nb.y, z: nb.z, yaw, t: { x: nb.x, y: nb.y, z: nb.z, yaw } };
+      plan = { type, x: nb.x, y: nb.y, z: nb.z, yaw, tier: this.tier, t: { x: nb.x, y: nb.y, z: nb.z, yaw } };
     } else err = 'Place a foundation first';
-    if (plan && !err) { const cost = pieceCost(type, 0); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
+    if (plan && !err) { const cost = pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
     this.plan = plan; this.err = err;
     if (plan) {
       this.setGhost('p:' + type, () => pieceGeometry(type));
@@ -85,15 +87,15 @@ export class Builder {
       this.ghost.position.set(plan.t.x, plan.t.y, plan.t.z); this.ghost.rotation.set(0, plan.t.yaw, 0);
       this.ghost.visible = true;
     } else this.ghost.visible = false;
-    const cost = pieceCost(type, 0);
-    g.ui.prompt(`<b>${PIECES[type].name}</b> (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> pieces · <kbd>R</kbd> rotate</small>`);
+    const cost = pieceCost(type, this.tier);
+    g.ui.prompt(`<b>${PIECES[type].name}</b> in ${TIERS[this.tier].name} (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> pieces · <kbd>R</kbd> rotate</small>`);
   }
   placePlan() {
     const p = this.plan;
     if (!p) return;
     if (this.err) { this.game.ui.toast(this.err); return; }
-    if (p.bid) this.game.net.send({ t: 'build', type: p.type, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
-    else this.game.net.send({ t: 'build', type: p.type, x: p.x, y: p.y, z: p.z, yaw: p.yaw });
+    if (p.bid) this.game.net.send({ t: 'build', type: p.type, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot, tier: p.tier });
+    else this.game.net.send({ t: 'build', type: p.type, x: p.x, y: p.y, z: p.z, yaw: p.yaw, tier: p.tier });
   }
 
   // ------------------------------------------------------------ deployables & doors
@@ -101,12 +103,13 @@ export class Builder {
     const g = this.game, d = ITEMS[itemId];
     const { hit } = this.aim(5);
     let err = null, plan = null;
+    if (countItem(g.inv, itemId) <= 0) err = `You have no ${d.name}`;
     if (d.door) {
       const s = hit && hit.kind === 's' ? g.structures.map.get(hit.id)?.s : null;
       if (!s || s.type !== 'doorway') err = 'Aim at a doorway';
       else {
         for (const e of g.structures.map.values()) if (e.s.k === 'door' && e.s.parent === s.id) err = 'Doorway already has a door';
-        plan = { door: s.id, t: s };
+        plan = { door: s.id, t: s, item: itemId };
       }
       this.setGhost('door', () => { const b = new THREE.BoxGeometry(1.2, 2.2, 0.1); b.translate(0, 1.1, 0); return b; });
     } else {
@@ -117,7 +120,7 @@ export class Builder {
         if (Math.abs(gy - p.y) > 0.2) err = 'Needs a flat surface';
         const np = g.world.nearestPOI(p.x, p.z);
         if (np && np.d < POI_FLAT + 12) err = "Can't deploy in monuments";
-        plan = { t: { x: p.x, y: gy, z: p.z, yaw: g.player.yaw } };
+        plan = { t: { x: p.x, y: gy, z: p.z, yaw: g.player.yaw }, item: itemId };
       }
       this.setGhost('d:' + d.deploy.kind, () => deployGeometry(d.deploy.kind));
     }
@@ -133,8 +136,8 @@ export class Builder {
     const p = this.plan;
     if (!p) return;
     if (this.err) { this.game.ui.toast(this.err); return; }
-    if (p.door) this.game.net.send({ t: 'deploy', sel: this.game.sel, door: p.door });
-    else this.game.net.send({ t: 'deploy', sel: this.game.sel, x: p.t.x, y: p.t.y, z: p.t.z, yaw: p.t.yaw });
+    if (p.door) this.game.net.send({ t: 'deploy', sel: this.game.sel, item: p.item, door: p.door });
+    else this.game.net.send({ t: 'deploy', sel: this.game.sel, item: p.item, x: p.t.x, y: p.t.y, z: p.t.z, yaw: p.t.yaw });
   }
 
   // ------------------------------------------------------------ hammer

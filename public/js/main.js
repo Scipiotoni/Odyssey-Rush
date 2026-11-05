@@ -49,7 +49,7 @@ class Game {
     this.inv = new Array(INV_SIZE).fill(null);
     this.armor = { head: null, chest: null, legs: null };
     this.sel = 0; this.container = null; this.stats = { hp: 100, food: 100, water: 100, lvl: 1, xp: 0, maxhp: 100 };
-    this.queue = []; this.bags = [];
+    this.queue = []; this.stationJobs = []; this.bags = [];
     this.ready = false; this.alive = true;
     this.vehicleViews = new Map();
     this.regionContents = new Map();
@@ -153,6 +153,13 @@ class Game {
     n.on('inv', (m) => { this.inv = m.inv; this.armor = m.armor; if (this.ui.open === 'inv') this.ui.renderInventory(); else this.ui.renderHotbar(); });
     n.on('stats', (m) => { const was = this.stats.lvl; this.stats = m; this.ui.renderStats(m); if (m.lvl > was && was) audio.craftDone(); });
     n.on('queue', (m) => { const done = this.queue.length > m.q.length; this.queue = m.q; this.ui.renderQueue(m.q); if (done) audio.craftDone(); });
+    n.on('stq', (m) => {
+      const count = (l) => l.reduce((a, s) => a + s.jobs.length, 0);
+      const done = count(m.st) < count(this.stationJobs);
+      this.stationJobs = m.st;
+      if (done) audio.craftDone();
+      if (this.ui.open === 'inv') this.ui.renderJobs();
+    });
     n.on('gain', (m) => { this.ui.gain(m.id, m.n); audio.pickup(); });
     n.on('toast', (m) => this.ui.toast(m.m));
     n.on('chat', (m) => this.ui.chat(m.from, m.m, m.clan));
@@ -197,7 +204,7 @@ class Game {
     n.on('shit', (m) => { this.lastStructHit = { ...m, t: performance.now() }; this.ui.hitmarker(false); });
     n.on('cont', (m) => {
       if (!m.slots) { this.container = null; if (this.ui.open === 'inv') this.ui.renderInventory(); return; }
-      this.container = { id: m.id, title: m.title, slots: m.slots };
+      this.container = { id: m.id, title: m.title, slots: m.slots, st: !!m.st };
       if (this.ui.open !== 'inv') this.ui.show('inv'); else this.ui.renderInventory();
     });
     n.on('hurt', (m) => {
@@ -475,6 +482,7 @@ class Game {
           else if (s.type === 'small_box' || s.type === 'large_box') { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.type === 'tool_cupboard') { const authed = s.auth?.includes(this.pid); text = `<kbd>E</kbd> ${authed ? 'Deauthorize' : 'Authorize'} at Tool Cupboard <small>(${s.auth?.length || 0} authorized)</small>`; if (E) this.net.send({ t: 'use', id: s.id }); }
           else if (s.type === 'sleeping_bag') { text = s.o === this.pid ? 'Your sleeping bag' : '<kbd>E</kbd> Claim sleeping bag'; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
+          else if (s.k === 'deploy' && ITEMS[s.type]?.deploy?.station) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name} <small>(collect items · <kbd>Tab</kbd> craft)</small>`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name} — <kbd>Tab</kbd> to craft here`; }
           else if (s.k === 'piece') target = `${TIERS[s.tier].name} ${PIECES[s.type].name}<div class="tbar"><div style="width:${(s.hp / s.mhp) * 100}%"></div></div>`;
         }
@@ -596,7 +604,7 @@ class Game {
       this.timers.reveal = 1;
       this.ui.reveal(cp.x, cp.z);
       if (this.ui.open === 'map') this.ui.renderMap();
-      if (this.ui.open === 'inv' && !this.container) this.ui.renderCrafting();
+      if (this.ui.open === 'inv') this.ui.renderCrafting();
       const b = this.world.biome(cp.x, cp.z);
       const np = this.world.nearestPOI(cp.x, cp.z);
       const h = this.day * 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60);

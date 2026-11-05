@@ -107,11 +107,38 @@ kbd { background: #333; border: 1px solid #555; border-bottom-width: 2px; border
 #craftdetail button { padding: 6px 14px; margin-right: 6px; }
 #itemtip { position: fixed; pointer-events: none; background: rgba(10,10,10,.92); border: 1px solid #555; padding: 6px 10px; font-size: 12px; max-width: 240px; z-index: 30; }
 #dragghost { position: fixed; pointer-events: none; z-index: 40; font-size: 30px; transform: translate(-50%, -50%); }
-#buildgrid { display: grid; grid-template-columns: repeat(4, 130px); gap: 8px; margin: 10px 0; }
-.bpiece { background: rgba(40,40,40,.85); padding: 12px; text-align: center; cursor: pointer; border: 1px solid #444; }
-.bpiece:hover, .bpiece.sel { border-color: #d9633a; background: rgba(90,60,40,.85); }
-.bpiece .ic { font-size: 30px; }
-.bpiece small { display: block; opacity: .7; margin-top: 4px; }
+#buildwheel { position: relative; width: min(600px, 80vh, 92vw); aspect-ratio: 1; user-select: none; }
+#buildwheel svg { width: 100%; height: 100%; display: block; overflow: visible; }
+#buildwheel .bw-seg path { fill: rgba(28,28,30,.9); stroke: #3a3a3e; stroke-width: 1.5; transition: fill .12s; }
+#buildwheel .bw-seg { cursor: pointer; }
+#buildwheel .bw-seg:hover path { fill: rgba(150,70,40,.95); }
+#buildwheel .bw-seg.sel path { fill: rgba(194,80,42,.97); }
+#buildwheel .bw-seg.bw-back path { fill: rgba(70,70,74,.92); }
+#buildwheel .bw-seg.dim { opacity: .42; }
+#buildwheel .bw-icon { font-size: 26px; text-anchor: middle; pointer-events: none; }
+#buildwheel .bw-txt { font-size: 14px; font-weight: 600; fill: #f1ebdf; text-anchor: middle; pointer-events: none; }
+#buildwheel .bw-sub { font-size: 11px; font-weight: 400; opacity: .75; }
+#buildwheel .bw-disc { fill: rgba(14,14,16,.95); stroke: #666; stroke-width: 2; }
+#buildwheel .bw-half { fill: transparent; cursor: pointer; }
+#buildwheel .bw-half:hover { fill: rgba(194,80,42,.28); }
+#buildwheel .bw-arrow { font-size: 22px; fill: #d9d2c4; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+#buildwheel .bw-small { font-size: 11px; letter-spacing: 1px; fill: #9a948a; text-anchor: middle; pointer-events: none; text-transform: uppercase; }
+#buildwheel .bw-small.na { opacity: .6; }
+#buildwheel .bw-mat { font-size: 22px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+#buildwheel .pip { fill-opacity: .35; stroke: #111; pointer-events: none; }
+#buildwheel .pip.on { fill-opacity: 1; stroke: #fff; stroke-width: 2; }
+#bwtitle { margin-bottom: 4px; }
+#bwinfo { min-height: 58px; max-width: 600px; text-align: center; font-size: 13px; margin-top: 8px; }
+#bwinfo .bw-hov { margin-top: 4px; }
+#bwinfo .bw-tip { opacity: .6; font-size: 12px; margin-top: 6px; }
+#bwinfo .miss { color: #ff7a6a; }
+#craftjobs, #contjobs { margin-bottom: 6px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+#craftjobs .sjob-st, #contjobs .sjob-st { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: .7; margin-top: 4px; }
+.sjob { background: rgba(0,0,0,.4); padding: 3px 8px; border-left: 3px solid #666; }
+.sjob.mine { cursor: pointer; border-left-color: #d9633a; }
+.sjob.mine:hover { background: rgba(120,40,20,.5); }
+.sjob small { opacity: .6; }
+#contjobs .hint { font-size: 12px; }
 #mapcanvas { width: min(80vh, 90vw); height: min(80vh, 90vw); image-rendering: pixelated; border: 2px solid #444; background: #1b3a52; }
 #deathscreen h1 { font-size: 72px; color: #c0392b; margin: 0; letter-spacing: 8px; }
 #respawnopts { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; min-width: 300px; }

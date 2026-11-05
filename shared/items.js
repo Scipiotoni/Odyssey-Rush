@@ -86,11 +86,11 @@ export const ITEMS = {
   metal_chest: { name: 'Metal Chest Plate', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'chest', prot: 0.45, cold: 0.05, color: 0x8b949b } },
   metal_legs: { name: 'Roadsign Kilt', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'legs', prot: 0.35, cold: 0.05, color: 0x9b8b5b } },
   // --- deployables ---
-  campfire: { name: 'Camp Fire', cat: 'deployable', stack: 1, icon: '🔥', deploy: { kind: 'campfire', hp: 150 } },
-  furnace: { name: 'Furnace', cat: 'deployable', stack: 1, icon: '🏭', deploy: { kind: 'furnace', hp: 500 } },
-  workbench1: { name: 'Workbench Level 1', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench1', hp: 500 } },
-  workbench2: { name: 'Workbench Level 2', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench2', hp: 750 } },
-  workbench3: { name: 'Workbench Level 3', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench3', hp: 1000 } },
+  campfire: { name: 'Camp Fire', cat: 'deployable', stack: 1, icon: '🔥', deploy: { kind: 'campfire', hp: 150, slots: 6, station: true } },
+  furnace: { name: 'Furnace', cat: 'deployable', stack: 1, icon: '🏭', deploy: { kind: 'furnace', hp: 500, slots: 12, station: true } },
+  workbench1: { name: 'Workbench Level 1', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench1', hp: 500, slots: 12, station: true } },
+  workbench2: { name: 'Workbench Level 2', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench2', hp: 750, slots: 12, station: true } },
+  workbench3: { name: 'Workbench Level 3', cat: 'deployable', stack: 1, icon: '🛠️', deploy: { kind: 'workbench3', hp: 1000, slots: 12, station: true } },
   small_box: { name: 'Wooden Box', cat: 'deployable', stack: 1, icon: '📦', deploy: { kind: 'small_box', hp: 200, slots: 12 } },
   large_box: { name: 'Large Wood Box', cat: 'deployable', stack: 1, icon: '🗃️', deploy: { kind: 'large_box', hp: 400, slots: 30 } },
   sleeping_bag: { name: 'Sleeping Bag', cat: 'deployable', stack: 1, icon: '🛏️', deploy: { kind: 'sleeping_bag', hp: 100 } },
@@ -186,7 +186,7 @@ export const STATION_PROVIDERS = {
   wb1: ['workbench1', 'workbench2', 'workbench3'],
   wb2: ['workbench2', 'workbench3'],
   wb3: ['workbench3'],
-  campfire: ['campfire', 'furnace'],
+  campfire: ['campfire'],
   furnace: ['furnace'],
 };
 export const STATION_RANGE = 4.5;
@@ -238,8 +238,8 @@ export function newStack(id, n = 1) {
 
 // Animal definitions
 export const ANIMALS = {
-  deer: { name: 'Deer', hp: 80, speed: 9, aggro: false, dmg: 0, drops: { raw_meat: 4, leather: 18, animal_fat: 4, bone: 8 }, color: 0x9b6a3c, size: 1 },
-  boar: { name: 'Boar', hp: 120, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
-  wolf: { name: 'Wolf', hp: 55, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
-  bear: { name: 'Bear', hp: 350, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
+  deer: { name: 'Deer', hp: 30, speed: 9, aggro: false, dmg: 0, drops: { raw_meat: 4, leather: 18, animal_fat: 4, bone: 8 }, color: 0x9b6a3c, size: 1 },
+  boar: { name: 'Boar', hp: 45, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
+  wolf: { name: 'Wolf', hp: 25, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
+  bear: { name: 'Bear', hp: 140, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
 };

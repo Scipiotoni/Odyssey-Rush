@@ -175,8 +175,14 @@ export class Held {
     }
     const L = input.mouse.left, LP = input.mouse.leftPressed;
     if (d.plan) {
-      g.builder.updatePlan();
-      if (LP) { g.builder.placePlan(); this.swingAnim(0.3); }
+      if (g.builder.deploy) {
+        // furniture / door picked on the build wheel
+        g.builder.updateDeploy(g.builder.deploy);
+        if (LP) { g.builder.placeDeploy(); this.swingAnim(0.3); }
+      } else {
+        g.builder.updatePlan();
+        if (LP) { g.builder.placePlan(); this.swingAnim(0.3); }
+      }
       if (input.mouse.rightPressed) g.ui.show('build');
       if (input.hit('KeyR')) g.builder.rot = (g.builder.rot + 1) & 3;
       return;

@@ -47,7 +47,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | Key | Action |
 |---|---|
 | WASD / Shift / Ctrl or C / Space | Move / sprint / crouch / jump (swim up in water) |
-| Mouse | Look · **LMB** use / attack / place · **RMB** aim, build menu, repair |
+| Mouse | Look · **LMB** use / attack / place · **RMB** aim, build wheel (with a building plan), repair |
 | 1–6, wheel | Belt slots |
 | E | Interact: pick up, loot, open doors/boxes, authorize at a tool cupboard, enter / repair vehicles |
 | Tab or Q | Inventory & crafting (drag items, Shift-click quick move, right-click use/equip, drag out to drop) |
@@ -70,10 +70,11 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    Hit trees for wood and rocks for stone, metal ore and sulfur ore (orange / yellow speckled rocks).
    Press E on hemp for cloth and on bushes for berries. Smash blue barrels for scrap and parts.
 2. **Craft.** Stone hatchet & pickaxe first, then a building plan, hammer, camp fire, furnace, sleeping bag and boxes.
-   Stand near stations to unlock recipes: **Camp Fire** (cooking, charcoal, fuel), **Furnace** (smelting),
-   **Workbench Lv1 → Lv2 → Lv3** (better tools, guns, armor, vehicle parts, explosives).
+   Each station crafts only its own recipes: **Camp Fire** (cooking, charcoal, fuel), **Furnace** (smelting),
+   **Workbench Lv1 → Lv2 → Lv3** (better tools, guns, armor, vehicle parts, explosives). Items being made stay in
+   the station: press **E** on it to collect them (they stay there even if you walk away).
 3. **Build.** Equip the building plan: foundations, walls, doorways, windows, low walls, floors and stairs snap to
-   a 3 m grid. Everything starts as Twig; use the hammer to upgrade to **Wood → Stone → Sheet Metal → Armored**.
+   a 3 m grid. Pick the material on the build wheel (centre ◀ ▶): **Twig → Wood → Stone → Sheet Metal → Armored**. A hammer can upgrade pieces later.
    Put a door in the doorway and a **Tool Cupboard** inside: it locks your doors to authorized players and stops
    anyone else building within 30 m. Pieces need support — blow out a wall and the floor above can collapse.
 4. **Hide.** Bases are only streamed to players within ~300 m, and the map shows no other players. The island is

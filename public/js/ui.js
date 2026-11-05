@@ -4,6 +4,7 @@ import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
 import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
 import { audio } from './audio.js';
 import { icons } from './icons.js';
+import { BuildWheel } from './buildwheel.js';
 
 // <img> for an item's rendered icon (falls back to the emoji until it's ready)
 export function iconHTML(id, cls = 'ico') { const src = icons.get(id); return src ? `<img class="${cls}" src="${src}" alt="">` : `<span class="${cls} emo">${ITEMS[id]?.icon || '?'}</span>`; }
@@ -213,7 +214,8 @@ export class UI {
     for (let i = 0; i < INV_SIZE; i++) this.invEls[i].innerHTML = this.slotHTML(g.inv[i], i < HOTBAR ? i + 1 : null);
     const c = g.container;
     $('contpanel').classList.toggle('hidden', !c);
-    $('craftpanel').classList.toggle('hidden', !!c);
+    // crafting stays visible next to a station's output (campfire / furnace / workbench)
+    $('craftpanel').classList.toggle('hidden', !!c && !c.st);
     if (c) {
       $('conttitle').textContent = c.title;
       const grid = $('contgrid');
@@ -229,7 +231,8 @@ export class UI {
         });
       }
       c.slots.forEach((st, i) => (this.contEls[i].innerHTML = this.slotHTML(st)));
-    } else this.renderCrafting();
+    }
+    if (!c || c.st) this.renderCrafting();
     this.renderHotbar();
   }
   ref(el) { return { c: el.dataset.c, i: el.dataset.c === 'a' ? el.dataset.i : +el.dataset.i }; }
@@ -304,9 +307,31 @@ export class UI {
     }
     return out;
   }
+  // Jobs being crafted at stations (they stay in the station until collected)
+  jobRowsHTML(station) {
+    return station.jobs.map((j) => {
+      const r = RECIPES[j.r], o = ITEMS[r.out];
+      const mine = j.m ? ' mine' : '';
+      return `<div class="qi sjob${mine}" data-s="${station.id}" data-i="${j.i}" title="${j.m ? 'Click to cancel and get the materials back' : 'Queued by another player'}">${o.icon} ${o.name}${r.n > 1 ? ' ×' + r.n : ''} <b>${j.left}s</b>${j.m ? ' <small>✕</small>' : ''}</div>`;
+    }).join('');
+  }
+  renderJobs() {
+    const g = this.game, list = g.stationJobs || [];
+    const cj = $('craftjobs');
+    if (cj) {
+      const html = list.map((st) => `<div class="sjob-st">${esc(st.name)}</div>${this.jobRowsHTML(st)}`).join('');
+      cj.innerHTML = html; cj.classList.toggle('hidden', !html);
+    }
+    const cont = $('contjobs');
+    if (cont) {
+      const st = g.container?.st ? list.find((x) => x.id === g.container.id) : null;
+      cont.innerHTML = st && st.jobs.length ? `<div class="sjob-st">Being crafted</div>${this.jobRowsHTML(st)}` : (g.container?.st ? '<div class="hint">Nothing being crafted. Use Tab to queue items here.</div>' : '');
+    }
+  }
   renderCrafting() {
     const g = this.game;
     const near = this.stationsNear();
+    this.renderJobs();
     $('craftstation').textContent = near.size ? '— near ' + [...near].map((s) => STATION_NAMES[s]).join(', ') : '';
     const q = $('craftsearch').value.trim().toLowerCase();
     const groups = [[null, 'Basic'], ['campfire', 'Camp Fire'], ['furnace', 'Furnace'], ['wb1', 'Workbench Level 1'], ['wb2', 'Workbench Level 2'], ['wb3', 'Workbench Level 3']];
@@ -330,21 +355,27 @@ export class UI {
     const r = RECIPES[this.selRecipe];
     if (!r) { det.innerHTML = '<span class="hint">Select a recipe. Stand near a workbench, camp fire or furnace to unlock more.</span>'; return; }
     const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${countItem(g.inv, k) < v ? 'miss' : ''}">${iconHTML(k, 'gico')} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
-    det.innerHTML = `<div class="bigico">${iconHTML(r.out, 'bico')}</div><b>${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Requires ' + STATION_NAMES[r.station] : ''}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
+    det.innerHTML = `<div class="bigico">${iconHTML(r.out, 'bico')}</div><b>${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Crafted at ' + STATION_NAMES[r.station] + ' (items stay there)' : 'Hand craft'}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
     $('c1').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 1 }); audio.click(); };
     $('c5').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 5 }); audio.click(); };
   }
 
   // ------------------------------------------------------------------ build menu
   buildMenus() {
-    const bg = $('buildgrid');
-    bg.innerHTML = PIECE_ORDER.map((t) => { const c = pieceCost(t, 0); return `<div class="bpiece" data-t="${t}"><div class="ic">${PIECES[t].icon}</div>${PIECES[t].name}<small>${Object.entries(c).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')}</small></div>`; }).join('');
-    bg.querySelectorAll('.bpiece').forEach((el) => el.addEventListener('click', () => { this.game.building.piece = el.dataset.t; audio.click(); this.close(); }));
+    this.wheel = new BuildWheel(this.game);
+    $('craftjobs').addEventListener('click', (e) => this.onJobClick(e));
+    $('contjobs').addEventListener('click', (e) => this.onJobClick(e));
     const ctl = CONTROLS.map(([k, v]) => `<div><kbd>${k}</kbd> ${v}</div>`).join('');
     $('controls').innerHTML = ctl; $('menucontrols').innerHTML = ctl;
   }
+  onJobClick(e) {
+    const el = e.target.closest?.('.sjob.mine');
+    if (!el) return;
+    this.game.net.send({ t: 'ccancel', s: el.dataset.s, i: +el.dataset.i });
+    audio.click();
+  }
   renderBuildMenu() {
-    document.querySelectorAll('.bpiece').forEach((el) => el.classList.toggle('sel', el.dataset.t === this.game.building.piece));
+    this.wheel.reset();
   }
 
   // ------------------------------------------------------------------ panels
