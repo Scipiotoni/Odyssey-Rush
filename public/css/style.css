@@ -324,3 +324,17 @@ body.dragging .gtile { pointer-events: none; opacity: .55; }
 #invscreen #armorslots .slot:nth-child(4)::after { right: 100%; left: auto; background: linear-gradient(270deg, var(--pda-cyan), transparent); }
 #invscreen #armorslots .slot:nth-child(3)::after { left: 100%; }
 #contgrid { max-height: 52vh; overflow: auto; }
+.playrow #passinput { margin: 0; flex: 1; }
+#passinput { width: 100%; padding: 12px; background: rgba(0,0,0,.5); color: #fff; border: 1px solid #555; border-radius: 3px; font-size: 18px; text-align: center; font-family: inherit; }
+.acctnote { font-size: 12px; opacity: .65; margin: 6px 2px 0; }
+@media (max-width: 700px) { .playrow { flex-wrap: wrap; } .playrow #playbtn { width: 100%; } }
+.resetbox { max-width: 560px; line-height: 1.45; }
+.resetbox .dim { opacity: .7; font-size: 13px; }
+.resetbox input[type=text], .resetbox input:not([type]) { background: #111; color: #fff; border: 1px solid #666; border-radius: 4px; padding: 6px 8px; font: inherit; width: 110px; text-transform: uppercase; }
+.resetbox .code { font-family: monospace; font-size: 18px; letter-spacing: 3px; color: #ffd76a; }
+.resetbox .chk { display: block; margin: 8px 0; }
+.resetbox .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.resetbox button { padding: 9px 18px; border-radius: 6px; border: none; cursor: pointer; font: inherit; font-weight: 700; }
+.resetbox button.alt { background: #3a3f44; color: #ddd; }
+.resetbox button.danger { background: #c0281e; color: #fff; }
+.resetbox button.danger:disabled { background: #5a2a26; color: #a88; cursor: not-allowed; }

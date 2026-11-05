@@ -139,6 +139,16 @@ export class Terrain {
     }
   }
   pending() { return this.queue.length + this.nodeQueue.length + this.inflight.size; }
+  // Is the ground (and trees/rocks you could bump into) right around (px,pz) built? Enough to start playing.
+  nearReady(px, pz, r = 1) {
+    const cx = Math.floor(px / CHUNK), cz = Math.floor(pz / CHUNK);
+    for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
+      const k = chunkKey(cx + i, cz + j);
+      if (this.wantT.has(k) && !this.chunks.has(k)) return false;
+      if (this.wantN.has(k) && !this.nodeChunks.has(k)) return false;
+    }
+    return true;
+  }
 
   installChunk(k, lod, ver, d) {
     const geo = new THREE.BufferGeometry();

@@ -83,6 +83,15 @@
 
   <!-- Clan -->
   <div id="clanscreen" class="hidden panelscreen center"><div id="clanbox"></div></div>
+  <div id="resetscreen" class="hidden panelscreen center"><div class="adminbox resetbox">
+    <h2>⚠️ Reset the whole server?</h2>
+    <p>This permanently deletes <b>every base, box, vehicle, survivor, inventory, clan and dug hole</b> for all players. Only sign-in accounts (names and passwords) are kept. It cannot be undone.</p>
+    <p id="resetstats" class="dim"></p>
+    <label class="chk"><input type="checkbox" id="resetisland"> Also generate a brand-new island (new map)</label>
+    <p>Step 1 — type <b>RESET</b>: <input id="resetword" autocomplete="off" maxlength="5"></p>
+    <p>Step 2 — type this code: <b id="resetcode" class="code"></b> <input id="resetcodein" autocomplete="off" maxlength="6"></p>
+    <div class="row"><button id="resetcancel" class="alt">Cancel</button><button id="resetgo" class="danger" disabled>Reset everything</button></div>
+  </div></div>
   <div id="paintscreen" class="hidden panelscreen center"><div id="paintbox" class="adminbox"></div></div>
   <div id="itemscreen" class="hidden panelscreen center"><div class="adminbox"><h2>🧰 Item spawner <small>(admin)</small></h2><div class="itemtools"><input id="itemsearch" placeholder="Search items…" autocomplete="off"><label>Amount <select id="itemamt"><option value="0">Full stack</option><option value="1">1</option><option value="10">10</option><option value="100">100</option><option value="1000">1000</option></select></label></div><div id="itemgrid"></div><div class="hint">Click an item to get it · Esc to close</div></div></div>
 
@@ -122,9 +131,11 @@
         </div>
       </div>
       <div class="playrow">
-        <input id="nameinput" maxlength="16" placeholder="Your name" />
+        <input id="nameinput" maxlength="16" placeholder="Your name" autocomplete="username" />
+        <input id="passinput" type="password" maxlength="72" placeholder="Password (optional)" autocomplete="current-password" />
         <button id="playbtn">Wake Up</button>
       </div>
+      <div class="acctnote">🔐 Add a password to protect your name and play the same survivor from any device — sign in there with the same name and password. Leave it empty to play on this device only.</div>
       <div id="menustatus"></div>
       <details><summary>Controls</summary><div id="menucontrols"></div></details>
     </div>

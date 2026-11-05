@@ -553,7 +553,7 @@ export class UI {
   show(which) {
     this.close(true);
     this.open = which;
-    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen' }[which];
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', reset: 'resetscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') { this.renderInventory(); this.preview.start(); }
     if (which === 'inv') { const d = this.game.day ?? 0.5, h = Math.floor(d * 24), m = Math.floor((d * 24 - h) * 60); $('pdaclock').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
@@ -566,7 +566,7 @@ export class UI {
     this.game.input.unlock();
   }
   close(silent) {
-    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen']) $(id).classList.add('hidden');
+    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen', 'resetscreen']) $(id).classList.add('hidden');
     $('itemtip').classList.add('hidden');
     this.endDrag();
     if (this.open === 'inv' && this.game.container) { this.game.net.send({ t: 'close' }); this.game.container = null; }

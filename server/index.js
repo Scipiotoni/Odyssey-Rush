@@ -67,7 +67,7 @@ const store = await createStore({ databaseUrl: process.env.DATABASE_URL, dataFil
 let saved = null;
 try { saved = await store.load(); } catch (e) { console.error('[store] load failed:', e.message); }
 console.log(`[store] using ${store.kind} storage${saved ? '' : ' (new world)'}`);
-const game = new Game({ seed: SEED, saved });
+let game = new Game({ seed: saved?.customSeed ? saved.seed : SEED, saved });
 
 let saving = null;
 async function save() {
@@ -80,6 +80,18 @@ async function save() {
   return saving;
 }
 game.onSave = save;
+
+// Admin world reset: keep sign-in accounts, wipe everything else (optionally a brand-new island).
+async function resetWorld({ newIsland }) {
+  const seed = newIsland ? 1 + Math.floor(Math.random() * 2 ** 30) : game.seed;
+  const keep = { seed, customSeed: newIsland || !!game.customSeed, accounts: [...game.accounts.values()] };
+  for (const ws of wss.clients) { try { ws.close(4002, 'reset'); } catch {} }
+  game = new Game({ seed, saved: keep });
+  game.onSave = save; game.onReset = resetWorld;
+  await save();
+  console.log(`[admin] world reset done (seed ${seed})`);
+}
+game.onReset = resetWorld;
 
 const wss = new WebSocketServer({
   server, path: '/ws', maxPayload: 64 * 1024,

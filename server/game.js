@@ -1,5 +1,6 @@
 // Authoritative game simulation: players, inventory, crafting, building, raiding,
 // loot, animals, vehicles and persistence.
+import crypto from 'crypto';
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
 import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
 import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
@@ -25,7 +26,12 @@ const STARTER = []; // you wake up with nothing
 const now = () => Date.now() / 1000;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
 const dist3 = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
-const ADMIN_HELP = 'Admin: /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
+function hashPassword(pass, salt) { return crypto.scryptSync(pass, salt, 32).toString('hex'); }
+function checkPassword(pass, a) {
+  const h = Buffer.from(hashPassword(pass, a.salt), 'hex'), w = Buffer.from(a.hash, 'hex');
+  return h.length === w.length && crypto.timingSafeEqual(h, w);
+}
+const ADMIN_HELP = 'Admin: /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
 const regionOf = (x, z) => [Math.floor(x / CHUNK), Math.floor(z / CHUNK)];
 const rkey = (x, z) => { const [a, b] = regionOf(x, z); return chunkKey(a, b); };
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
@@ -47,6 +53,8 @@ export class Game {
     this.nodeState = new Map(); // nodeId -> {hp, until}
     this.regions = new Map();   // key -> {s:Set, l:Set, d:Set}
     this.activeStations = new Set();
+    this.accounts = new Map();  // lower-case name -> {name, salt, hash, token, created}
+    this.authFails = new Map(); // ip -> {n, until}
     this.clans = new Map();     // id -> {id, name, tag, leader, members:[pid], invites:[pid]}
     this.spawned = new Set();   // POI ids / wreck cells that have spawned their content
     this.nextId = 1;
@@ -69,6 +77,8 @@ export class Game {
   // ------------------------------------------------------------ persistence
   load(d) {
     if (!d) return;
+    for (const a of d.accounts || []) this.accounts.set(a.name.toLowerCase(), a);
+    if (d.customSeed) this.customSeed = true;
     try {
       if (d.seed !== this.seed) { console.log('[world] seed changed, starting fresh world'); return; }
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
@@ -100,6 +110,8 @@ export class Game {
       nodes: [...this.nodeState.entries()],
       spawned: [...this.spawned],
       clans: [...this.clans.values()],
+      accounts: [...this.accounts.values()],
+      customSeed: !!this.customSeed,
       terrain: this.world.modList(),
     };
     return d;
@@ -135,9 +147,34 @@ export class Game {
   }
 
   hello(ws, msg) {
-    const token = String(msg.token || '').slice(0, 64);
+    let token = String(msg.token || '').slice(0, 64);
     const name = String(msg.name || 'Survivor').replace(/[<>&"]/g, '').trim().slice(0, 16) || 'Survivor';
     if (token.length < 8) return;
+    // ---- accounts: a name with a password can be used from any device
+    const pass = typeof msg.pass === 'string' ? msg.pass.slice(0, 72) : '';
+    const ip = ws._socket?.remoteAddress || '?';
+    const fail = (m) => {
+      const f = this.authFails.get(ip) || { n: 0, until: 0 };
+      f.n++; if (f.n >= 5) { f.until = now() + 60; f.n = 0; }
+      this.authFails.set(ip, f);
+      try { ws.send(JSON.stringify({ t: 'authfail', m })); } catch {}
+      setTimeout(() => { try { ws.close(4001, 'auth'); } catch {} }, 200);
+    };
+    if ((this.authFails.get(ip)?.until || 0) > now()) return fail('Too many wrong passwords — wait a minute and try again');
+    const key = name.toLowerCase();
+    const acct = this.accounts.get(key);
+    let created = false;
+    if (acct) {
+      if (pass) { if (!checkPassword(pass, acct)) return fail(`Wrong password for "${acct.name}"`); token = acct.token; }
+      else if (acct.token !== token) return fail(`"${acct.name}" is a protected account — enter its password to sign in`);
+    } else if (pass) {
+      if (pass.length < 4) return fail('Pick a password of at least 4 characters');
+      const salt = crypto.randomBytes(16).toString('hex');
+      this.accounts.set(key, { name, salt, hash: hashPassword(pass, salt), token, created: Date.now() });
+      created = true;
+      console.log(`[account] created "${name}"`);
+    }
+    try { ws.send(JSON.stringify({ t: 'acct', token, name: acct?.name || name, protected: !!(acct || created), created })); } catch {}
     let p = this.players.get(token);
     if (p && p.online && p.ws && p.ws !== ws) { const old = p.ws; old.player = null; try { old.close(4000, 'replaced'); } catch {} }
     if (!p) {
@@ -208,6 +245,7 @@ export class Game {
       case 'paint': return this.onPaint(p, m);
       case 'vpaint': return this.onVehiclePaintReq(p, m);
       case 'agive': return this.onAdminGive(p, m);
+      case 'reset_world': return this.onResetWorld(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
@@ -1363,7 +1401,7 @@ export class Game {
   onChat(p, m) {
     const msg = String(m.m || '').replace(/[<>]/g, '').slice(0, 200).trim();
     if (!msg) return;
-    if (/^\/(spawn|unstuck|help|admin)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
+    if (/^\/(spawn|unstuck|help|admin|password)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
     if (msg.startsWith('/') && !msg.startsWith('/c ')) {
       if (this.isAdmin(p)) return this.devCommand(p, msg.slice(1).split(/\s+/));
       return this.toast(p, 'Unknown command — type /help');
@@ -1442,9 +1480,19 @@ export class Game {
   isAdmin(p) { return !!(process.env.DEV || p.admin); }
   publicCommand(p, [cmd, a]) {
     if (cmd === 'help') {
-      this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /admin password — unlock admin commands' });
+      this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /password new — protect your name with a password so you can sign in on other devices · /admin password — unlock admin commands' });
       if (this.isAdmin(p)) this.send(p, { t: 'chat', from: '', m: ADMIN_HELP });
       return;
+    }
+    if (cmd === 'password') {
+      const pw = String(a || '');
+      if (pw.length < 4) return this.toast(p, 'Usage: /password <new password> (at least 4 characters)');
+      const key = p.name.toLowerCase(), acct = this.accounts.get(key);
+      if (acct && acct.token !== p.token) return this.toast(p, 'That name belongs to another account');
+      const salt = crypto.randomBytes(16).toString('hex');
+      this.accounts.set(key, { name: p.name, salt, hash: hashPassword(pw, salt), token: p.token, created: acct?.created || Date.now() });
+      this.onSave?.();
+      return this.toast(p, `🔐 ${acct ? 'Password changed' : 'Account protected'} — sign in as "${p.name}" with this password on any device`);
     }
     if (cmd === 'admin') {
       const pw = process.env.ADMIN_PASSWORD;
@@ -1512,6 +1560,11 @@ export class Game {
       const nArg = [b, c].find((x) => x !== undefined && !isNaN(+x));
       const n = Math.max(1, Math.min(10000, nArg !== undefined ? num(nArg, 1) | 0 : ITEMS[id].stack || 1));
       this.give(p, id, n); this.sendInv(p);
+    } else if (cmd === 'resetserver') {
+      // step 1: hand the admin a one-time code; the client shows a confirmation dialog
+      const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+      p.resetCode = { code, until: now() + 120 };
+      this.send(p, { t: 'reset_confirm', code, stats: { players: this.players.size, structs: this.structs.size, vehicles: this.vehicles.size, accounts: this.accounts.size } });
     } else if (cmd === 'items') {
       this.send(p, { t: 'admin_items', q: [a, b, c].filter(Boolean).join(' ') });
     } else if (cmd === 'tpdeath') {
@@ -1529,6 +1582,17 @@ export class Game {
     } else if (cmd === 'day') { this.day = Math.max(0, Math.min(0.999, num(a, 0.5))); this.toAll({ t: 'time', day: this.day }); }
     else if (cmd === 'heal') { p.hp = this.maxHp(p); p.food = 100; p.water = 100; this.sendStats(p); }
     else this.toast(p, ADMIN_HELP);
+  }
+  // step 2: the admin typed RESET + the code and confirmed twice
+  onResetWorld(p, m) {
+    if (!this.isAdmin(p)) return;
+    const rc = p.resetCode;
+    if (!rc || now() > rc.until) return this.toast(p, 'Reset code expired — type /resetserver again');
+    if (String(m.code || '').toUpperCase() !== rc.code || m.word !== 'RESET') return this.toast(p, 'Confirmation did not match — nothing was reset');
+    p.resetCode = null;
+    console.log(`[admin] ${p.name} RESET THE SERVER${m.newIsland ? ' (new island)' : ''}`);
+    this.toAll({ t: 'server_reset', by: p.name, newIsland: !!m.newIsland });
+    setTimeout(() => this.onReset?.({ newIsland: !!m.newIsland }), 300);
   }
   findItem(q) {
     q = String(q || '').toLowerCase().trim();

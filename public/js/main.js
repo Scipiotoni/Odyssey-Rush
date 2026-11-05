@@ -63,7 +63,7 @@ class Game {
     this.hitCooldown = new Map();
   }
 
-  async start(name) {
+  async start(name, pass = '') {
     audio.init(); audio.resume(); audio.setVolume(this.settings.volume);
     let token = localStorage.getItem('or_token');
     if (!token) { token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''); localStorage.setItem('or_token', token); }
@@ -73,7 +73,7 @@ class Game {
     $('menustatus').textContent = 'Connecting…';
     await this.net.connect(url);
     this.bindNet();
-    this.net.send({ t: 'hello', token, name, look: this.look });
+    this.net.send({ t: 'hello', token, name, look: this.look, pass: pass || undefined });
   }
 
   initWorld(seed) {
@@ -130,7 +130,28 @@ class Game {
   // ------------------------------------------------------------------ networking
   bindNet() {
     const n = this.net;
+    n.on('reset_confirm', (m) => this.showResetDialog(m));
+    n.on('server_reset', (m) => {
+      this.resetting = m;
+      try { for (const k of Object.keys(localStorage)) if (k.startsWith('or_explored_') || k.startsWith('or_pois_')) localStorage.removeItem(k); } catch {}
+      this.ui.close(true);
+      $('loading').classList.remove('hidden');
+      $('loading').firstElementChild.textContent = `🌋 ${m.by} reset the server${m.newIsland ? ' with a brand-new island' : ''} — everyone starts fresh. Rejoining…`;
+    });
+    n.on('acct', (m) => {
+      if (m.token) localStorage.setItem('or_token', m.token);
+      if (m.name) localStorage.setItem('or_name', m.name);
+      this.accountProtected = m.protected;
+      if (m.created) this.pendingNote = `🔐 Account created — sign in as "${m.name}" with your password on any device.`;
+    });
+    n.on('authfail', (m) => {
+      this.authFailed = true;
+      $('menustatus').textContent = m.m;
+      $('playbtn').disabled = false;
+      $('passinput').focus();
+    });
     n.on('welcome', (m) => {
+      this.onEnter?.(); this.onEnter = null;
       this.pendingTerr = m.terr || [];
       this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen;
       this.initWorld(m.seed);
@@ -143,11 +164,12 @@ class Game {
       requestAnimationFrame(() => this.loop());
     });
     n.on('close', (ev) => {
+      if (this.authFailed || (ev && ev.code === 4001)) { this.authFailed = false; return; }
       if (ev && ev.code === 4000) { this.input.unlock(); $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'You joined from another tab or device. Close this one.'; return; }
       // Connection lost (server restart / network blip): wait for the server, then rejoin automatically.
       this.input.unlock();
       $('loading').classList.remove('hidden');
-      $('loading').firstElementChild.textContent = 'Connection lost — reconnecting…';
+      if (!this.resetting) $('loading').firstElementChild.textContent = 'Connection lost — reconnecting…';
       const retry = async () => {
         try { const r = await fetch('/health', { cache: 'no-store' }); if (r.ok) { sessionStorage.setItem('or_autoplay', '1'); location.reload(); return; } } catch {}
         setTimeout(retry, 2000);
@@ -233,6 +255,29 @@ class Game {
     n.on('fx', (m) => this.onFx(m));
     n.on('ex', (m) => this.entities.addExplosive(m));
     n.on('v_seat', (m) => this.onSeat(m));
+  }
+
+  // Admin world reset: two typed confirmations + a final "are you sure"
+  showResetDialog(m) {
+    this.ui.show('reset');
+    const st = m.stats || {};
+    $('resetstats').textContent = `Currently: ${st.players || 0} survivors, ${st.structs || 0} building pieces & deployables, ${st.vehicles || 0} vehicles. ${st.accounts || 0} accounts will be kept.`;
+    $('resetcode').textContent = m.code;
+    $('resetword').value = ''; $('resetcodein').value = ''; $('resetisland').checked = false;
+    const go = $('resetgo');
+    const check = () => { go.disabled = !($('resetword').value.trim().toUpperCase() === 'RESET' && $('resetcodein').value.trim().toUpperCase() === m.code); };
+    $('resetword').oninput = check; $('resetcodein').oninput = check;
+    for (const id of ['resetword', 'resetcodein']) $(id).onkeydown = (e) => e.stopPropagation();
+    check();
+    $('resetcancel').onclick = () => { this.ui.close(); this.ui.toast('Reset cancelled — nothing changed'); };
+    go.onclick = () => {
+      if (go.disabled) return;
+      const island = $('resetisland').checked;
+      if (!window.confirm(`Last chance: wipe the entire world${island ? ' and make a new island' : ''} for everyone? This cannot be undone.`)) return;
+      this.net.send({ t: 'reset_world', code: m.code, word: 'RESET', newIsland: island });
+      go.disabled = true; go.textContent = 'Resetting…';
+    };
+    setTimeout(() => $('resetword').focus(), 30);
   }
 
   // Standing on a moving vehicle (hauler deck / its buildings): move with it.
@@ -575,16 +620,17 @@ class Game {
     this.lastT = now;
     if (!this.ready) {
       this.terrain.update(this.player.pos.x, this.player.pos.z, 40);
-      const p = this.terrain.pending();
-      const total = this.loadTotal || (this.loadTotal = Math.max(1, p));
-      $('loadpct').textContent = Math.round((1 - p / total) * 100) + '%';
+      // only the ground around you has to exist before you can play; the rest streams in while you walk
+      const near = this.terrain.nearReady(this.player.pos.x, this.player.pos.z, 1);
+      $('loadpct').textContent = near ? '100%' : Math.min(95, Math.round((now - this.loadStart) / 30)) + '%';
       this.sky.update(this.day, this.camera.position, 0, this.settings.viewDist);
-      if (p === 0 || now - this.loadStart > 15000) {
+      if (near || now - this.loadStart > 6000) {
         this.ready = true;
         $('loading').classList.add('hidden'); $('hud').classList.remove('hidden');
         this.player.pos.y = Math.max(this.player.pos.y, this.physics.groundAt(this.player.pos.x, this.player.pos.z, this.player.pos.y + 50, 100) + 0.1);
         this.input.lock();
         this.ui.renderHotbar(); this.ui.renderStats(this.stats);
+        if (this.pendingNote) { this.ui.chat('', this.pendingNote); this.pendingNote = null; }
         this.ui.chat('', 'You wake up with nothing. Look for a loose rock on the ground and press E to pick it up, then hit trees and boulders. Craft tools with Tab and build a base before night falls. Press M for the map.');
         if (this.pendingDeath || !this.alive) { const m = this.pendingDeath || { by: 'unknown', bags: [] }; this.ui.death(m.by, m.bags); }
       }
@@ -670,9 +716,13 @@ window.__game = game;
 $('nameinput').value = localStorage.getItem('or_name') || '';
 const play = async () => {
   const name = $('nameinput').value.trim() || 'Survivor';
+  const pass = $('passinput').value;
   $('playbtn').disabled = true;
-  try { await game.start(name); creator.dispose(); } catch (e) { $('menustatus').textContent = 'Could not connect to the server — it may be waking up, try again in a few seconds.'; $('playbtn').disabled = false; console.error(e); }
+  $('menustatus').textContent = '';
+  game.onEnter = () => creator.dispose();
+  try { await game.start(name, pass); } catch (e) { $('menustatus').textContent = 'Could not connect to the server — it may be waking up, try again in a few seconds.'; $('playbtn').disabled = false; console.error(e); }
 };
 $('playbtn').onclick = play;
 $('nameinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') play(); });
+$('passinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') play(); });
 if (sessionStorage.getItem('or_autoplay') && localStorage.getItem('or_name')) { sessionStorage.removeItem('or_autoplay'); play(); }
