@@ -1,3 +1,4 @@
+import { CAVE_ZONE } from '/shared/caves.js';
 // Local first-person player controller.
 import * as THREE from 'three';
 import { audio } from './audio.js';
@@ -31,8 +32,9 @@ export class Player {
     let sx = (k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0);
     const len = Math.hypot(fx, sx) || 1; fx /= len; sx /= len;
     const fwd = [-Math.sin(this.yaw), -Math.cos(this.yaw)], right = [Math.cos(this.yaw), -Math.sin(this.yaw)];
-    const groundY = w.ground(this.pos.x, this.pos.z);
-    const waterDepth = -this.pos.y; // sea level is 0
+    const inCave = this.pos.y < CAVE_ZONE;
+    const groundY = inCave ? -1e6 : w.ground(this.pos.x, this.pos.z);
+    const waterDepth = inCave ? 0 : -this.pos.y; // sea level is 0 (no sea in the caves)
     this.swimming = waterDepth > 1.15 && groundY < -1.0;
     this.sprinting = k('ShiftLeft') && fx > 0 && !this.crouch && !this.swimming;
     let speed = this.swimming ? SWIM : this.crouch ? CROUCH : this.sprinting ? SPRINT : WALK;
@@ -58,7 +60,7 @@ export class Player {
     this.onGround = res.ground;
     if (!wasGround && this.onGround && preVy < -2) g.held?.landed(-preVy);
     // ground snapping when walking down slopes
-    if (wasGround && !this.onGround && this.vel.y <= 0 && !this.swimming) {
+    if (wasGround && !this.onGround && this.vel.y <= 0 && !this.swimming && !inCave) {
       const gy = ph.groundAt(this.pos.x, this.pos.z, this.pos.y, 0.3, this.radius * 0.5);
       if (this.pos.y - gy < 0.7) { this.pos.y = gy; this.vel.y = 0; this.onGround = true; }
     }
@@ -72,7 +74,8 @@ export class Player {
     // world bounds
     const lim = 8600;
     this.pos.x = Math.max(-lim, Math.min(lim, this.pos.x)); this.pos.z = Math.max(-lim, Math.min(lim, this.pos.z));
-    if (this.pos.y < groundY - 2) this.pos.y = groundY + 0.1; // never fall through the world
+    if (!inCave && this.pos.y < groundY - 2) this.pos.y = groundY + 0.1; // never fall through the world
+    if (inCave && this.pos.y < -260) this.pos.y = -200;
     // eye height & bob
     const targetEye = this.crouch ? 1.05 : 1.62;
     this.eye += (targetEye - this.eye) * (1 - Math.exp(-12 * dt));
@@ -80,7 +83,7 @@ export class Player {
     if (this.onGround && hs > 0.5) {
       this.bob += hs * dt * 1.9;
       this.stepT -= hs * dt;
-      if (this.stepT <= 0) { this.stepT = this.sprinting ? 2.4 : 1.9; audio.step(waterDepth > 0.1 ? 'water' : ph.lastSurf ? 'concrete' : w.surface(this.pos.x, this.pos.z).name); }
+      if (this.stepT <= 0) { this.stepT = this.sprinting ? 2.4 : 1.9; audio.step(inCave ? 'rock' : waterDepth > 0.1 ? 'water' : ph.lastSurf ? 'concrete' : w.surface(this.pos.x, this.pos.z).name); }
     } else this.bob *= 0.9;
     this.recoil *= Math.exp(-10 * dt);
   }

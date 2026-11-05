@@ -16,6 +16,8 @@ import { Builder } from './building.js';
 import { Painter } from './painter.js';
 import { Nature } from './nature.js';
 import { Gunsmith } from './gunsmith.js';
+import { Caves, CAVE_ZONE } from '/shared/caves.js';
+import { CaveWorld } from './caves3d.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -84,6 +86,8 @@ class Game {
     this.world = new World(seed);
     for (const [ix, iz, v] of this.pendingTerr || []) this.world.setMod(ix, iz, v);
     this.physics = new Physics(this.world);
+    this.caves = new Caves(seed); this.caves.setMods(this.pendingCaveMods || []);
+    this.physics.caves = this.caves;
     this.sky = new Sky(this.scene);
     this.sky.sun.castShadow = this.settings.shadows;
     this.effects = new Effects(this.scene);
@@ -92,6 +96,7 @@ class Game {
     this.terrain.setViewDist(this.settings.viewDist);
     this.structures = new Structures(this.scene, this.physics, this.effects);
     this.nature = new Nature(this.scene, this.world, this.physics);
+    this.caveWorld = new CaveWorld(this.scene, this.caves, this.world);
     this.structures.onChange = (x, z) => this.nature.grass.invalidate(x, z);
     this.nature.setDetail(this.settings.detail ?? 2); this.terrain.setDetail(this.settings.detail ?? 2);
     this.entities = new Entities(this.scene, this.effects);
@@ -145,6 +150,7 @@ class Game {
   // ------------------------------------------------------------------ networking
   bindNet() {
     const n = this.net;
+    n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], m.m[3]); });
     n.on('reset_confirm', (m) => this.showResetDialog(m));
     n.on('server_reset', (m) => {
       this.resetting = m;
@@ -167,7 +173,7 @@ class Game {
     });
     n.on('welcome', (m) => {
       this.onEnter?.(); this.onEnter = null;
-      this.pendingTerr = m.terr || [];
+      this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || [];
       this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen;
       this.initWorld(m.seed);
       this.player.pos.set(m.p[0], m.p[1], m.p[2]);
@@ -272,6 +278,15 @@ class Game {
     n.on('v_seat', (m) => this.onSeat(m));
   }
 
+  // Cave entrances near (x,z): dug shafts and mine adits
+  caveEntrances(x, z) {
+    const out = [];
+    for (const e of this.structures.map.values()) if (e.s.type === 'shaft' && Math.hypot(e.s.x - x, e.s.z - z) < 160) out.push({ id: e.s.id, x: e.s.x, z: e.s.z });
+    const np = this.world.nearestPOI(x, z);
+    if (np && np.d < 300) for (const pr of this.world.poiLayout(np.poi).props) if (pr.k === 'cave') out.push({ id: 'poi:' + np.poi.id, x: pr.x, z: pr.z });
+    return out;
+  }
+
   // Admin world reset: two typed confirmations + a final "are you sure"
   showResetDialog(m) {
     this.ui.show('reset');
@@ -354,6 +369,8 @@ class Game {
 
   onFx(m) {
     const cam = this.camera.position;
+    if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff][m.ore || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
+    if (m.k === 'gunmod') { audio.click(); return; }
     if (m.k === 'throw') { this.held.showThrown(m.a, m.v, m.dur); return; }
     if (m.k === 'spray') { if (cam.distanceTo(new THREE.Vector3(...m.p)) < 30) audio.spray(); return; }
     if (m.k === 'shot') {
@@ -605,7 +622,12 @@ class Game {
         if (p) target = `${p.name}${p.flags & 2 ? ' 💤 (sleeping)' : ''}`;
       }
     }
-    if (!text && this.player.pos.y < 0.2 && this.world.ground(this.player.pos.x, this.player.pos.z) < 0.2) text = '<kbd>F</kbd> Drink water';
+    const pp = this.player.pos;
+    if (!text && !this.vehicle && this.alive) {
+      if (pp.y < CAVE_ZONE) { if (this.caveWorld.nearLadder(pp)) { text = '<kbd>E</kbd> Climb up the ladder'; if (E) this.net.send({ t: 'cave_exit' }); } }
+      else { const ce = this.caveEntrances(pp.x, pp.z).find((e) => Math.hypot(e.x - pp.x, e.z - pp.z) < 5.5); if (ce) { text = '<kbd>E</kbd> Climb down into the caves'; if (E) this.net.send({ t: 'cave_enter' }); } }
+    }
+    if (!text && pp.y > CAVE_ZONE && pp.y < 0.2 && this.world.ground(pp.x, pp.z) < 0.2) text = '<kbd>F</kbd> Drink water';
     if (this.lastStructHit && performance.now() - this.lastStructHit.t < 1500) target = `Structure ${this.lastStructHit.hp}/${this.lastStructHit.mhp}`;
     if (!this.input.locked && !this.ui.open) text = 'Click to play';
     const it = this.inv[this.sel];
@@ -694,13 +716,26 @@ class Game {
     // world
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;
     this.terrain.update(cp.x, cp.z, 5);
-    this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, audio);
+    const underground = this.camera.position.y < CAVE_ZONE;
+    this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, underground ? null : audio);
+    this.caveWorld.update(this.camera.position, dt);
+    this.timers.entr = (this.timers.entr || 0) - dt;
+    if (this.timers.entr <= 0) { this.timers.entr = 1; this.caveWorld.setEntrances(this.caveEntrances(cp.x, cp.z)); }
     this.structures.update(dt);
     this.entities.updatePlayers(dt, this.camera.position, this.vehicleViews);
     this.entities.updateAnimals(dt);
     this.entities.updateExplosives(dt, audio, this.camera.position);
     this.effects.update(dt);
     this.sky.update(this.day, this.camera.position, dt, this.settings.viewDist);
+    if (this.camera.position.y < CAVE_ZONE) {
+      // deep underground: no sun, black fog, your lantern does the work
+      this.sky.sun.intensity = 0; this.sky.hemi.intensity = 0.04;
+      this.scene.fog.color.setRGB(0.02, 0.02, 0.025); this.scene.fog.near = 6; this.scene.fog.far = 55;
+      this.scene.background = this.caveBg || (this.caveBg = new THREE.Color(0x050506));
+      this.timers.drip = (this.timers.drip || 0) - dt;
+      if (this.timers.drip <= 0) { this.timers.drip = 1.5 + Math.random() * 4; audio.drip(); }
+    } else if (this.scene.background === this.caveBg) this.scene.background = null;
+
     // hud
     this.timers.reveal -= dt;
     if (this.timers.reveal <= 0) {
@@ -711,7 +746,7 @@ class Game {
       const b = this.world.biome(cp.x, cp.z);
       const np = this.world.nearestPOI(cp.x, cp.z);
       const h = this.day * 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-      this.ui.topbar(this.player.yaw, `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ' ☀️'}`);
+      this.ui.topbar(this.player.yaw, cp.y < CAVE_ZONE ? `🕯️ Caves · ${Math.round(this.world.ground(cp.x, cp.z) - cp.y)} m deep · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ' ☀️'}`);
       this.ui.renderQueue(this.queue.map((q) => ({ ...q, left: Math.max(0, q.left - (now - (q._t || (q._t = now))) / 1000) })));
     }
     this.timers.save -= dt;

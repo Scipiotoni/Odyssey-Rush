@@ -63,6 +63,7 @@ export class Audio {
   owl() { this._tone(380, 0.35, { gain: 0.03, slide: 0.92, attack: 0.06 }); this._tone(360, 0.5, { gain: 0.03, slide: 0.88, attack: 0.08, at: 0.55 }); }
   gull() { for (let i = 0; i < 3; i++) this._tone(1500 - i * 120, 0.16, { type: 'triangle', gain: 0.015, slide: 0.7, at: i * 0.2 }); }
   wave() { this._noise(1.4, { freq: 520, q: 0.4, gain: 0.07, attack: 0.6, decay: 1.4, sweep: 0.5 }); }
+  drip() { const f = 1800 + Math.random() * 1400; this._tone(f, 0.08, { gain: 0.03, slide: 0.55 }); this._tone(f * 0.7, 0.12, { gain: 0.015, slide: 0.6, at: 0.09 }); }
   click() { this._tone(900, 0.03, { type: 'square', gain: 0.04 }); }
   pickup() { this._tone(600, 0.06, { gain: 0.08, slide: 1.5 }); }
   hurt() { this._tone(220, 0.25, { type: 'sawtooth', gain: 0.08, slide: 0.6 }); }

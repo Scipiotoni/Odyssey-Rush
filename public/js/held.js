@@ -226,8 +226,13 @@ export class Held {
     }
     if (d.dig) {
       const hit = this.ray(4.5);
-      const onGround = hit && hit.kind === 'terrain';
-      g.ui.prompt(onGround ? '<kbd>LMB</kbd> dig · <kbd>RMB</kbd> pile up dirt (5 stone)' : '<small>Aim at the ground to dig</small>');
+      const onGround = hit && hit.kind === 'terrain', inRock = hit && hit.kind === 'cave';
+      g.ui.prompt(inRock ? '<kbd>LMB</kbd> carve through the rock (ore veins give ore)' : onGround ? '<kbd>LMB</kbd> dig · <kbd>RMB</kbd> pile up dirt (5 stone) · dig a hole to the bottom to break into the caves' : '<small>Aim at the ground to dig</small>');
+      if (inRock && L && performance.now() >= this.coolUntil) {
+        this.coolUntil = performance.now() + 420; this.swingAnim(0.45, true);
+        setTimeout(() => g.net.send({ t: 'cavedig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z] }), 200);
+        return;
+      }
       const R = input.mouse.right;
       if ((L || R) && performance.now() >= this.coolUntil) {
         this.coolUntil = performance.now() + 450;
@@ -293,6 +298,12 @@ export class Held {
     setTimeout(() => {
       const hit = this.ray(tool.range + 0.4);
       const msg = { t: 'swing', sel: g.sel };
+      if (hit && hit.kind === 'cave') {
+        // pickaxes (and anything that mines ore) carve the cave rock
+        if (tool.ore) { g.net.send({ t: 'cavedig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z] }); audio.mine(); g.effects.burst(hit.point, { count: 8, color: 0x7a746c, speed: 3, size: 0.07, life: 0.6 }); }
+        g.net.send(msg);
+        return;
+      }
       if (hit && hit.kind && hit.kind !== 'terrain' && hit.kind !== 'prop') {
         msg.k = hit.kind; msg.id = hit.id; msg.hs = hit.hs;
         msg.pt = [hit.point.x, hit.point.y, hit.point.z];

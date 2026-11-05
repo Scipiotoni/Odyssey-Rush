@@ -7,6 +7,7 @@ import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTr
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP } from '../shared/caves.js';
 import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
 import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
 import { PAINT_COLORS, DECALS, DECAL_SIZES, MAX_DECALS, SPRAY_RANGE } from '../shared/paint.js';
@@ -32,7 +33,7 @@ function checkPassword(pass, a) {
   const h = Buffer.from(hashPassword(pass, a.salt), 'hex'), w = Buffer.from(a.hash, 'hex');
   return h.length === w.length && crypto.timingSafeEqual(h, w);
 }
-const ADMIN_HELP = 'Admin: /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
+const ADMIN_HELP = 'Admin: /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
 const regionOf = (x, z) => [Math.floor(x / CHUNK), Math.floor(z / CHUNK)];
 const rkey = (x, z) => { const [a, b] = regionOf(x, z); return chunkKey(a, b); };
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
@@ -54,6 +55,8 @@ export class Game {
     this.nodeState = new Map(); // nodeId -> {hp, until}
     this.regions = new Map();   // key -> {s:Set, l:Set, d:Set}
     this.activeStations = new Set();
+    this.caves = new Caves(seed);
+    this.caveOpened = new Set();  // entrance ids whose arrival chamber has been carved
     this.accounts = new Map();  // lower-case name -> {name, salt, hash, token, created}
     this.authFails = new Map(); // ip -> {n, until}
     this.clans = new Map();     // id -> {id, name, tag, leader, members:[pid], invites:[pid]}
@@ -84,6 +87,7 @@ export class Game {
       if (d.seed !== this.seed) { console.log('[world] seed changed, starting fresh world'); return; }
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
       for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.migrateInv(p); this.players.set(p.token, p); this.byPid.set(p.pid, p); }
+      this.caves.setMods(d.caveMods || []); for (const k of d.caveOpened || []) this.caveOpened.add(k);
       for (const b of d.buildings || []) this.buildings.set(b.id, b);
       for (const s of d.structs || []) if (s.slots) Inv.normalize(s.slots, { grow: true });
       for (const l of d.loot || []) if (l.slots) Inv.normalize(l.slots, { grow: true });
@@ -112,6 +116,8 @@ export class Game {
       spawned: [...this.spawned],
       clans: [...this.clans.values()],
       accounts: [...this.accounts.values()],
+      caveMods: this.caves.mods,
+      caveOpened: [...this.caveOpened],
       customSeed: !!this.customSeed,
       terrain: this.world.modList(),
     };
@@ -191,7 +197,7 @@ export class Game {
     this.fixInv(p);
     if (p.pendingDrop?.length) { this.dropBag(p.x, p.y, p.z, p.pendingDrop); this.toast(p, '🎒 Inventories got smaller: items that no longer fit are in a bag at your feet. Craft a Small Bag or Backpack for more room.'); } p.pendingDrop = null;
     ws.player = p;
-    this.send(p, { t: 'welcome', terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
+    this.send(p, { t: 'welcome', cm: this.caves.mods, terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
@@ -248,6 +254,9 @@ export class Game {
       case 'agive': return this.onAdminGive(p, m);
       case 'reset_world': return this.onResetWorld(p, m);
       case 'gunmod': return this.onGunMod(p, m);
+      case 'cave_enter': return this.onCaveEnter(p, m);
+      case 'cave_exit': return this.onCaveExit(p, m);
+      case 'cavedig': return this.onCaveDig(p, m);
       case 'throwrock': return this.onThrowRock(p, m);
       case 'rockland': return this.onRockLand(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
@@ -301,6 +310,7 @@ export class Game {
     p.yaw = num(m.yaw); p.pitch = num(m.pitch); p.cr = m.cr ? 1 : 0; p.air = m.air ? 1 : 0; p.spr = m.spr ? 1 : 0;
     p.sel = Math.max(0, Math.min(5, num(m.sel) | 0));
     this.updateRegions(p);
+    if (p.y < CAVE_ZONE && t - (p.caveLootT || 0) > 3) { p.caveLootT = t; this.ensureCaveLoot(p); }
   }
 
   // speed of the vehicle a player says they're standing on (hauler deck), if plausible
@@ -337,17 +347,17 @@ export class Game {
   ensureSpawned(cx, cz) {
     const x = (cx + 0.5) * CHUNK, z = (cz + 0.5) * CHUNK;
     const np = this.world.nearestPOI(x, z);
-    if (np && np.d < 200 && !this.spawned.has(np.poi.id)) {
+    if (np && np.d < 200 && !this.spawned.has(np.poi.id + ':' + np.poi.type)) {
       const poi = np.poi;
-      this.spawned.add(poi.id);
+      this.spawned.add(poi.id + ':' + poi.type);
       const lay = this.world.poiLayout(poi);
       lay.loot.forEach((l, i) => {
-        const id = `cr_${poi.id}_${i}`;
+        const id = `cr_${poi.id}_${poi.type}_${i}`;
         if (this.loot.has(id)) return;
         const y = l.y > poi.y + 0.5 ? l.y : this.world.ground(l.x, l.z);
         this.addLoot({ id, kind: 'crate', tier: l.tier, x: l.x, y, z: l.z, yaw: l.yaw, slots: this.lootSlots(l.tier), respawn: 0 });
       });
-      lay.vehicles.forEach((v, i) => this.spawnWreck(`veh_${poi.id}_${i}`, v.type === 'truck' && hash3(poi.x | 0, poi.z | 0, i, 77) < 0.35 ? 'hauler' : v.type, v.x, v.z, v.yaw));
+      lay.vehicles.forEach((v, i) => this.spawnWreck(`veh_${poi.id}_${poi.type}_${i}`, v.type === 'truck' && hash3(poi.x | 0, poi.z | 0, i, 77) < 0.35 ? 'hauler' : v.type, v.x, v.z, v.yaw));
     }
     const wk = `w_${cx}_${cz}`;
     if (!this.spawned.has(wk)) {
@@ -427,7 +437,7 @@ export class Game {
     const boxes = [];
     for (const st of this.structsNear(cx, cz)) if (Math.hypot(st.x - cx, st.z - cz) < R + 4) boxes.push(...worldBoxes(st));
     const np = this.world.nearestPOI(cx, cz);
-    if (np && np.d < 120) for (const pr of this.world.poiLayout(np.poi).props) boxes.push(pr.k === 'box' ? { x: pr.x, z: pr.z, hx: pr.sx / 2, hz: pr.sz / 2, yaw: pr.yaw } : { x: pr.x, z: pr.z, hx: pr.r, hz: pr.r, yaw: 0 });
+    if (np && np.d < 120) for (const pr of this.world.poiLayout(np.poi).props) if (pr.k !== 'cave') boxes.push(pr.k === 'box' ? { x: pr.x, z: pr.z, hx: pr.sx / 2, hz: pr.sz / 2, yaw: pr.yaw } : { x: pr.x, z: pr.z, hx: pr.r, hz: pr.r, yaw: 0 });
     for (const b of boxes) for (const [px, pz] of pts) {
       const [lx, lz] = invRotY(px - b.x, pz - b.z, b.yaw);
       if (Math.abs(lx) < b.hx + 0.4 && Math.abs(lz) < b.hz + 0.4) return false;
@@ -1133,7 +1143,18 @@ export class Game {
       if (!this.editTerrain(ix, iz, DIG.step)) return this.toast(p, "Can't raise the ground any higher here");
       Inv.removeAll(p.inv, DIG.raiseCost); this.sendInv(p);
     } else {
-      if (!this.editTerrain(ix, iz, -DIG.step)) return this.toast(p, "Can't dig any deeper here — bedrock");
+      if (!this.editTerrain(ix, iz, -DIG.step)) {
+        // at the bottom of a maxed-out hole you break through into the cave layer: a shaft with a ladder
+        const sx = ix * GRID, sz = iz * GRID;
+        for (const o of this.structsNear(sx, sz, 0)) if (o.type === 'shaft' && Math.hypot(o.x - sx, o.z - sz) < 6) return this.toast(p, 'There is already a shaft here — press E on it to climb down');
+        if (this.inPOI(sx, sz)) return this.toast(p, "Can't dig into the caves inside a monument");
+        const sy = this.world.ground(sx, sz);
+        const s = { id: this.id('S'), kind: 'deploy', type: 'shaft', hp: 99999, mhp: 99999, owner: p.pid, x: sx, y: sy + 0.02, z: sz, yaw: 0, created: now() };
+        this.addStruct(s);
+        this.openCaveAt(s.id, sx, sz);
+        this.addXp(p, 10);
+        return this.toast(p, '⛏️ You broke through into the caves! Press E on the shaft to climb down the ladder.');
+      }
       this.give(p, 'stone', 3 + Math.floor(Math.random() * 3));
       const r = Math.random();
       if (r < 0.06) this.give(p, 'metal_ore', 5 + Math.floor(Math.random() * 6));
@@ -1380,6 +1401,82 @@ export class Game {
     this.toNear(p.x, p.z, 20, { t: 'fx', k: 'gunmod', p: [bench.x, bench.y, bench.z] });
     this.sendInv(p);
   }
+  // ------------------------------------------------------------ caves
+  caveMod(x, y, z, r) {
+    this.caves.addMod(r2(x), r2(y), r2(z), r);
+    if (this.caves.mods.length > 60000) this.caves.setMods(this.caves.mods.slice(-50000)); // keep the save bounded
+    this.toAll({ t: 'cmod', m: [r2(x), r2(y), r2(z), r] });
+  }
+  // carve a chamber below an entrance so you always land somewhere open, plus a short tunnel outwards
+  openCaveAt(key, x, z) {
+    if (this.caveOpened.has(key)) return;
+    this.caveOpened.add(key);
+    this.caveMod(x, CAVE_ARRIVE, z, 5);
+    const a = hash3(x | 0, z | 0, 9, this.seed) * Math.PI * 2;
+    for (let k = 1; k <= 4; k++) this.caveMod(x + Math.cos(a) * k * 4, CAVE_ARRIVE - 1, z + Math.sin(a) * k * 4, 3);
+  }
+  caveEntrances(x, z, r) {
+    const out = [];
+    for (const s of this.structsNear(x, z, 0)) if (s.type === 'shaft' && Math.hypot(s.x - x, s.z - z) < r) out.push({ id: s.id, x: s.x, z: s.z });
+    const np = this.world.nearestPOI(x, z);
+    if (np && np.d < 200) for (const pr of this.world.poiLayout(np.poi).props) if (pr.k === 'cave' && Math.hypot(pr.x - x, pr.z - z) < r) out.push({ id: 'poi:' + np.poi.id, x: pr.x, z: pr.z });
+    return out;
+  }
+  onCaveEnter(p, m) {
+    if (!p.alive || p.vehicle || p.y < CAVE_ZONE) return;
+    const e = this.caveEntrances(p.x, p.z, 6)[0];
+    if (!e) return;
+    this.openCaveAt(e.id, e.x, e.z);
+    const fy = this.caves.floorBelow(e.x, CAVE_ARRIVE + 3, e.z, 20) ?? CAVE_ARRIVE - 4;
+    this.teleport(p, e.x + 1.2, fy + 0.1, e.z + 0.6);
+    this.toast(p, '🕯️ You climb down into the caves. Dig with a shovel or pickaxe to carve your own tunnels — ore veins glint in the rock. Find the ladder (E) to climb back up.');
+  }
+  onCaveExit(p) {
+    if (!p.alive || p.y > CAVE_ZONE) return;
+    const e = this.caveEntrances(p.x, p.z, 5)[0];
+    if (!e) return this.toast(p, 'Find a ladder to climb up');
+    this.teleport(p, e.x + 1.6, this.world.ground(e.x + 1.6, e.z + 0.8) + 0.4, e.z + 0.8);
+  }
+  onCaveDig(p, m) {
+    if (!p.alive || p.y > CAVE_ZONE) return;
+    const st = p.inv[num(m.sel) | 0], d = st && ITEMS[st.id];
+    if (!d || !(d.dig || d.tool?.ore)) return;
+    const t = now();
+    if (t - (p.lastDig || 0) < 0.35) return;
+    p.lastDig = t;
+    const pt = Array.isArray(m.pt) ? m.pt.slice(0, 3).map((v) => num(v)) : null;
+    if (!pt || Math.hypot(pt[0] - p.x, pt[1] - p.y - 1.4, pt[2] - p.z) > 5.5 || pt[1] > CAVE_TOP + 4) return;
+    if (this.caves.rock(pt[0], pt[1], pt[2]) < -0.05) return; // nothing solid there
+    const ore = this.caves.ore(pt[0], pt[1], pt[2]), crystal = this.caves.crystal(pt[0], pt[1], pt[2]);
+    const shovel = !!d.dig;
+    this.caveMod(pt[0], pt[1], pt[2], shovel ? 1.35 : 0.95);
+    const k = shovel ? 1 : 1.6 * (d.tool.ore || 1);
+    this.give(p, 'stone', Math.round((4 + Math.random() * 4) * k));
+    if (ore > 0.5) this.give(p, 'metal_ore', Math.round((5 + Math.random() * 6) * k));
+    else if (ore < -0.5) this.give(p, 'sulfur_ore', Math.round((5 + Math.random() * 6) * k));
+    if (crystal) this.give(p, 'hqm', 1 + Math.floor(Math.random() * 2 * k));
+    this.addXp(p, 1);
+    this.toNear(pt[0], pt[2], 40, { t: 'fx', k: 'cavedig', p: pt, ore: ore > 0.5 ? 1 : ore < -0.5 ? 2 : crystal ? 3 : 0 });
+  }
+  // loot crates waiting in the larger caverns (spawned the first time someone explores nearby)
+  ensureCaveLoot(p) {
+    const C = 48, cx = Math.floor(p.x / C), cz = Math.floor(p.z / C);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const k = `cv_${cx + i}_${cz + j}`;
+      if (this.spawned.has(k)) continue;
+      this.spawned.add(k);
+      const h = hash3(cx + i, cz + j, 61, this.seed);
+      if (h > 0.35) continue;
+      const rng = mulberry32(Math.floor(h * 1e9));
+      for (let tries = 0; tries < 6; tries++) {
+        const x = (cx + i + rng()) * C, z = (cz + j + rng()) * C;
+        const fy = this.caves.floorBelow(x, CAVE_TOP - 4, z, 70);
+        if (fy === null || this.caves.rock(x, fy + 2, z) > 0) continue;
+        this.addLoot({ id: k, kind: 'crate', tier: rng() < 0.15 ? 3 : 2, x, y: fy, z, yaw: rng() * 6, slots: this.lootSlots(rng() < 0.15 ? 3 : 2), respawn: 0 });
+        break;
+      }
+    }
+  }
   // Rocks: thrown in an arc, hurt what they hit and land as a pickup
   onThrowRock(p, m) {
     const sel = num(m.sel) | 0, st = p.inv[sel];
@@ -1430,6 +1527,7 @@ export class Game {
   }
   // Area damage to structures, players, animals and vehicles + crater.
   explode(x, y, z, ex, src, id) {
+    if (y < CAVE_ZONE) this.caveMod(x, y, z, Math.min(4, (ex.radius || 3) * 0.9)); // blasting opens up the caves
     const e = { x, y, z };
     this.toNear(x, z, 600, { t: 'fx', k: 'expl', id, p: [x, y, z], r: ex.radius });
     for (const s of this.structsNear(x, z)) {
@@ -1616,6 +1714,11 @@ export class Game {
       const nArg = [b, c].find((x) => x !== undefined && !isNaN(+x));
       const n = Math.max(1, Math.min(10000, nArg !== undefined ? num(nArg, 1) | 0 : ITEMS[id].stack || 1));
       this.give(p, id, n); this.sendInv(p);
+    } else if (cmd === 'cave') {
+      const key = `adm_${Math.round(p.x)}_${Math.round(p.z)}`;
+      this.openCaveAt(key, p.x, p.z);
+      const fy = this.caves.floorBelow(p.x, CAVE_ARRIVE + 3, p.z, 20) ?? CAVE_ARRIVE - 4;
+      this.teleport(p, p.x, fy + 0.1, p.z);
     } else if (cmd === 'resetserver') {
       // step 1: hand the admin a one-time code; the client shows a confirmation dialog
       const code = crypto.randomBytes(3).toString('hex').toUpperCase();
@@ -1823,7 +1926,7 @@ export class Game {
     for (const a of [...this.animals.values()]) {
       const def = ANIMALS[a.type];
       let nearest = null, nd = Infinity;
-      for (const p of online) { if (p.vehicle) continue; const d = Math.sqrt(dist2(a, p)); if (d < nd) { nd = d; nearest = p; } }
+      for (const p of online) { if (p.vehicle || Math.abs(p.y - a.y) > 40) continue; const d = Math.sqrt(dist2(a, p)); if (d < nd) { nd = d; nearest = p; } }
       let anyNear = false;
       for (const p of online) if (dist2(a, p) < 320 * 320) { anyNear = true; break; }
       if (!anyNear) { this.animals.delete(a.id); continue; }

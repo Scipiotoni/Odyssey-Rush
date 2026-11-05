@@ -203,7 +203,10 @@ export class World {
       }
       if (ok) {
         const r = rng();
-        const type = r < 0.26 ? 'ruins' : r < 0.44 ? 'gas' : r < 0.58 ? 'farm' : r < 0.70 ? 'radio' : r < 0.82 ? 'military' : 'junkyard';
+        let type = r < 0.26 ? 'ruins' : r < 0.44 ? 'gas' : r < 0.58 ? 'farm' : r < 0.70 ? 'radio' : r < 0.82 ? 'military' : 'junkyard';
+        // newer monument types (decided by a separate hash so positions and the old types' layouts don't move)
+        const h = hash3(ci, cj, 55, this.seed);
+        if (h < 0.45) type = NEW_POIS[Math.floor((h / 0.45) * NEW_POIS.length)];
         poi = { id: `${ci}_${cj}`, ci, cj, x, z, y: y + 0.3, yaw: Math.floor(rng() * 4) * Math.PI / 2 + (rng() - 0.5) * 0.6, type };
         poi.name = poiName(type, ci, cj, this.seed);
       }
@@ -324,6 +327,111 @@ export class World {
         vehAt(-12, -16, 0.3, rng() < 0.5 ? 'truck' : 'suv');
         break;
       }
+      case 'lighthouse': {
+        // striped tower with a lantern room, keeper's cottage, fuel shed and a jetty
+        for (let i = 0; i < 9; i++) cyl(0, i * 2.4, 0, 3.2 - i * 0.18, 2.5, i % 2 ? RED : WHITE);
+        cyl(0, 21.8, 0, 2.2, 0.4, DARK);
+        for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; box(Math.cos(a) * 1.9, 23.4, Math.sin(a) * 1.9, 0.15, 3, 0.15, DARK); }
+        cyl(0, 22.2, 0, 1.6, 2.6, 0xf2e8a0); cyl(0, 25, 0, 2.2, 0.5, RED); cyl(0, 25.5, 0, 1.2, 0.8, RED);
+        box(0, 21.9, 0, 5.6, 0.2, 5.6, 0x6a6a6a);
+        ruinBuilding(12, 4, 8, 6, 3.2, WHITE, true); box(12, 3.6, 4, 9, 0.3, 7, RED);
+        box(-10, 1.2, 6, 3, 2.4, 3, 0x6e6e6e); cyl(-10, 0, 10, 0.9, 1.4, RED);
+        for (let i = 0; i < 6; i++) box(0, 0.5, -10 - i * 3, 3, 0.25, 3, WOOD);
+        for (let i = 0; i < 4; i++) { box(-1.6, 0.4, -11 - i * 4, 0.3, 1.8, 0.3, WOOD); box(1.6, 0.4, -11 - i * 4, 0.3, 1.8, 0.3, WOOD); }
+        lootAt(12, 4, 2); lootAt(0, 0, 1, 22.1); lootAt(-10, 6, 1);
+        break;
+      }
+      case 'crash': {
+        // a broken cargo plane: fuselage sections, torn wings, tail fin, scattered cargo and scorched ground
+        const AL = 0xa8acb0, ALD = 0x7a7e82, SOOT = 0x2a2624;
+        box(0, 2.2, 0, 4.2, 4.2, 12, AL); box(0, 2.6, 7.5, 3.6, 3.6, 4, AL, 0.08); box(0, 2.9, 10.6, 2.6, 2.6, 3, ALD, 0.12); // nose
+        box(0.5, 1.8, -11, 4, 3.6, 8, AL, 0.35); props[props.length - 1].roll = 0.18;                              // broken rear section
+        box(1.5, 4.8, -15.5, 0.4, 5, 4, AL, 0.35);                                                                    // tail fin
+        box(10, 1.0, 1, 14, 0.5, 4, AL, -0.08); props[props.length - 1].roll = -0.12;                                // right wing
+        box(-9, 0.6, -2, 9, 0.5, 3.6, ALD, 0.3); props[props.length - 1].roll = 0.3;                                 // torn left wing
+        cyl(8, 0, 4, 1.1, 1.8, 0x3a3a3a); cyl(-7, 0, 1, 1.1, 1.8, SOOT);                                              // engines
+        for (let i = 0; i < 10; i++) box((rng() - 0.5) * 34, 0.6, (rng() - 0.5) * 34, 1.2 + rng(), 1.2, 1.2 + rng(), [0x6a5a3a, 0x4a5a3a, 0x8a6a3a][i % 3], rng() * 3);
+        for (let i = 0; i < 8; i++) box((rng() - 0.5) * 24, 0.06, (rng() - 0.5) * 30, 2 + rng() * 3, 0.1, 2 + rng() * 3, SOOT, rng() * 3);
+        lootAt(0, 1, 3, 0.3); lootAt(0, -4, 3, 0.3); lootAt(9, -6, 2); lootAt(-12, 8, 2);
+        break;
+      }
+      case 'cabin': {
+        // log cabin with porch and chimney, outhouse, woodpile, a hunter's stand
+        const LOG = 0x6a4a2a, LOGL = 0x8a6038;
+        for (let i = 0; i < 6; i++) { box(0, 0.25 + i * 0.5, -4, 10, 0.5, 0.5, i % 2 ? LOG : LOGL); box(0, 0.25 + i * 0.5, 4, 10, 0.5, 0.5, i % 2 ? LOGL : LOG); box(-5, 0.25 + i * 0.5, 0, 0.5, 0.5, 8, i % 2 ? LOG : LOGL); if (i < 2 || i > 3) box(5, 0.25 + i * 0.5, -2.5, 0.5, 0.5, 3, i % 2 ? LOGL : LOG); box(5, 0.25 + i * 0.5, 2.5, 0.5, 0.5, 3, i % 2 ? LOG : LOGL); }
+        box(-2.6, 3.6, 0, 5.8, 0.25, 9.4, DARK); props[props.length - 1].roll = 0.45; box(2.6, 3.6, 0, 5.8, 0.25, 9.4, DARK); props[props.length - 1].roll = -0.45;
+        box(-3.5, 3.4, -3.2, 1, 3.4, 1, 0x7a7068);                                            // chimney
+        box(7, 0.2, 0, 4, 0.2, 8, LOGL); for (const z of [-3.6, 3.6]) box(8.8, 1.3, z, 0.25, 2.4, 0.25, LOG); box(7, 2.5, 0, 4.2, 0.2, 8.4, DARK);
+        box(-9, 1.2, 7, 1.6, 2.4, 1.6, LOG); box(-9, 2.5, 7, 1.9, 0.2, 1.9, DARK);
+        for (let i = 0; i < 3; i++) box(-8, 0.3 + i * 0.4, -6, 3, 0.4, 1.2, LOGL);
+        for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(14 + px, 2.5, 8 + pz, 0.2, 5, 0.2, WOOD);
+        box(14, 5.1, 8, 2.6, 0.2, 2.6, WOOD); box(14, 5.6, 9.2, 2.6, 0.8, 0.15, WOOD);
+        lootAt(0, 0, 2); lootAt(-3, 2, 1); lootAt(14, 8, 2, 5.2);
+        break;
+      }
+      case 'mine': {
+        // a mine cut into a rocky hill: timber-framed entrance (leads into the caves), rails, carts, ore heaps, shed
+        const ROCK = 0x9a948a, ROCKD = 0x847e74;
+        for (let i = 0; i < 9; i++) { const a = -1.2 + i * 0.3; box(Math.sin(a) * 14, 3 + (i % 3), -10 + Math.cos(a) * 4 - 6, 6 + rng() * 3, 6 + (i % 3) * 2, 6, i % 2 ? ROCK : ROCKD, a); }
+        box(0, 3, -14, 10, 7, 6, ROCKD);
+        box(-2, 2, -10.8, 0.5, 4, 0.5, WOOD); box(2, 2, -10.8, 0.5, 4, 0.5, WOOD); box(0, 4.2, -10.8, 5, 0.5, 0.6, WOOD);
+        box(0, 2, -11.3, 3.5, 4, 0.3, 0x0c0b0a);                                                                         // dark adit
+        for (let i = 0; i < 8; i++) box(0, 0.08, -9 + i * 2.2, 2.2, 0.12, 0.35, WOOD);
+        box(-0.6, 0.15, 0, 0.12, 0.12, 18, 0x5a5a5a); box(0.6, 0.15, 0, 0.12, 0.12, 18, 0x5a5a5a);
+        box(0, 0.7, -3, 1.4, 0.9, 2, RUST); box(0, 0.7, 4, 1.4, 0.9, 2, RUST);
+        for (let i = 0; i < 4; i++) box(8 + i * 2, 0.5, 6 + (i % 2) * 2, 2.4, 1 + rng(), 2.4, i % 2 ? 0xa87a4a : 0x8a8a2a, rng() * 3);
+        ruinBuilding(-12, 6, 7, 6, 3, WOOD, true);
+        lootAt(-12, 6, 2); lootAt(2, -8, 2); lootAt(10, 9, 1);
+        props.push({ k: 'cave', ...Object.fromEntries([['x', W(0, -10.2)[0]], ['z', W(0, -10.2)[1]]]), y: poi.y, yaw: poi.yaw });
+        break;
+      }
+      case 'bunker': {
+        // half-buried command bunker: blast walls, sandbags, a blast door, antenna mast, watch posts
+        for (let i = 0; i < 4; i++) box(0, 1.6, -6 + i * 4, 14, 3.2, 0.6, CONC); box(-7, 1.6, 0, 0.6, 3.2, 12.6, CONC); box(7, 1.6, 2, 0.6, 3.2, 8.6, CONC);
+        box(0, 3.4, 0, 15, 0.5, 13, 0x6a6862); box(0, 4.0, 0, 13, 0.7, 11, 0x5a6a3a);                                // roof + turf
+        box(7.2, 1.6, -4.4, 0.3, 3, 2.6, 0x4a4e52);                                                                      // blast door
+        for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; box(Math.cos(a) * 18, 0.45, Math.sin(a) * 18, 2.4, 0.9, 1, 0xa8946a, -a); }
+        box(-3, 9, 3, 0.3, 10, 0.3, 0x9a9a9a); box(-3, 14.2, 3, 2.4, 0.15, 0.15, 0x9a9a9a); box(-3, 13, 3, 0.15, 0.15, 2.4, 0x9a9a9a);
+        for (const [tx, tz] of [[15, 15], [-15, -15]]) { for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(tx + px, 2.5, tz + pz, 0.25, 5, 0.25, OLIVE); box(tx, 5.1, tz, 2.6, 0.2, 2.6, OLIVE); box(tx, 5.6, tz + 1.2, 2.6, 1, 0.15, OLIVE); }
+        lootAt(0, -2, 3); lootAt(-4, 4, 3); lootAt(4, 4, 2); lootAt(15, 15, 2, 5.2);
+        vehAt(-14, 12, 0.6, rng() < 0.4 ? 'hauler' : 'truck');
+        break;
+      }
+      case 'village': {
+        // a handful of roofed houses around a well, fences and a little church tower
+        const houses = [[-14, -10], [12, -12], [-16, 10], [14, 12], [0, 18]];
+        houses.forEach(([hx, hz], i) => { const w = 6 + rng() * 2, d = 6 + rng() * 2; ruinBuilding(hx, hz, w, d, 3, [WHITE, 0xc8b89a, 0x9ab0a8][i % 3], true); box(hx, 3.5, hz, w + 0.6, 0.3, d + 0.6, [RED, DARK, 0x7a4a2a][i % 3]); lootAt(hx, hz, rng() < 0.25 ? 2 : 1); });
+        cyl(0, 0, 0, 1.3, 1, 0x8a8680); box(-1.2, 1.6, 0, 0.2, 2.2, 0.2, WOOD); box(1.2, 1.6, 0, 0.2, 2.2, 0.2, WOOD); box(0, 2.7, 0, 2.8, 0.2, 0.4, WOOD);
+        ruinBuilding(0, -22, 7, 10, 5, 0xd8d0c0, true); box(0, 7, -26, 3, 6, 3, 0xd8d0c0); cyl(0, 10, -26, 1.2, 2, RED);
+        for (let i = -3; i <= 3; i++) { box(i * 4, 0.5, 28, 0.15, 1, 4, WOOD, Math.PI / 2); box(-28, 0.5, i * 4, 0.15, 1, 4, WOOD); }
+        lootAt(0, -22, 2);
+        if (rng() < 0.6) vehAt(20, 0, 1.2, ['buggy', 'suv', 'truck'][Math.floor(rng() * 3)]);
+        break;
+      }
+      case 'observatory': {
+        // round building with a big dome and a tilted telescope, solar panels, a dish
+        cyl(0, 0, 0, 7, 5, WHITE); cyl(0, 5, 0, 7.3, 0.4, 0x8a8a8a);
+        for (let i = 0; i < 5; i++) cyl(0, 5.4 + i * 0.9, 0, 6.8 - i * i * 0.26, 0.9, 0xd8dcdc);
+        box(0, 8.6, 0, 1.6, 0.4, 7, 0x2a2a2a);                                                                              // dome slit
+        box(0, 9.6, 1.5, 1.2, 1.2, 6, 0x3a3e44, 0); props[props.length - 1].roll = 0.0;
+        for (let i = 0; i < 6; i++) { box(-16 + (i % 3) * 4, 1.2, 10 + Math.floor(i / 3) * 4, 3.4, 0.12, 2, 0x1e2a4a, 0); props[props.length - 1].roll = 0.5; box(-16 + (i % 3) * 4, 0.55, 10 + Math.floor(i / 3) * 4, 0.2, 1.1, 0.2, 0x9a9a9a); }
+        box(14, 3, -8, 0.4, 6, 0.4, 0x9a9a9a); cyl(14, 6, -8, 3, 0.5, WHITE);
+        ruinBuilding(12, 8, 6, 5, 3, CONC, true);
+        lootAt(0, 2, 3); lootAt(-3, -3, 2); lootAt(12, 8, 2);
+        break;
+      }
+      case 'shipwreck': {
+        // a rusting freighter on its side: hull plates, bridge tower, spilled containers, mast
+        const HULL = 0x7a3a2a, HULLD = 0x5a2a1e;
+        for (let i = 0; i < 6; i++) { box(0, 3.2, -20 + i * 7, 9, 6.4, 7.2, i % 2 ? HULL : HULLD, 0); props[props.length - 1].roll = 0.25; }
+        box(1.5, 0.6, 20, 6, 1.2, 6, HULLD, 0.3);                                                                          // bow
+        box(-1, 8.5, -15, 6, 5, 6, WHITE, 0); props[props.length - 1].roll = 0.25; box(-1.6, 11.4, -15, 4, 1.2, 4, 0x2a3a4a, 0); props[props.length - 1].roll = 0.25;
+        box(-2, 12, 5, 0.4, 14, 0.4, 0x8a8a8a, 0); props[props.length - 1].roll = 0.25;
+        const cols = [0x2e5d8a, 0x8a2e2e, 0x2e8a5d, 0xd8a030, 0x6a6a6a];
+        for (let i = 0; i < 9; i++) box(10 + (rng() - 0.5) * 12, 1.3 + (i % 3 === 2 ? 2.6 : 0), (rng() - 0.5) * 34, 2.6, 2.6, 6, cols[i % cols.length], rng() * 3);
+        lootAt(0, -2, 2, 0.4); lootAt(-1, -15, 3, 6.4); lootAt(10, 6, 2);
+        break;
+      }
       case 'junkyard': {
         for (let i = -2; i <= 2; i++) box(i * 12, 1.5, -30, 12, 3, 0.3, 0x6e6e6e);
         for (let i = -2; i <= 2; i++) box(i * 12, 1.5, 30, 12, 3, 0.3, 0x6e6e6e);
@@ -412,7 +520,9 @@ function pickNode(b, r) {
 }
 
 const NAME_A = ['Old', 'North', 'Rusty', 'Silent', 'Broken', 'Grey', 'Lost', 'Dusty', 'Red', 'Iron', 'Cold', 'Hollow', 'Black', 'Stone', 'Wild', 'Crooked'];
-const NAME_B = { ruins: ['Ruins', 'Township', 'Village', 'Outskirts'], gas: ['Gas Stop', 'Fuel Depot', 'Service Station'], farm: ['Farm', 'Ranch', 'Homestead'], radio: ['Radio Tower', 'Relay', 'Antenna'], military: ['Outpost', 'Checkpoint', 'Base'], junkyard: ['Junkyard', 'Scrapyard', 'Salvage'] };
+const NEW_POIS = ['lighthouse', 'crash', 'cabin', 'mine', 'bunker', 'village', 'observatory', 'shipwreck'];
+export const POI_TYPES = ['ruins', 'gas', 'farm', 'radio', 'military', 'junkyard', ...NEW_POIS];
+const NAME_B = { lighthouse: ['Lighthouse', 'Beacon', 'Light'], crash: ['Crash Site', 'Wreck', 'Air Disaster'], cabin: ['Ranger Cabin', 'Hunting Lodge', 'Lookout'], mine: ['Mine', 'Quarry', 'Dig Site'], bunker: ['Bunker', 'Command Post', 'Silo'], village: ['Village', 'Hamlet', 'Settlement'], observatory: ['Observatory', 'Station', 'Array'], shipwreck: ['Shipwreck', 'Hulk', 'Beached Freighter'], ruins: ['Ruins', 'Township', 'Village', 'Outskirts'], gas: ['Gas Stop', 'Fuel Depot', 'Service Station'], farm: ['Farm', 'Ranch', 'Homestead'], radio: ['Radio Tower', 'Relay', 'Antenna'], military: ['Outpost', 'Checkpoint', 'Base'], junkyard: ['Junkyard', 'Scrapyard', 'Salvage'] };
 function poiName(type, ci, cj, seed) {
   const a = NAME_A[Math.floor(hash3(ci, cj, 5, seed) * NAME_A.length)];
   const list = NAME_B[type];

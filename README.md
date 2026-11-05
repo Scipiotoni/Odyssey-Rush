@@ -60,6 +60,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | X | Demolish your own piece (hammer, within 10 min of placing) |
 | G / H | Refuel / patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
+| RMB with a rock | Throw it (hurts players & animals, pick it up again with E) |
 | T or Enter | Chat (`/help` lists commands) · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume) |
 
 ## How to play
@@ -109,6 +110,19 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    versions; every one you find is different: open roll cage, soft or hard top, snorkel, winch, roof rack, light bar, paint)
    and the huge futuristic six-wheel **Atlas Hauler**. Look at one and press E to install the parts it needs (wheels, engine
    parts, scrap, metal), add Low Grade Fuel, and drive.
+9b. **Customize your guns.** Guns come bare (iron sights, plain barrel). Build a **Gunsmith Bench** (Workbench 2),
+   craft attachments there — red dot, holo, 4x and 8x scopes, suppressor, muzzle brake, compensator, long or heavy fluted
+   barrel, vertical/angled grip, laser, weapon light, bipod, extended / drum / quick-pull magazines, tactical stock — and
+   press **🔧 Customize weapons** to fit them with a live 3D preview and stat bars. Every part changes the real stats
+   (suppressed shots are quiet with no muzzle flash, scopes zoom, lights light up caves) and shows on the gun. Pick one of
+   9 finishes (black, desert, olive, arctic, crimson, cobalt, chrome, gold).
+9c. **Caves.** A huge, winding cave network lies ~200 m under the whole island. Climb down at a **Mine** (timber entrance),
+   or dig your own way in: keep digging a hole with the shovel until it can't go deeper and you break through into a shaft
+   with a ladder. Down there it's dark — bring a torch or a weapon light. Carve new tunnels with a shovel or pickaxe;
+   orange veins give metal ore, yellow ones sulfur, glowing crystals high quality metal. Explosives blast the rock open too.
+   Cavern crates hold good loot, and you can hide stashes and sleeping bags underground.
+9d. **New places.** Lighthouses, crashed cargo planes, ranger cabins, mines, bunker complexes, abandoned villages,
+   observatories and beached shipwrecks join the older monuments.
 10. **Paint.** Craft a **Spray Can** (25 metal fragments, 5 cloth). Equip it and press **R** for the palette: 16 colours,
    16 decals (skull, flames, lightning, racing stripes, hazard, crown, graffiti tag…) and 3 sizes. **LMB** paints the vehicle,
    wall, door or furniture you aim at, **RMB** sprays the decal exactly where you aim (tinted in your colour), **X** cleans it.
@@ -137,6 +151,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/give <item> [amount]` | Gives any item by id or name, e.g. `/give assault rifle`, `/give c4 10`, `/give spray can` |
 | `/tpdeath` | Teleports you to where you last died (to get your loot back) |
 | `/resetserver` | Wipes the whole world for everyone (optionally a brand-new island). Asks you to type RESET and a one-time code, then confirm once more. Sign-in accounts are kept |
+| `/cave` | Drop into the caves right below you |
 | `/tp x z [y]` · `/tppoi [type]` · `/kit` · `/heal` · `/day 0-1` | Teleport, monument teleport, starter kit, full heal, time of day |
 
 ### Vehicle physics

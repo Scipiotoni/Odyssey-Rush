@@ -297,6 +297,7 @@ export class Terrain {
       if (mesh) { mesh.castShadow = this.shadows; mesh.receiveShadow = true; this.scene.add(mesh); }
       const group = 'poi:' + p.id;
       for (const pr of lay.props) {
+        if (pr.k === 'cave') continue;
         if (pr.k === 'box') this.physics.add(group, { t: 'box', x: pr.x, y: pr.y, z: pr.z, hx: pr.sx / 2, hy: pr.sy / 2 + (pr.roll ? 0.6 : 0), hz: pr.sz / 2, yaw: pr.yaw, ref: { kind: 'prop' } });
         else this.physics.add(group, { t: 'cyl', x: pr.x, y: pr.y - pr.h / 2, z: pr.z, r: pr.r, h: pr.h, ref: { kind: 'prop' } });
       }

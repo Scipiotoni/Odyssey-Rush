@@ -1,6 +1,7 @@
 // Client-side collision world: spatial hash of static colliders (boxes & cylinders),
 // player movement resolution and raycasting.
 import { rayOBB, invRotY, rotY } from '/shared/building.js';
+import { CAVE_ZONE } from '/shared/caves.js';
 
 const CELL = 8;
 const ck = (i, j) => i * 100003 + j;
@@ -66,6 +67,7 @@ export class Physics {
 
   // Highest walkable surface at (x,z) not more than `maxUp` above y.
   groundAt(x, z, y, maxUp = 0.55, r = 0.0, ignore = null) {
+    if (this.caves && y < CAVE_ZONE) { this.lastSurf = null; return this.caves.floorBelow(x, y + maxUp, z, maxUp + 6) ?? -1e6; }
     let g = this.world.ground(x, z), surf = null;
     const list = this.query(x, z, r + 0.5, this._q1 || (this._q1 = []));
     for (const c of list) {
@@ -89,6 +91,7 @@ export class Physics {
   // Returns {ground:boolean, ceiling:boolean}. Mutates p and vel.
   moveBody(p, vel, r, h, dt, stepH = 0.55, ignore = null) {
     const res = { ground: false, ceiling: false };
+    if (this.caves && p.y < CAVE_ZONE) return this.caveMove(p, vel, r, h, dt, stepH, res);
     const steps = Math.max(1, Math.ceil((Math.hypot(vel.x, vel.z) * dt) / (r * 0.8)));
     const sdt = dt / steps;
     const list = this._q2 || (this._q2 = []);
@@ -106,6 +109,42 @@ export class Physics {
       if (p.y <= g + 0.001) {
         if (vel.y <= 0.01 || g - p.y < stepH) { p.y = g; if (vel.y < 0) vel.y = 0; res.ground = true; }
       }
+    }
+    return res;
+  }
+  // Movement inside the cave rock field: push out of walls along the density gradient, step up small ledges.
+  caveMove(p, vel, r, h, dt, stepH, res) {
+    const C = this.caves, rock = (x, y, z) => C.rock(x, y, z);
+    const steps = Math.max(1, Math.ceil((Math.hypot(vel.x, vel.y, vel.z) * dt) / 0.2));
+    const sdt = dt / steps;
+    for (let s = 0; s < steps; s++) {
+      p.x += vel.x * sdt; p.y += vel.y * sdt; p.z += vel.z * sdt;
+      // walls: sample a ring around the body at knee, chest and head height
+      for (const yo of [stepH + 0.05, h * 0.55, h - 0.1]) {
+        for (let it = 0; it < 3; it++) {
+          let px = 0, pz = 0;
+          for (let a = 0; a < 8; a++) {
+            const ax = Math.cos(a * 0.785), az = Math.sin(a * 0.785);
+            if (rock(p.x + ax * r, p.y + yo, p.z + az * r) > 0) { px -= ax; pz -= az; }
+          }
+          const l = Math.hypot(px, pz);
+          if (l < 1e-6) break;
+          px /= l; pz /= l;
+          p.x += px * 0.05; p.z += pz * 0.05;
+          const vn = vel.x * -px + vel.z * -pz;
+          if (vn > 0) { vel.x += px * vn; vel.z += pz * vn; }
+        }
+      }
+      // ceiling
+      if (vel.y > 0 && rock(p.x, p.y + h + 0.05, p.z) > 0) { vel.y = 0; res.ceiling = true; }
+      // floor: if the feet are in rock, lift up to the surface (small ledges step up)
+      if (rock(p.x, p.y, p.z) > 0) {
+        let lifted = false;
+        for (let dy = 0.05; dy <= stepH + 0.6; dy += 0.05) if (rock(p.x, p.y + dy, p.z) <= 0) { p.y += dy; lifted = true; break; }
+        if (!lifted) p.y += 0.05;
+        if (vel.y < 0) vel.y = 0;
+        res.ground = true;
+      } else if (vel.y <= 0.01 && rock(p.x, p.y - 0.06, p.z) > 0) { res.ground = true; if (vel.y < 0) vel.y = 0; }
     }
     return res;
   }
@@ -149,8 +188,20 @@ export class Physics {
   // targets: [{kind, id, shape:'box'|'sphere', ... }]
   raycast(o, d, maxT, targets = null, opts = {}) {
     let best = { t: maxT, kind: null };
-    // terrain march
-    if (!opts.noTerrain) {
+    // cave rock march
+    if (this.caves && o.y < CAVE_ZONE && !opts.noTerrain) {
+      const C = this.caves, st = 0.25;
+      let prev = 0;
+      for (let t = st; t <= maxT; t += st) {
+        if (C.rock(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t) > 0) {
+          let a = prev, b = t;
+          for (let k = 0; k < 6; k++) { const m = (a + b) / 2; if (C.rock(o.x + d.x * m, o.y + d.y * m, o.z + d.z * m) > 0) b = m; else a = m; }
+          best = { t: b, kind: 'cave' };
+          break;
+        }
+        prev = t;
+      }
+    } else if (!opts.noTerrain) {
       let prevT = 0, prevF = o.y - this.world.ground(o.x, o.z);
       if (prevF < 0) best = { t: 0, kind: 'terrain' };
       else {

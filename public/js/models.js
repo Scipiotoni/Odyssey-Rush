@@ -346,6 +346,14 @@ export function deployGeometry(kind) {
           part(box(1.9, 0.05, 0.9), kind === 'workbench3' ? 0x8a2020 : kind === 'workbench2' ? 0x2a5a8a : 0x5a8a2a, { y: 0.3 }),
         ]);
       }
+      case 'shaft': {
+        const parts = [part(cyl(1.15, 1.15, 0.04, 12), 0x050403, { y: 0.02 })];
+        for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + Math.PI / 4; parts.push(part(box(2.0, 0.22, 0.22), 0x6a4a2a, { x: Math.cos(a) * 1.05, y: 0.11, z: Math.sin(a) * 1.05, ry: -a + Math.PI / 2 })); }
+        for (const sx of [-0.3, 0.3]) parts.push(part(box(0.08, 1.2, 0.08), 0x7a5534, { x: sx, y: 0.5, z: 0.0 }));
+        for (let y = 0.3; y < 1.1; y += 0.35) parts.push(part(box(0.6, 0.05, 0.06), 0x7a5534, { y, z: 0 }));
+        parts.push(part(box(0.15, 0.6, 0.15), 0x5a5048, { x: 1.3, y: 0.3, z: 0.6 }), part(cyl(0.12, 0.12, 0.3, 6), 0xb89a62, { x: 1.3, y: 0.75, z: 0.6 }));
+        return merge(parts);
+      }
       case 'gunsmith': {
         const steel = 0x5a6068, dark = 0x2a2c30, wood = 0x7a5534;
         const parts = [
@@ -440,6 +448,7 @@ export { makeItemModel } from './items3d.js';
 export function poiGeometry(layout) {
   const parts = [];
   for (const p of layout.props) {
+    if (p.k === 'cave') continue;
     if (p.k === 'box') parts.push(part(box(p.sx, p.sy, p.sz), p.color, { x: p.x, y: p.y, z: p.z, ry: p.yaw, rz: p.roll || 0 }, 0.06));
     else parts.push(part(cyl(p.r, p.r, p.h, 10), p.color, { x: p.x, y: p.y, z: p.z }, 0.05));
   }
