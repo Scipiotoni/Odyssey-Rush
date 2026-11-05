@@ -70,6 +70,11 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    press E to pick it up — that's your first tool. Branches give wood. Bare fists can fight but can't gather.
    Hit trees for wood and rocks for stone, metal ore and sulfur ore (orange / yellow speckled rocks).
    Press E on hemp for cloth and on bushes for berries. Smash blue barrels for scrap and parts.
+1b. **Pack smart.** The inventory is a Tetris-style grid: resources and small things take one cell, tools with long
+   handles 1×2, rifles, shotguns, armour plates, furnaces and workbenches 2×2. Drag items into place (green = fits,
+   red = doesn't; dropping on a single item swaps them). You start with only **2 rows** plus 6 quick slots — wear a bag
+   on your back for more: **Small Bag** +1 row (hand-craft: 40 cloth + rope), **Backpack** +2 (Workbench 1),
+   **Expedition Pack** +4 (Workbench 2). Boxes and lockers are grids too. Anything that doesn't fit drops at your feet.
 2. **Craft.** Stone hatchet & pickaxe first, then a building plan, hammer, camp fire, furnace, sleeping bag and boxes.
    Basic items are crafted by hand (Tab). Everything else is made **at the station**: walk up to a **Camp Fire**
    (cooking, charcoal, fuel), **Furnace** (smelting) or **Workbench Lv1 → Lv2 → Lv3** and press E. Each station

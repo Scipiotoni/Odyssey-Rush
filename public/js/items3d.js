@@ -139,6 +139,15 @@ function build(id) {
       parts.push(P(box(0.08, 0.02, 0.082), id === 'leather_vest' ? 0x3a2414 : C.black, { y: 0.27 }));
       return parts;
     }
+    case 'small_bag': case 'backpack': case 'large_backpack': {
+      const c = d.armor.color, k = id === 'large_backpack' ? 1.25 : id === 'small_bag' ? 0.65 : 1;
+      const parts = [P(rb(0.22 * k, 0.28 * k, 0.12 * k, 0.03), c, { y: 0.14 * k }), P(rb(0.18 * k, 0.1 * k, 0.04, 0.015), new THREE.Color(c).multiplyScalar(0.7).getHex(), { y: 0.09 * k, z: -0.07 * k }),
+        P(rb(0.23 * k, 0.05 * k, 0.13 * k, 0.015), new THREE.Color(c).multiplyScalar(0.75).getHex(), { y: 0.27 * k }), P(box(0.04, 0.025, 0.012), 0x9a9a90, { y: 0.09 * k, z: -0.095 * k }),
+        ...[-1, 1].map((s) => P(box(0.03, 0.24 * k, 0.012), 0x2a2018, { x: s * 0.06 * k, y: 0.14 * k, z: 0.07 * k }))];
+      if (id === 'large_backpack') parts.push(P(cyl(0.06, 0.06, 0.3, 10), 0x6a4a2a, { y: 0.4, rz: Math.PI / 2 }));
+      if (id === 'small_bag') parts.push(P(tor(0.1, 0.008, Math.PI, 10), 0x2a2018, { y: 0.2 }));
+      return parts;
+    }
     case 'cloth_pants': case 'leather_pants': case 'metal_legs': {
       const c = d.armor.color;
       if (id === 'metal_legs') return [P(rb(0.26, 0.04, 0.08, 0.01), C.leather, { y: 0.3 }), ...[-1, 0, 1].map((s) => P(rb(0.09, 0.22, 0.012, 0.004), c, { x: s * 0.085, y: 0.17, rz: s * 0.05 }))];

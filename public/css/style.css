@@ -303,3 +303,24 @@ body.invopen #hotbar, body.invopen #ammo { visibility: hidden; }
 #hotbar .slot .ico { width: 42px; height: 42px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
 #hotbar .slot .k { font-family: var(--pda-font); font-weight: 800; color: var(--pda-cyan2); opacity: .7; }
 @media (max-width: 1100px) { .pdabody { flex-wrap: wrap; justify-content: center; } }
+
+/* ---- Tetris grid inventory ---- */
+#invgrid, #contgrid { position: relative; }
+.gtiles { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.pdascreen .gtile { position: absolute; box-sizing: border-box; z-index: 2; background: linear-gradient(180deg, #2c78a2, #17506f); border-color: rgba(150,230,255,.6); box-shadow: 0 3px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(200,245,255,.3); }
+.pdascreen .gtile:hover { background: linear-gradient(180deg, #3a92c0, #1f6688); }
+.pdascreen .gtile.big { border-radius: 12px; }
+.pdascreen .gtile.over { border-color: #ff8a5a; box-shadow: 0 0 10px rgba(255,120,80,.5); }
+.pdascreen .gtile .ico { pointer-events: none; }
+body.dragging .gtile { pointer-events: none; opacity: .55; }
+.pdascreen .slot.locked { background: repeating-linear-gradient(45deg, rgba(10,25,38,.6) 0 6px, rgba(16,36,52,.6) 6px 12px); border-color: rgba(110,210,255,.12); box-shadow: none; cursor: default; }
+.pdascreen .slot.locked::after { content: '🔒'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; opacity: .25; filter: grayscale(1); }
+.pdascreen .slot.dropok { background: linear-gradient(180deg, rgba(80,230,160,.55), rgba(30,140,100,.55)) !important; border-color: #7fffc0 !important; }
+.pdascreen .slot.dropbad { background: linear-gradient(180deg, rgba(240,80,80,.5), rgba(140,30,30,.5)) !important; border-color: #ff8a8a !important; }
+.baghint { font-size: 11px; color: rgba(190,235,255,.6); margin: 6px 2px 0; max-width: 366px; }
+#dragghost { display: flex; align-items: center; justify-content: center; transform: translate(-50%, -50%); }
+#dragghost img { width: 80%; height: 80%; object-fit: contain; }
+#invscreen #armorslots .slot:nth-child(4) { right: 4px; top: 186px; }
+#invscreen #armorslots .slot:nth-child(4)::after { right: 100%; left: auto; background: linear-gradient(270deg, var(--pda-cyan), transparent); }
+#invscreen #armorslots .slot:nth-child(3)::after { left: 100%; }
+#contgrid { max-height: 52vh; overflow: auto; }

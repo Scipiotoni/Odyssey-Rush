@@ -8,6 +8,9 @@ import { PAINT_COLORS, PAINT_NAMES, DECALS } from '/shared/paint.js';
 import { decalPreview } from './paint.js';
 import { SIZE_NAMES } from './painter.js';
 import { InvPreview } from './invpreview.js';
+import { playerSpec, defaultSpec, occupancy, canPlace, findSpot, footprint, sizeOf, rowOf } from '/shared/grid.js';
+import { backpackRows, GRID_COLS } from '/shared/items.js';
+const PITCH = 62, CELL = 56; // grid cell size + gap (px)
 
 // <img> for an item's rendered icon (falls back to the emoji until it's ready)
 export function iconHTML(id, cls = 'ico') { const src = icons.get(id); return src ? `<img class="${cls}" src="${src}" alt="">` : `<span class="${cls} emo">${ITEMS[id]?.icon || '?'}</span>`; }
@@ -186,8 +189,8 @@ export class UI {
 
   // ------------------------------------------------------------------ inventory
   buildInventory() {
-    const mk = (parent, c, i, key) => {
-      const el = document.createElement('div'); el.className = 'slot'; el.dataset.c = c; el.dataset.i = i;
+    const mk = (parent, c, i, key, cls = 'slot') => {
+      const el = document.createElement('div'); el.className = cls; el.dataset.c = c; el.dataset.i = i;
       if (key) el.dataset.key = key;
       el.addEventListener('mousedown', (e) => this.onSlotDown(e, el));
       el.addEventListener('contextmenu', (e) => { e.preventDefault(); this.onSlotRight(el); });
@@ -199,8 +202,11 @@ export class UI {
     this.armorEls = ARMOR_SLOTS.map((s) => mk($('armorslots'), 'a', s));
     this.preview = new InvPreview(this.game, $('invpreview'));
     document.querySelectorAll('.pdatabs [data-go]').forEach((el) => el.addEventListener('click', () => { audio.click(); this.show(el.dataset.go); }));
+    this.mkSlot = mk;
     this.invEls = [];
     for (let i = HOTBAR; i < INV_SIZE; i++) this.invEls[i] = mk($('invgrid'), 'p', i);
+    this.invTiles = document.createElement('div'); this.invTiles.className = 'gtiles'; $('invgrid').appendChild(this.invTiles);
+    this.contTiles = document.createElement('div'); this.contTiles.className = 'gtiles';
     for (let i = 0; i < HOTBAR; i++) this.invEls[i] = mk($('beltgrid'), 'p', i, i + 1);
     this.contEls = [];
     $('invscreen').addEventListener('mouseup', (e) => {
@@ -216,7 +222,7 @@ export class UI {
   }
   renderInventory() {
     const g = this.game;
-    const ghost = { head: '⛑️', chest: '🦺', legs: '👖' };
+    const ghost = { head: '⛑️', chest: '🦺', legs: '👖', back: '🎒' };
     ARMOR_SLOTS.forEach((s, k) => { const el = this.armorEls[k]; el.innerHTML = this.slotHTML(g.armor[s]) || `<span class="ghost">${ghost[s] || ''}</span><span class="lbl">${s}</span>`; });
     const st = this.lastStats;
     if (st) {
@@ -225,7 +231,12 @@ export class UI {
         <div class="row">❤ ${Math.ceil(st.hp)}</div>${bar(st.hp, st.maxhp, 'hp')}<div class="row">🍖 ${Math.ceil(st.food)}</div>${bar(st.food, 100, 'food')}<div class="row">💧 ${Math.ceil(st.water)}</div>${bar(st.water, 100, 'water')}
         <div class="row small">${st.kills || 0} kills · ${st.deaths || 0} deaths</div>`;
     }
-    for (let i = 0; i < INV_SIZE; i++) this.invEls[i].innerHTML = this.slotHTML(g.inv[i], i < HOTBAR ? i + 1 : null);
+    for (let i = 0; i < HOTBAR; i++) this.invEls[i].innerHTML = this.slotHTML(g.inv[i], i + 1);
+    const ps = this.pspec();
+    for (let i = HOTBAR; i < INV_SIZE; i++) { const el = this.invEls[i]; el.innerHTML = ''; el.classList.toggle('locked', rowOf(ps, i) >= ps.rows); }
+    this.renderTiles(this.invTiles, g.inv, ps, 'p');
+    const lockedRows = 6 - ps.rows;
+    $('invbaghint').innerHTML = lockedRows > 0 ? `🔒 ${lockedRows} more row${lockedRows > 1 ? 's' : ''} with a bag — Small Bag +1, Backpack +2, Expedition Pack +4` : '';
     const c = g.container;
     $('contpanel').classList.toggle('hidden', !c);
     $('craftpanel').classList.toggle('hidden', !!c && !c.station);
@@ -235,18 +246,61 @@ export class UI {
       const grid = $('contgrid');
       if (this.contEls.length !== c.slots.length) {
         grid.innerHTML = ''; this.contEls = [];
-        c.slots.forEach((_, i) => {
-          const el = document.createElement('div'); el.className = 'slot'; el.dataset.c = 'c'; el.dataset.i = i;
-          el.addEventListener('mousedown', (e) => this.onSlotDown(e, el));
-          el.addEventListener('contextmenu', (e) => { e.preventDefault(); this.onSlotRight(el); });
-          el.addEventListener('mouseenter', (e) => this.showTip(el, e));
-          el.addEventListener('mouseleave', () => $('itemtip').classList.add('hidden'));
-          grid.appendChild(el); this.contEls.push(el);
-        });
+        c.slots.forEach((_, i) => this.contEls.push(this.mkSlot(grid, 'c', i)));
+        grid.appendChild(this.contTiles);
       }
-      c.slots.forEach((st, i) => (this.contEls[i].innerHTML = this.slotHTML(st)));
+      this.renderTiles(this.contTiles, c.slots, defaultSpec(c.slots.length), 'c');
     } else this.renderCrafting();
     this.renderHotbar();
+  }
+  pspec() { return playerSpec(backpackRows(this.game.armor)); }
+  specFor(c) { return c === 'p' ? this.pspec() : defaultSpec(this.game.container?.slots?.length || 0); }
+  arrFor(c) { return c === 'p' ? this.game.inv : c === 'c' ? this.game.container?.slots : null; }
+  // Items as tiles spanning their footprint, laid over the grid cells.
+  renderTiles(layer, slots, spec, c) {
+    layer.innerHTML = '';
+    for (let a = spec.start; a < slots.length; a++) {
+      const st = slots[a];
+      if (!st) continue;
+      const [w, h] = sizeOf(st.id);
+      const k = a - spec.start, col = k % spec.cols, row = Math.floor(k / spec.cols);
+      const el = this.mkSlot(layer, c, a, null, 'slot gtile' + (w * h > 1 ? ' big' : '') + (row + h > spec.rows ? ' over' : ''));
+      el.style.left = col * PITCH + 'px'; el.style.top = row * PITCH + 'px';
+      el.style.width = w * PITCH - (PITCH - CELL) + 'px'; el.style.height = h * PITCH - (PITCH - CELL) + 'px';
+      el.innerHTML = this.slotHTML(st);
+      const ico = el.querySelector('.ico');
+      if (ico && w * h > 1) { ico.style.width = (w * PITCH - 6) * 0.9 + 'px'; ico.style.height = (h * PITCH - 6) * 0.9 + 'px'; ico.style.objectFit = 'contain'; }
+    }
+  }
+  // Where would the dragged item's anchor land if dropped on element `el`?
+  dropAnchor(el) {
+    const c = el.dataset.c, i = el.dataset.c === 'a' ? el.dataset.i : +el.dataset.i;
+    if (c === 'a') return { c, i };
+    const spec = this.specFor(c);
+    if (i < spec.start) return { c, i };
+    const k = i - spec.start, col = k % spec.cols - (this.drag.ox || 0), row = Math.floor(k / spec.cols) - (this.drag.oy || 0);
+    return { c, i: spec.start + Math.max(0, row) * spec.cols + Math.max(0, Math.min(spec.cols - 1, col)) };
+  }
+  clearDropPreview() { document.querySelectorAll('.slot.dropok, .slot.dropbad').forEach((x) => x.classList.remove('dropok', 'dropbad')); }
+  dropPreview(e) {
+    this.clearDropPreview();
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.slot');
+    if (!el || !el.dataset.c || el.dataset.c === 'a' || el.classList.contains('gtile')) return;
+    const st = this.stackAt(this.drag.c, this.drag.i);
+    if (!st) return;
+    const to = this.dropAnchor(el), arr = this.arrFor(to.c), spec = this.specFor(to.c);
+    if (!arr) return;
+    const quick = to.i < spec.start, [w, h] = sizeOf(st.id, quick);
+    const cells = footprint(arr.length, spec, to.i, w, h);
+    const occ = occupancy(arr, spec);
+    const ignore = to.c === this.drag.c ? [this.drag.i] : [];
+    let ok = cells && canPlace(arr, to.i, st.id, ignore, spec, occ);
+    if (!ok && cells) { // merging onto the same item / swapping with exactly one item also works
+      const hit = new Set(cells.map((x) => occ[x]).filter((x) => x !== -1 && !ignore.includes(x)));
+      ok = hit.size === 1;
+    }
+    const els = to.c === 'p' ? this.invEls : this.contEls;
+    for (const x of cells || [to.i]) els[x]?.classList.add(ok ? 'dropok' : 'dropbad');
   }
   ref(el) { return { c: el.dataset.c, i: el.dataset.c === 'a' ? el.dataset.i : +el.dataset.i }; }
   onSlotDown(e, el) {
@@ -260,23 +314,31 @@ export class UI {
       if (g.container) g.net.send({ t: 'move', from: r, to: { c: r.c === 'c' ? 'p' : 'c', i: -1 } });
       else if (r.c === 'p') {
         // belt <-> main
-        const range = r.i < HOTBAR ? [HOTBAR, INV_SIZE] : [0, HOTBAR];
-        for (let i = range[0]; i < range[1]; i++) if (!g.inv[i]) { g.net.send({ t: 'move', from: r, to: { c: 'p', i } }); break; }
-      } else if (r.c === 'a') g.net.send({ t: 'move', from: r, to: { c: 'p', i: firstFree(g.inv) } });
+        let to = -1;
+        if (r.i < HOTBAR) to = findSpot(g.inv, st.id, { quick: false }, this.pspec());
+        else for (let i = 0; i < HOTBAR; i++) if (!g.inv[i]) { to = i; break; }
+        if (to >= 0) g.net.send({ t: 'move', from: r, to: { c: 'p', i: to } }); else this.toast('No room');
+      } else if (r.c === 'a') g.net.send({ t: 'move', from: r, to: { c: 'p', i: -1 } });
       return;
     }
-    this.drag = { ...r, half: e.ctrlKey };
+    let ox = 0, oy = 0;
+    if (el.classList.contains('gtile')) { const b = el.getBoundingClientRect(); ox = Math.floor((e.clientX - b.left) / PITCH); oy = Math.floor((e.clientY - b.top) / PITCH); }
+    this.drag = { ...r, half: e.ctrlKey, ox, oy };
+    document.body.classList.add('dragging');
+    const [w, h] = sizeOf(st.id);
     const gh = document.createElement('div'); gh.id = 'dragghost'; gh.innerHTML = iconHTML(st.id);
+    gh.style.width = w * PITCH - 6 + 'px'; gh.style.height = h * PITCH - 6 + 'px';
+    gh.style.marginLeft = ((w * PITCH) / 2 - ox * PITCH - PITCH / 2) + 'px'; gh.style.marginTop = ((h * PITCH) / 2 - oy * PITCH - PITCH / 2) + 'px';
     gh.style.left = e.clientX + 'px'; gh.style.top = e.clientY + 'px';
     document.body.appendChild(gh);
     this.dragEl = gh;
   }
-  onMouseMove(e) { if (this.dragEl) { this.dragEl.style.left = e.clientX + 'px'; this.dragEl.style.top = e.clientY + 'px'; } }
+  onMouseMove(e) { if (this.dragEl) { this.dragEl.style.left = e.clientX + 'px'; this.dragEl.style.top = e.clientY + 'px'; this.dropPreview(e); } }
   onMouseUp(e) {
     if (!this.drag) return;
-    const el = e.target.closest?.('.slot');
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.slot');
     if (el && el.dataset.c) {
-      const to = this.ref(el);
+      const to = this.dropAnchor(el);
       if (!(to.c === this.drag.c && to.i === this.drag.i)) {
         const st = this.stackAt(this.drag.c, this.drag.i);
         const msg = { t: 'move', from: { c: this.drag.c, i: this.drag.i }, to };
@@ -289,7 +351,7 @@ export class UI {
       setTimeout(() => this.endDrag(), 0);
     } else this.endDrag();
   }
-  endDrag() { this.drag = null; if (this.dragEl) { this.dragEl.remove(); this.dragEl = null; } }
+  endDrag() { this.drag = null; document.body.classList.remove('dragging'); this.clearDropPreview(); if (this.dragEl) { this.dragEl.remove(); this.dragEl = null; } }
   onSlotRight(el) {
     const r = this.ref(el), g = this.game;
     const st = this.stackAt(r.c, r.i);
@@ -298,7 +360,7 @@ export class UI {
     if (r.c === 'p' && (d.cat === 'food' || d.cat === 'medical')) return g.net.send({ t: 'eat', i: r.i });
     if (r.c === 'p' && d.armor) return g.net.send({ t: 'move', from: r, to: { c: 'a', i: d.armor.slot } });
     if (g.container) return g.net.send({ t: 'move', from: r, to: { c: r.c === 'c' ? 'p' : 'c', i: -1 } });
-    if (r.c === 'a') return g.net.send({ t: 'move', from: r, to: { c: 'p', i: firstFree(g.inv) } });
+    if (r.c === 'a') return g.net.send({ t: 'move', from: r, to: { c: 'p', i: -1 } });
   }
   showTip(el, e) {
     const st = this.stackAt(el.dataset.c, el.dataset.c === 'a' ? el.dataset.i : +el.dataset.i);
@@ -603,7 +665,6 @@ export class UI {
 
 export function countItem(inv, id) { let n = 0; for (const s of inv) if (s && s.id === id) n += s.n; return n; }
 function affordable(inv, cost) { for (const k in cost) if (countItem(inv, k) < cost[k]) return false; return true; }
-function firstFree(inv) { for (let i = HOTBAR; i < inv.length; i++) if (!inv[i]) return i; for (let i = 0; i < HOTBAR; i++) if (!inv[i]) return i; return -1; }
 export function itemDesc(st, short) {
   const d = ITEMS[st.id];
   if (!d) return st.id;
@@ -614,6 +675,7 @@ export function itemDesc(st, short) {
   else if (d.tool && d.tool.hammer) s += 'LMB upgrade material · R reinforce (+50% HP, twice) · RMB repair · X demolish';
   else if (d.tool) s += `Damage ${d.tool.dmg} · tree ${d.tool.tree} · ore ${d.tool.ore}`;
   else if (d.plan) s += 'Place foundations, walls, floors… RMB to choose piece, R to rotate.';
+  else if (d.armor?.slot === 'back') s += `Bag: wear it on your back for +${d.armor.rows} inventory row${d.armor.rows > 1 ? 's' : ''} (${d.armor.rows * 6} cells). Right-click to wear.`;
   else if (d.armor) s += `${d.armor.slot} armor · ${Math.round(d.armor.prot * 100)}% protection · warmth ${d.armor.cold}`;
   else if (d.explosive) s += `Raiding explosive · ${d.explosive.dmg} structure damage · ${d.explosive.fuse}s fuse. LMB to place/throw.`;
   else if (d.cat === 'food') s += `Food +${d.food} · Water +${d.water}${d.heal ? ' · Health ' + (d.heal > 0 ? '+' : '') + d.heal : ''} · LMB to eat`;

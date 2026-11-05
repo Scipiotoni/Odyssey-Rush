@@ -1,11 +1,12 @@
 // Authoritative game simulation: players, inventory, crafting, building, raiding,
 // loot, animals, vehicles and persistence.
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
-import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
+import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
 import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
 import { PAINT_COLORS, DECALS, DECAL_SIZES, MAX_DECALS, SPRAY_RANGE } from '../shared/paint.js';
 import { sanitizeLook, encodeLook } from '../shared/look.js';
 
@@ -71,8 +72,10 @@ export class Game {
     try {
       if (d.seed !== this.seed) { console.log('[world] seed changed, starting fresh world'); return; }
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
-      for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.players.set(p.token, p); this.byPid.set(p.pid, p); }
+      for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.migrateInv(p); this.players.set(p.token, p); this.byPid.set(p.pid, p); }
       for (const b of d.buildings || []) this.buildings.set(b.id, b);
+      for (const s of d.structs || []) if (s.slots) Inv.normalize(s.slots, { grow: true });
+      for (const l of d.loot || []) if (l.slots) Inv.normalize(l.slots, { grow: true });
       for (const s of d.structs || []) { this.structs.set(s.id, s); if (!s.veh) this.region(rkey(s.x, s.z)).s.add(s.id); if (s.queue?.length) this.activeStations.add(s.id); if (s.kind === 'piece') { const m = pieceMaxHp(s.tier, s.reinf); if (s.mhp !== m) { s.hp = Math.max(1, (s.hp / s.mhp) * m); s.mhp = m; } } }
       for (const l of d.loot || []) { this.loot.set(l.id, l); this.region(rkey(l.x, l.z)).l.add(l.id); }
       for (const v of d.vehicles || []) { if (!VEHICLES[v.type]) continue; v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); v.attached = new Set(); if (v.var === undefined) v.var = Math.floor(hash3(v.id.length, v.x | 0, v.z | 0, 3) * 1000); this.vehicles.set(v.id, v); }
@@ -139,13 +142,16 @@ export class Game {
     if (p && p.online && p.ws && p.ws !== ws) { const old = p.ws; old.player = null; try { old.close(4000, 'replaced'); } catch {} }
     if (!p) {
       const [x, y, z] = this.world.randomSpawn();
-      p = { token, pid: this.nextPid++, name, x, y, z, yaw: 0, pitch: 0, hp: 100, food: 80, water: 80, xp: 0, alive: true, inv: Inv.emptySlots(INV_SIZE), armor: { head: null, chest: null, legs: null }, queue: [], sel: 0, kills: 0, deaths: 0, cr: 0, regions: new Set() };
+      p = { token, pid: this.nextPid++, name, x, y, z, yaw: 0, pitch: 0, hp: 100, food: 80, water: 80, xp: 0, alive: true, inv: Inv.emptySlots(INV_SIZE), armor: { head: null, chest: null, legs: null, back: null }, queue: [], sel: 0, kills: 0, deaths: 0, cr: 0, regions: new Set() };
+      this.fixInv(p);
       for (const [id, n] of STARTER) Inv.add(p.inv, id, n, true);
       this.players.set(token, p); this.byPid.set(p.pid, p);
       console.log(`[join] new player ${name} (#${p.pid})`);
     } else console.log(`[join] ${name} (#${p.pid}) returned${p.alive ? '' : ' to find themselves dead'}`);
     p.look = sanitizeLook(msg.look || p.look); p.lookStr = encodeLook(p.look);
     p.name = name; p.ws = ws; p.online = true; p.regions = new Set(); p.openCont = null; p.vehicle = null; p.lastSt = now();
+    this.fixInv(p);
+    if (p.pendingDrop?.length) { this.dropBag(p.x, p.y, p.z, p.pendingDrop); this.toast(p, '🎒 Inventories got smaller: items that no longer fit are in a bag at your feet. Craft a Small Bag or Backpack for more room.'); } p.pendingDrop = null;
     ws.player = p;
     this.send(p, { t: 'welcome', terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
@@ -228,7 +234,7 @@ export class Game {
   give(p, id, n, notify = true) {
     const left = Inv.add(p.inv, id, n);
     p.invDirty = true;
-    if (left > 0) this.dropBag(p.x, p.y, p.z, [newStack(id, left)]);
+    if (left > 0) { this.dropBag(p.x, p.y, p.z, [newStack(id, left)]); if (notify) this.toast(p, `🎒 Inventory full — ${ITEMS[id].name} dropped at your feet`); }
     if (notify && n - left > 0) this.send(p, { t: 'gain', id, n: n - left });
   }
   armorProt(p, hs) {
@@ -319,9 +325,7 @@ export class Game {
     }
   }
   lootSlots(tier) {
-    const slots = Inv.emptySlots(12);
-    for (const it of rollLoot(tier)) Inv.add(slots, it.id, it.n);
-    return slots;
+    return Inv.pack(rollLoot(tier).flatMap((it) => { const out = [], mx = ITEMS[it.id].stack || 1; for (let n = it.n; n > 0; n -= mx) out.push(newStack(it.id, Math.min(mx, n))); return out; }), 12);
   }
   spawnWreck(id, type, x, z, yaw) {
     if (this.vehicles.has(id)) return;
@@ -461,8 +465,7 @@ export class Game {
     this.toRegion(k, { t: 'ldel', id: l.id });
   }
   dropBag(x, y, z, stacks, kind = 'bag') {
-    const slots = Inv.emptySlots(Math.max(12, stacks.length));
-    for (const s of stacks) if (s) Inv.addStack(slots, s);
+    const slots = Inv.pack(stacks, 12);
     if (Inv.isEmpty(slots)) return null;
     const l = { id: this.id('L'), kind, x, y: Math.max(y, this.world.ground(x, z)), z, yaw: Math.random() * 6, slots, expires: now() + BAG_LIFETIME };
     this.addLoot(l);
@@ -598,7 +601,8 @@ export class Game {
     if (p.vehicle) this.exitVehicle(p);
     const stacks = [...p.inv, ...ARMOR_SLOTS.map((s) => p.armor[s])];
     this.dropBag(p.x, p.y, p.z, stacks, 'bag');
-    p.inv = Inv.emptySlots(INV_SIZE); p.armor = { head: null, chest: null, legs: null }; p.queue = [];
+    p.inv = Inv.emptySlots(INV_SIZE); p.armor = { head: null, chest: null, legs: null, back: null }; p.queue = [];
+    this.fixInv(p);
     p.killedBy = byName;
     this.sendInv(p);
     this.send(p, { t: 'dead', by: byName, bags: this.bagsOf(p) });
@@ -1167,6 +1171,36 @@ export class Game {
     this.pushContainer(id);
   }
 
+  // ------------------------------------------------------------ grid inventory
+  fixInv(p) {
+    p.armor = p.armor || {};
+    if (p.armor.back === undefined) p.armor.back = null;
+    p.inv.spec = playerSpec(backpackRows(p.armor));
+  }
+  // Old saves: 30 one-cell slots -> 6 quick slots + Tetris grid. Items that no longer fit go in a bag on next login.
+  migrateInv(p) {
+    if (!Array.isArray(p.inv)) p.inv = Inv.emptySlots(INV_SIZE);
+    if (p.inv.length !== INV_SIZE) {
+      const old = p.inv, arr = Inv.emptySlots(INV_SIZE);
+      for (let i = 0; i < HOTBAR; i++) arr[i] = old[i] || null;
+      let k = HOTBAR;
+      for (let i = HOTBAR; i < old.length; i++) if (old[i]) { if (k < INV_SIZE) arr[k++] = old[i]; else (p.pendingDrop = p.pendingDrop || []).push(old[i]); }
+      p.inv = arr;
+    }
+    this.fixInv(p);
+    const left = Inv.normalize(p.inv);
+    // anything sitting in locked rows (no bag) also goes into the bag
+    const spec = specOf(p.inv);
+    for (let a = spec.start; a < p.inv.length; a++) { const st = p.inv[a]; if (st && rowOf(spec, a) + sizeOf(st.id)[1] > spec.rows) { left.push(st); p.inv[a] = null; } }
+    if (left.length) p.pendingDrop = [...(p.pendingDrop || []), ...left];
+  }
+  // Would the grid still hold everything with a bag giving `rows` extra rows?
+  bagFits(p, rows) {
+    const spec = playerSpec(rows);
+    for (let a = spec.start; a < p.inv.length; a++) { const st = p.inv[a]; if (st && rowOf(spec, a) + sizeOf(st.id)[1] > spec.rows) return false; }
+    return true;
+  }
+
   // Generic item move between player inv ('p'), armor ('a') and open container ('c').
   onMove(p, m) {
     if (!p.alive) return;
@@ -1186,37 +1220,65 @@ export class Game {
     if (!A.armor && (A.i < 0 || A.i >= A.arr.length)) return;
     const src = A.arr[A.i];
     if (!src) return;
-    if (B.i === -1) {
-      // quick move: to first free slot of target array
-      if (B.armor) return;
+    let ok = false;
+    if (A.armor && B.armor) return;
+    if (A.armor) ok = this.unequip(p, A.i, B);
+    else if (B.armor) ok = this.equip(p, A, B.i);
+    else if (B.i === -1) {
       const left = Inv.addStack(B.arr, src);
+      ok = left < src.n;
       if (left <= 0) A.arr[A.i] = null; else src.n = left;
-    } else {
-      if (!B.armor && (B.i < 0 || B.i >= B.arr.length)) return;
-      if (B.armor) { const ad = ITEMS[src.id].armor; if (!ad || ad.slot !== B.i) return; }
-      const dst = B.arr[B.i];
-      if (A.armor && dst) { const ad = ITEMS[dst.id].armor; if (!ad || ad.slot !== A.i) return; }
-      const amount = Math.max(1, Math.min(src.n, num(m.n, src.n) | 0));
-      if (dst && dst.id === src.id && ITEMS[src.id].stack > 1 && dst !== src) {
-        const t = Math.min(ITEMS[src.id].stack - dst.n, amount);
-        dst.n += t; src.n -= t;
-        if (src.n <= 0) A.arr[A.i] = null;
-      } else if (!dst && amount < src.n) {
-        B.arr[B.i] = { ...src, n: amount }; src.n -= amount;
-      } else {
-        if (A.arr === B.arr && A.i === B.i) return;
-        A.arr[A.i] = dst || null; B.arr[B.i] = src;
-      }
-    }
+      if (!ok) this.toast(p, B.arr === p.inv ? 'Not enough room in your inventory' : 'Not enough room in there');
+    } else ok = Inv.move(A.arr, A.i, B.arr, B.i, m.n !== undefined ? num(m.n) | 0 : undefined);
+    this.fixInv(p);
     this.sendInv(p);
     if (A.cont) this.afterContainerChange(A.cont); else if (B.cont) this.afterContainerChange(B.cont);
+  }
+  // armor slot -> inventory / container cell (B.i = cell, or -1 for "anywhere")
+  unequip(p, slot, B) {
+    const src = p.armor[slot];
+    if (slot === 'back' && !this.bagFits(p, 0)) { this.toast(p, '🎒 Empty the extra backpack rows first'); return false; }
+    p.armor[slot] = null; this.fixInv(p);
+    if (B.i === -1) {
+      if (Inv.addStack(B.arr, src) <= 0) return true;
+    } else if (B.i >= 0 && B.i < B.arr.length) {
+      if (canPlace(B.arr, B.i, src.id)) { B.arr[B.i] = src; return true; }
+      // swap with an item of the same armor slot under the cursor
+      const t = occupancy(B.arr)[B.i], dst = t >= 0 ? B.arr[t] : null;
+      if (dst && ITEMS[dst.id].armor?.slot === slot && (slot !== 'back' || this.bagFits(p, ITEMS[dst.id].armor.rows))) {
+        B.arr[t] = null;
+        if (canPlace(B.arr, B.i, src.id)) { B.arr[B.i] = src; p.armor[slot] = dst; this.fixInv(p); return true; }
+        B.arr[t] = dst;
+      }
+    }
+    p.armor[slot] = src; this.fixInv(p);
+    this.toast(p, 'No room there');
+    return false;
+  }
+  // inventory / container cell -> armor slot
+  equip(p, A, slot) {
+    const src = A.arr[A.i], ad = ITEMS[src.id].armor;
+    if (!ad || ad.slot !== slot) return false;
+    const dst = p.armor[slot];
+    A.arr[A.i] = null;
+    if (slot === 'back' && A.arr === p.inv && !this.bagFits(p, ad.rows)) { A.arr[A.i] = src; this.toast(p, '🎒 That bag is smaller — empty the extra rows first'); return false; }
+    p.armor[slot] = src; this.fixInv(p);
+    if (!dst) return true;
+    if (canPlace(A.arr, A.i, dst.id)) { A.arr[A.i] = dst; return true; }
+    if (Inv.addStack(A.arr, dst) <= 0) return true;
+    A.arr[A.i] = src; p.armor[slot] = dst; this.fixInv(p);
+    this.toast(p, 'No room for the item you took off');
+    return false;
   }
 
   onDrop(p, m) {
     if (!p.alive) return;
     let st = null;
     if (m.c === 'p') { const i = num(m.i, -1) | 0; st = p.inv[i]; if (st) p.inv[i] = null; }
-    else if (m.c === 'a' && ARMOR_SLOTS.includes(m.i)) { st = p.armor[m.i]; p.armor[m.i] = null; }
+    else if (m.c === 'a' && ARMOR_SLOTS.includes(m.i)) {
+      if (m.i === 'back' && !this.bagFits(p, 0)) return this.toast(p, '🎒 Empty the extra backpack rows first');
+      st = p.armor[m.i]; p.armor[m.i] = null; this.fixInv(p);
+    }
     if (!st) return;
     const fx = p.x + Math.sin(p.yaw) * -1.2, fz = p.z + Math.cos(p.yaw) * -1.2;
     this.dropBag(fx, this.world.ground(fx, fz), fz, [st]);

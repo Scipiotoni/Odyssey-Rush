@@ -1,8 +1,13 @@
 // Item, recipe, loot and gathering definitions (shared by client & server).
 
-export const INV_SIZE = 30;     // slots 0..5 are the hotbar
+// Player inventory: slots 0..5 are the quick slots (hotbar, any size item fits one),
+// then a Tetris-style grid of GRID_COLS columns; BASE_ROWS are unlocked, bags add more.
 export const HOTBAR = 6;
-export const ARMOR_SLOTS = ['head', 'chest', 'legs'];
+export const GRID_COLS = 6;
+export const BASE_ROWS = 2;
+export const MAX_ROWS = 6;
+export const INV_SIZE = HOTBAR + GRID_COLS * MAX_ROWS; // 42
+export const ARMOR_SLOTS = ['head', 'chest', 'legs', 'back'];
 
 // cat: resource | tool | weapon | ammo | armor | medical | food | deployable | explosive | component
 export const ITEMS = {
@@ -85,6 +90,9 @@ export const ITEMS = {
   leather_pants: { name: 'Hide Pants', cat: 'armor', stack: 1, icon: '👖', armor: { slot: 'legs', prot: 0.18, cold: 0.25, color: 0x6a4428 } },
   metal_mask: { name: 'Metal Facemask', cat: 'armor', stack: 1, icon: '🪖', armor: { slot: 'head', prot: 0.45, cold: 0.05, color: 0x8b949b } },
   metal_chest: { name: 'Metal Chest Plate', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'chest', prot: 0.45, cold: 0.05, color: 0x8b949b } },
+  small_bag: { name: 'Small Bag', cat: 'armor', stack: 1, icon: '👝', armor: { slot: 'back', prot: 0, cold: 0, rows: 1, color: 0xb9a57a } },
+  backpack: { name: 'Backpack', cat: 'armor', stack: 1, icon: '🎒', armor: { slot: 'back', prot: 0, cold: 0.05, rows: 2, color: 0x7a5233 } },
+  large_backpack: { name: 'Expedition Pack', cat: 'armor', stack: 1, icon: '🧳', armor: { slot: 'back', prot: 0.02, cold: 0.1, rows: 4, color: 0x3f5a3a } },
   metal_legs: { name: 'Roadsign Kilt', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'legs', prot: 0.35, cold: 0.05, color: 0x9b8b5b } },
   // --- deployables ---
   campfire: { name: 'Camp Fire', cat: 'deployable', stack: 1, icon: '🔥', deploy: { kind: 'campfire', hp: 150 } },
@@ -103,7 +111,7 @@ export const ITEMS = {
   sofa: { name: 'Sofa', cat: 'deployable', stack: 1, icon: '🛋️', deploy: { kind: 'sofa', hp: 150, furniture: true } },
   bookshelf: { name: 'Bookshelf', cat: 'deployable', stack: 1, icon: '📚', deploy: { kind: 'bookshelf', hp: 250, slots: 12, furniture: true } },
   wardrobe: { name: 'Wardrobe', cat: 'deployable', stack: 1, icon: '🚪', deploy: { kind: 'wardrobe', hp: 350, slots: 24, furniture: true } },
-  fridge: { name: 'Fridge', cat: 'deployable', stack: 1, icon: '🧊', deploy: { kind: 'fridge', hp: 300, slots: 16, furniture: true } },
+  fridge: { name: 'Fridge', cat: 'deployable', stack: 1, icon: '🧊', deploy: { kind: 'fridge', hp: 300, slots: 18, furniture: true } },
   rug: { name: 'Rug', cat: 'deployable', stack: 4, icon: '🟥', deploy: { kind: 'rug', hp: 50, furniture: true } },
   lamp: { name: 'Floor Lamp', cat: 'deployable', stack: 4, icon: '💡', deploy: { kind: 'lamp', hp: 80, furniture: true, light: true } },
   plant_pot: { name: 'Potted Plant', cat: 'deployable', stack: 4, icon: '🪴', deploy: { kind: 'plant_pot', hp: 50, furniture: true } },
@@ -204,6 +212,9 @@ export const RECIPES = [
   { out: 'fridge', n: 1, time: 12, station: 'wb2', cost: { metal_frags: 200, gears: 1, tech_trash: 1 } },
 ];
 RECIPES.push({ out: 'spray_can', n: 1, time: 3, cost: { metal_frags: 25, cloth: 5 } });
+RECIPES.push({ out: 'small_bag', n: 1, time: 4, cost: { cloth: 40, rope: 1 } });
+RECIPES.push({ out: 'backpack', n: 1, time: 10, station: 'wb1', cost: { cloth: 80, leather: 30, rope: 2 } });
+RECIPES.push({ out: 'large_backpack', n: 1, time: 20, station: 'wb2', cost: { cloth: 120, leather: 60, metal_frags: 75, rope: 3 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace' };
@@ -258,6 +269,29 @@ export function rollLoot(table, rnd = Math.random) {
 }
 
 export function itemMaxStack(id) { return ITEMS[id]?.stack || 1; }
+
+// Grid footprint [w, h] of an item in inventories and containers (Tetris-style).
+const SIZES = {
+  // 2x2: long guns, big tools of war, bulky gear
+  rifle: [2, 2], bolt_rifle: [2, 2], lmg: [2, 2], rocket_launcher: [2, 2], shotgun: [2, 2], double_barrel: [2, 2], crossbow: [2, 2],
+  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2],
+  // long handles: 1 wide, 2 tall
+  wooden_spear: [1, 2], stone_hatchet: [1, 2], stone_pickaxe: [1, 2], metal_hatchet: [1, 2], metal_pickaxe: [1, 2], shovel: [1, 2],
+  machete: [1, 2], sword: [1, 2], battle_axe: [1, 2], bow: [1, 2], torch: [1, 2], cloth_pants: [1, 2], leather_pants: [1, 2], metal_legs: [1, 2], rocket: [1, 2],
+  // wide
+  smg: [2, 1], engine_parts: [2, 1], pipe: [2, 1], sleeping_bag: [2, 1], campfire: [2, 1], rug: [2, 1], painting: [2, 1], satchel: [1, 1],
+};
+const DEPLOY_SIZES = { furnace: [2, 2], workbench1: [2, 2], workbench2: [2, 2], workbench3: [2, 2], small_box: [2, 1], large_box: [2, 2], tool_cupboard: [1, 2],
+  chair: [1, 2], table: [2, 2], bed: [2, 2], sofa: [2, 2], bookshelf: [2, 2], wardrobe: [2, 2], fridge: [2, 2], lamp: [1, 2], plant_pot: [1, 1] };
+export function itemSize(id) {
+  if (SIZES[id]) return SIZES[id];
+  const d = ITEMS[id];
+  if (!d) return [1, 1];
+  if (d.deploy && DEPLOY_SIZES[d.deploy.kind]) return DEPLOY_SIZES[d.deploy.kind];
+  if (d.door) return [2, 2];
+  return [1, 1];
+}
+export function backpackRows(armor) { return armor?.back ? ITEMS[armor.back.id]?.armor?.rows || 0 : 0; }
 
 export function newStack(id, n = 1) {
   const s = { id, n };

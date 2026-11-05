@@ -49,7 +49,7 @@ const joint = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set
 export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   const L = { ...DEFAULT_LOOK, ...look };
   const fem = L.body === 1;
-  const [armHead, armChest, armLegs] = armorIds || [];
+  const [armHead, armChest, armLegs, armBack] = armorIds || [];
   const root = new THREE.Group();
   const rig = joint(root, 0, 0, 0); rig.scale.setScalar(HEIGHTS[L.height] ?? 1);
   const skinC = lookColor(L, 'skin'), hairC = lookColor(L, 'hairColor'), topC = lookColor(L, 'topColor');
@@ -219,6 +219,25 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   }
   if (armLegs === 'metal_legs') for (const sx of [-1, 0, 1]) mk(rbox(0.1, 0.2, 0.012, 0.005), lam(acol(armLegs)), hips, sx * 0.09, -0.12, -0.11 + Math.abs(sx) * 0.02, 0, sx * 0.4, 0);
 
+  if (armBack) {
+    // bag on the back (+z is behind the character): bigger bag = bigger pack
+    const c = acol(armBack), m = lam(c), md = lam(shade(c, 0.7)), strap = lam(0x2a2018), buckle = lam(0x9a9a90);
+    const big = armBack === 'large_backpack', small = armBack === 'small_bag';
+    const [bw, bh, bd] = big ? [0.34, 0.5, 0.2] : small ? [0.22, 0.2, 0.1] : [0.3, 0.36, 0.16];
+    const by = big ? 0.12 : small ? 0.06 : 0.12, bz = 0.13 + bd / 2;
+    mk(rbox(bw, bh, bd, 0.04), m, chest, 0, by, bz);
+    mk(rbox(bw * 0.8, bh * 0.38, 0.05, 0.02), md, chest, 0, by - bh * 0.18, bz + bd / 2 + 0.015);    // front pocket
+    mk(rbox(bw * 1.02, 0.06, bd * 1.04, 0.02), md, chest, 0, by + bh / 2 - 0.02, bz);                  // top flap
+    for (const sx of [-1, 1]) {
+      mk(rbox(0.035, 0.3, 0.02, 0.008), strap, chest, sx * 0.1, 0.14, -0.1 + 0.2, 0.15, 0, 0);       // shoulder straps over the shoulders
+      mk(rbox(0.035, 0.22, 0.02, 0.008), strap, chest, sx * 0.1, 0.12, -0.12, -0.1, 0, 0);
+    }
+    mk(rbox(0.05, 0.03, 0.02, 0.005), buckle, chest, 0, by - bh * 0.18, bz + bd / 2 + 0.045);
+    if (big) {
+      mk(G('bedroll', () => new THREE.CylinderGeometry(0.07, 0.07, 0.4, 10).rotateZ(Math.PI / 2)), lam(0x6a4a2a), chest, 0, by + bh / 2 + 0.06, bz);
+      mk(rbox(0.32, 0.05, 0.02, 0.01), strap, chest, 0, by + bh / 2 + 0.06, bz + 0.075);
+    }
+  }
   root.userData = { rig, hips, spine, chest, neck, head, hand: aR.grip, handL: aL.grip, armL: aL.sh, armR: aR.sh, elbowL: aL.el, elbowR: aR.el, wristL: aL.wr, wristR: aR.wr, legL: lL.hp, legR: lR.hp, kneeL: lL.kn, kneeR: lR.kn, ankleL: lL.an, ankleR: lR.an, look: L, pose: null };
   bakeVertexColors(root, VC, new THREE.Color(skinC));
   return root;
