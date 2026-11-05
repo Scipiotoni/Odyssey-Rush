@@ -38,7 +38,8 @@ every minute and when the server stops.
 | `SEED` | `1337` | World seed (a new seed = a new island and a fresh save) |
 | `DATA_FILE` | `data/world.json` | Save file (used when `DATABASE_URL` is not set) |
 | `DATABASE_URL` | unset | Postgres connection string — stores the world in the database instead of a file |
-| `DEV` | unset | `DEV=1` enables admin chat commands (`/tp x z`, `/tppoi [type]`, `/give id n`, `/kit`, `/day 0-1`, `/heal`) |
+| `ADMIN_PASSWORD` | unset | Lets players type `/admin <password>` in chat to unlock the admin commands below |
+| `DEV` | unset | `DEV=1` makes everyone an admin (local testing) and removes the vehicle spawn limits |
 
 Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, Fly.io, a VPS…).
 
@@ -100,7 +101,11 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    versions; every one you find is different: open roll cage, soft or hard top, snorkel, winch, roof rack, light bar, paint)
    and the huge futuristic six-wheel **Atlas Hauler**. Look at one and press E to install the parts it needs (wheels, engine
    parts, scrap, metal), add Low Grade Fuel, and drive.
-10. **Mobile base.** The Atlas Hauler's flatbed is a ready-made 3×1 foundation: equip the Building Plan, aim at the deck and
+10. **Paint.** Craft a **Spray Can** (25 metal fragments, 5 cloth). Equip it and press **R** for the palette: 16 colours,
+   16 decals (skull, flames, lightning, racing stripes, hazard, crown, graffiti tag…) and 3 sizes. **LMB** paints the vehicle,
+   wall, door or furniture you aim at, **RMB** sprays the decal exactly where you aim (tinted in your colour), **X** cleans it.
+   Paint jobs are saved and everyone sees them. Buildings need building privilege; haulers only their owner and clan.
+11. **Mobile base.** The Atlas Hauler's flatbed is a ready-made 3×1 foundation: equip the Building Plan, aim at the deck and
    build walls, doorways, windows, floors, a second storey and stairs, then put in doors, boxes, a workbench or a bed. The first
    player to build on it claims it (owner + clan can build and open its doors). Everything moves with the truck, and you can
    walk around inside while a friend drives.
@@ -112,7 +117,17 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/spawn atv\|jeep\|jeep4\|pickup\|hauler` | Spawns a working vehicle (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
 | `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
 | `/c message` | Clan chat |
+| `/admin password` | Unlocks the admin commands (needs `ADMIN_PASSWORD` on the server) |
 | `/help` | Lists the commands |
+
+**Admin commands** (after `/admin`):
+
+| Command | What it does |
+|---|---|
+| `/items [search]` | Opens the item spawner: every item in the game with its icon, searchable — click to get a full stack (or 1 / 10 / 100 / 1000) |
+| `/give <item> [amount]` | Gives any item by id or name, e.g. `/give assault rifle`, `/give c4 10`, `/give spray can` |
+| `/tpdeath` | Teleports you to where you last died (to get your loot back) |
+| `/tp x z [y]` · `/tppoi [type]` · `/kit` · `/heal` · `/day 0-1` | Teleport, monument teleport, starter kit, full heal, time of day |
 
 ### Vehicle physics
 
@@ -124,7 +139,7 @@ over animals and players. Wheels kick up dust, mud, snow or spray depending on t
 
 ### Survival
 
-Hunger and thirst drain over time; cook meat at a camp fire, eat berries, drink fresh water. Deer flee, boars
+Hunger and thirst drain only while you're actually playing (not while logged off, or with the game tab closed or hidden); cook meat at a camp fire, eat berries, drink fresh water. Deer flee, boars
 fight back, wolves and bears hunt you (more aggressively at night). Animal corpses can be looted for meat,
 leather, fat and bone.
 

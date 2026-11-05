@@ -184,3 +184,24 @@ details summary { cursor: pointer; opacity: .8; }
 #buildwheel .seg:hover { filter: brightness(1.35); }
 #buildwheel text { pointer-events: none; fill: #f2ece0; font-family: inherit; text-anchor: middle; dominant-baseline: middle; }
 #buildwheel .dis { opacity: .35; cursor: default; }
+
+/* spray paint palette + admin item spawner */
+.adminbox { background: rgba(20,22,24,.94); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 18px 22px; max-width: min(860px, 94vw); max-height: 86vh; overflow: auto; }
+.adminbox h2 { margin: 0 0 8px; font-size: 20px; }
+.adminbox h3 small, .adminbox h2 small { text-transform: none; letter-spacing: 0; opacity: .6; font-weight: normal; }
+.swatches { display: grid; grid-template-columns: repeat(8, 40px); gap: 8px; }
+.swatches .sw { width: 40px; height: 40px; border-radius: 8px; border: 2px solid rgba(0,0,0,.5); cursor: pointer; }
+.swatches .sw.sel, .decals .dc.sel, .sizes .sel { outline: 3px solid #ffd76a; outline-offset: 1px; }
+.decals { display: grid; grid-template-columns: repeat(8, 84px); gap: 8px; }
+.decals .dc { background: #2c3034; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 2px; cursor: pointer; color: #e8e4dc; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; }
+.decals .dc img { width: 48px; height: 48px; }
+.sizes { display: flex; gap: 8px; }
+.sizes button, .itemtools select { background: #2c3034; color: #e8e4dc; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+.itemtools { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }
+.itemtools input { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.2); background: #111; color: #eee; font: inherit; }
+.igrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.islot { background: #2c3034; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 6px 2px; cursor: pointer; color: #e8e4dc; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; line-height: 1.15; }
+.islot:hover, .decals .dc:hover { background: #3c4248; }
+.islot .ico { width: 44px; height: 44px; }
+.islot .emo { font-size: 30px; }
+@media (max-width: 760px) { .swatches { grid-template-columns: repeat(4, 40px); } .decals { grid-template-columns: repeat(4, 76px); } }

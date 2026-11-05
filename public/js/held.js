@@ -185,6 +185,7 @@ export class Held {
     }
     if (d.deploy || d.door) { g.builder.updateDeploy(st.id); if (LP) g.builder.placeDeploy(); return; }
     g.builder.hide();
+    if (d.spray) { g.painter.update(input); return; }
     if (d.tool?.hammer) { g.builder.updateHammer(input); return; }
     if (d.gun) {
       if (input.hit('KeyR')) this.startReload(st, d);

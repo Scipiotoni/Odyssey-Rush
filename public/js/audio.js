@@ -52,6 +52,7 @@ export class Audio {
   explosion(dist = 0) { this._noise(1.4, { freq: 600, gain: 1.4, dist: dist * 0.5, decay: 1.4, sweep: 0.1 }); this._tone(55, 0.9, { type: 'sine', gain: 0.8 / (1 + dist * 0.01), slide: 0.5 }); }
   beep() { this._tone(2200, 0.06, { type: 'square', gain: 0.05 }); }
   door() { this._noise(0.25, { freq: 300, q: 4, type: 'bandpass', gain: 0.3 }); }
+  spray() { this._noise(0.35, { freq: 5000, q: 0.6, type: 'highpass', gain: 0.18 }); }
   click() { this._tone(900, 0.03, { type: 'square', gain: 0.04 }); }
   pickup() { this._tone(600, 0.06, { gain: 0.08, slide: 1.5 }); }
   hurt() { this._tone(220, 0.25, { type: 'sawtooth', gain: 0.08, slide: 0.6 }); }

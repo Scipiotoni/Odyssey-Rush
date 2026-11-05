@@ -4,6 +4,9 @@ import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
 import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
 import { audio } from './audio.js';
 import { icons } from './icons.js';
+import { PAINT_COLORS, PAINT_NAMES, DECALS } from '/shared/paint.js';
+import { decalPreview } from './paint.js';
+import { SIZE_NAMES } from './painter.js';
 
 // <img> for an item's rendered icon (falls back to the emoji until it's ready)
 export function iconHTML(id, cls = 'ico') { const src = icons.get(id); return src ? `<img class="${cls}" src="${src}" alt="">` : `<span class="${cls} emo">${ITEMS[id]?.icon || '?'}</span>`; }
@@ -419,20 +422,69 @@ export class UI {
     box.querySelectorAll('[data-t]').forEach((el) => el.addEventListener('click', () => { b.tier = +el.dataset.t; b.furn = null; b.cat = 'construction'; audio.click(); this.renderBuildMenu(); }));
   }
 
+  // ------------------------------------------------------------------ spray paint palette
+  renderPaint() {
+    const pt = this.game.painter, box = $('paintbox');
+    const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+    box.innerHTML = `<h2>🎨 Spray Can</h2>
+      <h3>Colour <small>(LMB paints the whole thing, also tints decals)</small></h3>
+      <div class="swatches">${PAINT_COLORS.map((c, i) => `<button class="sw${i === pt.color ? ' sel' : ''}" data-c="${i}" title="${PAINT_NAMES[i]}" style="background:${hex(c)}"></button>`).join('')}</div>
+      <h3>Decal <small>(RMB sprays it where you aim)</small></h3>
+      <div class="decals">${DECALS.map((n, i) => `<button class="dc${i === pt.decal ? ' sel' : ''}" data-d="${i}" title="${n}"><img src="${decalPreview(i, pt.color)}" alt=""><span>${n}</span></button>`).join('')}</div>
+      <h3>Decal size</h3>
+      <div class="sizes">${SIZE_NAMES.map((n, i) => `<button class="${i === pt.size ? 'sel' : ''}" data-s="${i}">${n}</button>`).join('')}</div>
+      <div class="hint">X while aiming cleans paint and decals off · R or Esc to close</div>`;
+    const pick = (sel, fn) => box.querySelectorAll(sel).forEach((el) => el.addEventListener('click', () => { fn(el); pt.save(); audio.click(); this.renderPaint(); }));
+    pick('[data-c]', (el) => (pt.color = +el.dataset.c));
+    pick('[data-d]', (el) => (pt.decal = +el.dataset.d));
+    pick('[data-s]', (el) => (pt.size = +el.dataset.s));
+  }
+
+  // ------------------------------------------------------------------ admin item spawner
+  showItems(q) {
+    this.show('items');
+    const inp = $('itemsearch');
+    inp.value = q || '';
+    if (!inp._wired) {
+      inp._wired = true;
+      inp.addEventListener('input', () => this.renderItems());
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.blur(); this.close(); } e.stopPropagation(); });
+    }
+    this.renderItems();
+    setTimeout(() => inp.focus(), 30);
+  }
+  renderItems() {
+    const q = $('itemsearch').value.toLowerCase().trim();
+    const cats = {};
+    for (const [id, d] of Object.entries(ITEMS)) {
+      if (q && !d.name.toLowerCase().includes(q) && !id.includes(q) && !(d.cat || '').includes(q)) continue;
+      (cats[d.cat || 'misc'] = cats[d.cat || 'misc'] || []).push(id);
+    }
+    const grid = $('itemgrid');
+    grid.innerHTML = Object.entries(cats).map(([c, ids]) => `<h3>${c}</h3><div class="igrid">${ids.map((id) => `<button class="islot" data-id="${id}" title="${ITEMS[id].name} (${id})">${iconHTML(id)}<span>${ITEMS[id].name}</span></button>`).join('')}</div>`).join('') || '<p>No items match.</p>';
+    grid.querySelectorAll('[data-id]').forEach((el) => el.addEventListener('click', () => {
+      const id = el.dataset.id, amt = +$('itemamt').value;
+      this.game.net.send({ t: 'agive', id, n: amt || ITEMS[id].stack || 1 });
+      audio.pickup();
+    }));
+  }
+
   // ------------------------------------------------------------------ panels
   show(which) {
     this.close(true);
     this.open = which;
-    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen' }[which];
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') this.renderInventory();
     if (which === 'map') this.renderMap();
     if (which === 'build') this.renderBuildMenu();
+    if (which === 'paint') this.renderPaint();
+    if (which === 'items') this.renderItems();
     if (which === 'clan') { this.renderClan(); this.game.net.send({ t: 'clan', a: 'info' }); }
     this.game.input.unlock();
   }
   close(silent) {
-    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen']) $(id).classList.add('hidden');
+    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen']) $(id).classList.add('hidden');
     $('itemtip').classList.add('hidden');
     this.endDrag();
     if (this.open === 'inv' && this.game.container) { this.game.net.send({ t: 'close' }); this.game.container = null; }
@@ -536,6 +588,7 @@ export function itemDesc(st, short) {
   let s = short ? '' : `<div class="bigico">${iconHTML(st.id, 'bico')}</div><b>${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
   if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
   else if (d.dig) s += 'LMB dig the ground (finds stone, sometimes ore) · RMB pile up dirt. Everyone sees your holes and mounds.';
+  else if (d.spray) s += 'Paint vehicles, walls, doors and furniture. LMB paints the colour · RMB sprays a decal · X cleans · R opens the palette (16 colours, 16 decals, 3 sizes).';
   else if (d.tool && d.tool.hammer) s += 'LMB upgrade material · R reinforce (+50% HP, twice) · RMB repair · X demolish';
   else if (d.tool) s += `Damage ${d.tool.dmg} · tree ${d.tool.tree} · ore ${d.tool.ore}`;
   else if (d.plan) s += 'Place foundations, walls, floors… RMB to choose piece, R to rotate.';

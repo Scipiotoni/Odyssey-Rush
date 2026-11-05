@@ -6,6 +6,7 @@ import { VEHICLES } from '/shared/vehicles.js';
 import { SURFACE_BUILT } from '/shared/worldgen.js';
 import { invRotY, rotY } from '/shared/building.js';
 import { makeVehicle } from './models.js';
+import { applyDecals, PAINT_COLORS } from './paint.js';
 import { Interp, INTERP_DELAY } from './interp.js';
 const _io = { x: 0, y: 0, z: 0, yaw: 0 };
 
@@ -285,6 +286,11 @@ export class VehicleView {
     this.colliders = this.boxes.map(([, , , hx, hy, hz]) => ({ t: 'box', x: 0, y: 0, z: 0, hx, hy, hz, yaw: 0, rad: Math.hypot(hx, hz) + 0.5, ref }));
     this.collider = this.colliders[0];
     this.smokeT = 0;
+    this.paint = -1; this.decRev = 0; this.netDecRev = 0;
+  }
+  setPaint(m) {
+    this.paint = m.pa; this.decRev = m.rev;
+    applyDecals(this.group, m.dc);
   }
   setNet(a) {
     // [id, type, x, y, z, q, hp, broken, steer, rpm, driver, fuel, needs, vel]
@@ -292,6 +298,7 @@ export class VehicleView {
     this.hp = a[6]; this.broken = !!a[7]; this.steer = a[8]; this.rpm = a[9]; this.driver = a[10]; this.fuel = a[11]; this.needs = a[12] || null;
     this.vel.set(a[13][0], a[13][1], a[13][2]);
     this.nAttached = a[15] || 0;
+    this.netDecRev = a[16] || 0;
     if (!this.interp) this.interp = new Interp();
     this.interp.push(performance.now(), a[2], a[3], a[4], 0, a[5]);
     if (this.first) { this.pos.copy(this.tPos); this.q.copy(this.tQ); this.first = false; }
@@ -322,7 +329,7 @@ export class VehicleView {
       if (sim) w.spin.rotation.x = sim.wheels[i].spin;
       else { const fwd = _d.set(0, 0, 1).applyQuaternion(this.q); w.spin.rotation.x += (this.vel.dot(fwd) / this.def.wheelR) * dt; }
     });
-    const tint = this.broken ? 0x6b4a32 : ud.baseColor ?? this.def.color;
+    const tint = this.broken ? 0x6b4a32 : this.paint >= 0 ? PAINT_COLORS[this.paint] : ud.baseColor ?? this.def.color;
     if (ud._tint !== tint) { ud.paintMat.color.set(tint); ud.paintMat.roughness = this.broken ? 0.85 : 0.3; ud.paintMat.metalness = this.broken ? 0.15 : 0.55; ud._tint = tint; }
     const drivenNow = sim || this.driver;
     ud.headlight.intensity = drivenNow && night ? 40 : 0;

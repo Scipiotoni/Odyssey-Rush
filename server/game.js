@@ -6,6 +6,7 @@ import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTr
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { PAINT_COLORS, DECALS, DECAL_SIZES, MAX_DECALS, SPRAY_RANGE } from '../shared/paint.js';
 import { sanitizeLook, encodeLook } from '../shared/look.js';
 
 const VIEW_REGIONS = 2;           // regions (128m) around the player that are streamed
@@ -23,10 +24,12 @@ const STARTER = []; // you wake up with nothing
 const now = () => Date.now() / 1000;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
 const dist3 = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
+const ADMIN_HELP = 'Admin: /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
 const regionOf = (x, z) => [Math.floor(x / CHUNK), Math.floor(z / CHUNK)];
 const rkey = (x, z) => { const [a, b] = regionOf(x, z); return chunkKey(a, b); };
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
 const r2 = (v) => Math.round(v * 100) / 100;
+const r3 = (v) => Math.round(v * 1000) / 1000;
 
 export class Game {
   constructor({ seed = 1337, saved = null }) {
@@ -196,6 +199,9 @@ export class Game {
       case 'dig': return this.onDig(p, m);
       case 'clan': return this.onClan(p, m);
       case 'vst': return this.onVehicleStructs(p, m);
+      case 'paint': return this.onPaint(p, m);
+      case 'vpaint': return this.onVehiclePaintReq(p, m);
+      case 'agive': return this.onAdminGive(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
@@ -417,6 +423,8 @@ export class Game {
     if (s.kind === 'piece') { o.tier = s.tier; o.rf = s.reinf || 0; o.bid = s.bid; o.gx = s.gx; o.gz = s.gz; o.level = s.level; o.rot = s.rot || 0; const b = this.buildings.get(s.bid); if (b) o.b = [b.x, b.y, b.z, b.yaw]; }
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
+    if (s.paint !== undefined) o.pa = s.paint;
+    if (s.decals?.length) o.dc = s.decals;
     if (s.veh) { o.veh = s.veh; o.l = [r2(s.local.x), r2(s.local.y), r2(s.local.z), s.local.yaw || 0]; }
     return o;
   }
@@ -585,6 +593,7 @@ export class Game {
   }
   killPlayer(p, byName, src) {
     p.alive = false; p.hp = 0; p.deaths = (p.deaths || 0) + 1;
+    p.lastDeath = { x: p.x, y: p.y, z: p.z };
     if (src && src.pid && src !== p) { src.kills = (src.kills || 0) + 1; this.addXp(src, 25); this.sendStats(src); }
     if (p.vehicle) this.exitVehicle(p);
     const stacks = [...p.inv, ...ARMOR_SLOTS.map((s) => p.armor[s])];
@@ -1292,8 +1301,11 @@ export class Game {
   onChat(p, m) {
     const msg = String(m.m || '').replace(/[<>]/g, '').slice(0, 200).trim();
     if (!msg) return;
-    if (/^\/(spawn|unstuck|help)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
-    if (msg.startsWith('/') && !msg.startsWith('/c ') && process.env.DEV) return this.devCommand(p, msg.slice(1).split(/\s+/));
+    if (/^\/(spawn|unstuck|help|admin)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
+    if (msg.startsWith('/') && !msg.startsWith('/c ')) {
+      if (this.isAdmin(p)) return this.devCommand(p, msg.slice(1).split(/\s+/));
+      return this.toast(p, 'Unknown command — type /help');
+    }
     if (msg.startsWith('/c ')) {
       const c = this.clans.get(p.clan);
       if (!c) return this.toast(p, 'You are not in a clan');
@@ -1365,8 +1377,26 @@ export class Game {
   }
 
   // Commands available to everyone
+  isAdmin(p) { return !!(process.env.DEV || p.admin); }
   publicCommand(p, [cmd, a]) {
-    if (cmd === 'help') return this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat' });
+    if (cmd === 'help') {
+      this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /admin password — unlock admin commands' });
+      if (this.isAdmin(p)) this.send(p, { t: 'chat', from: '', m: ADMIN_HELP });
+      return;
+    }
+    if (cmd === 'admin') {
+      const pw = process.env.ADMIN_PASSWORD;
+      if (this.isAdmin(p)) return this.toast(p, 'You are already an admin — /help lists the commands');
+      if (!pw) return this.toast(p, 'Admin commands are disabled on this server (no ADMIN_PASSWORD set)');
+      const t = now();
+      if (t - (p.lastAdminTry || 0) < 3) return this.toast(p, 'Wait a moment before trying again');
+      p.lastAdminTry = t;
+      if (String(a || '') !== pw) return this.toast(p, '❌ Wrong admin password');
+      p.admin = true;
+      console.log(`[admin] ${p.name} unlocked admin commands`);
+      this.send(p, { t: 'chat', from: '', m: '✅ Admin unlocked. ' + ADMIN_HELP });
+      return;
+    }
     if (!p.alive) return;
     if (cmd === 'spawn') {
       const type = SPAWNABLE[String(a || '').toLowerCase()];
@@ -1414,14 +1444,79 @@ export class Game {
       const q = pois[Math.floor(Math.random() * pois.length)];
       if (q) this.devCommand(p, ['tp', q.x + 30, q.z + 30]);
       this.toast(p, q ? `Teleported to ${q.name}` : 'No POI');
-    } else if (cmd === 'give' && ITEMS[a]) { this.give(p, a, Math.max(1, num(b, 1))); this.sendInv(p); }
+    } else if (cmd === 'give') {
+      const id = this.findItem([a, b, c].filter((x) => x !== undefined && isNaN(+x)).join('_'));
+      if (!id) return this.toast(p, `No item "${a || ''}" — open /items to browse`);
+      const nArg = [b, c].find((x) => x !== undefined && !isNaN(+x));
+      const n = Math.max(1, Math.min(10000, nArg !== undefined ? num(nArg, 1) | 0 : ITEMS[id].stack || 1));
+      this.give(p, id, n); this.sendInv(p);
+    } else if (cmd === 'items') {
+      this.send(p, { t: 'admin_items', q: [a, b, c].filter(Boolean).join(' ') });
+    } else if (cmd === 'tpdeath') {
+      const d = p.lastDeath;
+      if (!d) return this.toast(p, "You haven't died yet");
+      if (!p.alive) return this.toast(p, 'Respawn first, then use /tpdeath');
+      if (p.vehicle) this.exitVehicle(p);
+      this.teleport(p, d.x, Math.max(d.y, this.world.ground(d.x, d.z)) + 0.5, d.z);
+      this.updateRegions(p, true);
+      this.toast(p, `☠ Teleported to your last death (${Math.round(d.x)}, ${Math.round(d.z)})`);
+    }
     else if (cmd === 'kit') {
       for (const [id, n] of [['wood', 2000], ['stone', 2000], ['metal_frags', 1000], ['hqm', 100], ['cloth', 300], ['leather', 200], ['scrap', 500], ['fuel', 200], ['building_plan', 1], ['hammer', 1], ['rifle', 1], ['rifle_ammo', 120], ['c4', 4], ['satchel', 6], ['wheel', 4], ['engine_parts', 2], ['tool_cupboard', 1], ['wood_door', 2], ['workbench3', 1], ['furnace', 1], ['metal_chest', 1], ['metal_mask', 1], ['metal_legs', 1]]) this.give(p, id, n, false);
       this.sendInv(p);
     } else if (cmd === 'day') { this.day = Math.max(0, Math.min(0.999, num(a, 0.5))); this.toAll({ t: 'time', day: this.day }); }
     else if (cmd === 'heal') { p.hp = this.maxHp(p); p.food = 100; p.water = 100; this.sendStats(p); }
-    else this.toast(p, 'Commands: /tp x z · /tppoi [type] · /give id n · /kit · /day 0-1 · /heal');
+    else this.toast(p, ADMIN_HELP);
   }
+  findItem(q) {
+    q = String(q || '').toLowerCase().trim();
+    if (!q) return null;
+    if (ITEMS[q]) return q;
+    const norm = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const nq = norm(q);
+    const ids = Object.keys(ITEMS);
+    return ids.find((id) => norm(ITEMS[id].name) === nq || norm(id) === nq) || ids.find((id) => norm(ITEMS[id].name).includes(nq) || norm(id).includes(nq)) || null;
+  }
+  onAdminGive(p, m) {
+    if (!this.isAdmin(p) || !ITEMS[m.id] || !p.alive) return;
+    const n = Math.max(1, Math.min(10000, num(m.n, 1) | 0));
+    this.give(p, m.id, n); this.sendInv(p);
+  }
+
+  // ------------------------------------------------------------ spray paint
+  onPaint(p, m) {
+    if (!p.alive || p.inv[num(m.sel, p.sel) | 0]?.id !== 'spray_can') return;
+    const kind = m.k, id = String(m.id);
+    const tgt = kind === 'v' ? this.vehicles.get(id) : kind === 's' ? this.structs.get(id) : null;
+    if (!tgt) return;
+    const reach = SPRAY_RANGE + 2 + (kind === 'v' ? Math.hypot(...VEHICLES[tgt.type].half) : 3);
+    if (dist3(tgt, p) > reach) return;
+    // permission: vehicles owned by someone (hauler) → owner/clan; structures → building privilege
+    if (kind === 'v' ? tgt.owner && !this.canUseDeck(p, tgt) : this.privBlocked(p, tgt.x, tgt.z, tgt)) return this.toast(p, '🔒 You need building privilege to paint this');
+    const mode = m.m;
+    if (mode === 'color') {
+      const c = num(m.c, -1) | 0;
+      tgt.paint = c >= 0 && c < PAINT_COLORS.length ? c : undefined;
+    } else if (mode === 'decal') {
+      const d = num(m.d, -1) | 0, c = num(m.c, 0) | 0, sz = num(m.sz, 1) | 0;
+      if (d < 0 || d >= DECALS.length || c < 0 || c >= PAINT_COLORS.length || sz < 0 || sz >= DECAL_SIZES.length) return;
+      if (!Array.isArray(m.p) || !Array.isArray(m.n)) return;
+      const P = m.p.slice(0, 3).map((x) => Math.max(-12, Math.min(12, num(x)))), N = m.n.slice(0, 3).map((x) => num(x));
+      const nl = Math.hypot(...N) || 1;
+      tgt.decals = tgt.decals || [];
+      tgt.decals.push({ d, c, sz, p: P.map(r3), n: N.map((x) => r3(x / nl)), r: r2(num(m.r)) });
+      if (tgt.decals.length > MAX_DECALS) tgt.decals.shift();
+    } else if (mode === 'clear') { tgt.decals = []; tgt.paint = undefined; }
+    else return;
+    if (kind === 'v') { tgt.decRev = (tgt.decRev || 0) + 1; this.sendVehiclePaint(tgt); }
+    else this.updStruct(tgt);
+    this.toNear(tgt.x, tgt.z, 40, { t: 'fx', k: 'spray', p: [tgt.x, tgt.y, tgt.z], c: m.c | 0 });
+  }
+  sendVehiclePaint(v, to = null) {
+    const msg = { t: 'vpaint', id: v.id, pa: v.paint ?? -1, dc: v.decals || [], rev: v.decRev || 0 };
+    if (to) this.send(to, msg); else this.toNear(v.x, v.z, SNAP_RANGE, msg);
+  }
+  onVehiclePaintReq(p, m) { const v = this.vehicles.get(String(m.id)); if (v) this.sendVehiclePaint(v, p); }
 
   // ------------------------------------------------------------ vehicles
   onVehicleEnter(p, m) {
@@ -1617,6 +1712,7 @@ export class Game {
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       if (!p.online) continue; // sleepers don't starve
+      if (now() - (p.lastSt || 0) > 5) continue; // tab closed / hidden / connection stalled: no hunger or thirst while away
       p.food = Math.max(0, p.food - 0.045 * dt);
       p.water = Math.max(0, p.water - 0.07 * dt);
       if (p.food <= 0 || p.water <= 0) { p.hp -= 0.6 * dt; if (p.hp <= 0) { this.killPlayer(p, p.food <= 0 ? 'starvation' : 'dehydration'); continue; } }
@@ -1674,7 +1770,7 @@ export class Game {
       }
       for (const v of this.vehicles.values()) {
         if (dist2(v, p) > R2) continue;
-        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0]);
+        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0, v.decRev || 0]);
       }
       for (const a of this.animals.values()) {
         if (dist2(a, p) > R2) continue;

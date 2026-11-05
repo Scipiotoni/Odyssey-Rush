@@ -13,6 +13,7 @@ import { Structures } from './structures.js';
 import { VehicleSim, VehicleView } from './vehicles.js';
 import { Player } from './player.js';
 import { Builder } from './building.js';
+import { Painter } from './painter.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -90,6 +91,7 @@ class Game {
     this.player = new Player(this);
     this.ui = new UI(this);
     this.builder = new Builder(this);
+    this.painter = new Painter(this);
     this.held = new Held(this);
     this.avatar = makeHumanoid(this.look); this.avatar.visible = false; this.scene.add(this.avatar);
     this.building = this.builder;
@@ -180,6 +182,8 @@ class Game {
     const regionOf = (x, z) => chunkKey(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
     n.on('sadd', (m) => { this.structures.upsert(m.s); if (!m.s.veh) this.regionContents.get(regionOf(m.s.x, m.s.z))?.s.add(m.s.id); this.refreshBags(); if (m.s.o === this.pid) audio.hitStruct(); });
     n.on('supd', (m) => this.structures.upsert(m.s));
+    n.on('vpaint', (m) => { const v = this.vehicleViews.get(m.id); if (v) v.setPaint(m); });
+    n.on('admin_items', (m) => this.ui.showItems(m.q));
     n.on('vst', (m) => { for (const st of m.s) this.structures.upsert(st); this.refreshBags(); });
     n.on('sdel', (m) => { const e = this.structures.map.get(m.id); this.structures.remove(m.id, m.fx); if (e) this.regionContents.get(regionOf(e.s.x, e.s.z))?.s.delete(m.id); if (m.fx) audio.hitStruct(); this.refreshBags(); });
     n.on('ladd', (m) => { this.entities.addLoot(m.l, this.physics); this.regionContents.get(regionOf(m.l.x, m.l.z))?.l.add(m.l.id); });
@@ -276,6 +280,7 @@ class Game {
       if (!v) { v = new VehicleView(this.scene, { id: a[0], type: a[1], var: a[14] }, this.world, this.physics); this.vehicleViews.set(a[0], v); this.physics.dynamic.push(...v.colliders); }
       v.setNet(a);
       // mobile-base structures on this vehicle: fetch them when our copy is out of date
+      if (v.netDecRev !== v.decRev && performance.now() - (v.paintAt || -1e9) > 2000) { v.paintAt = performance.now(); this.net.send({ t: 'vpaint', id: a[0] }); }
       if (v.nAttached !== this.structures.countVehicle(a[0]) && performance.now() - (v.vstAt || -1e9) > 3000) { v.vstAt = performance.now(); this.net.send({ t: 'vst', id: a[0] }); }
       if (this.vehicle && this.vehicle.id === a[0] && this.vehicle.sim) { this.vehicle.sim.fuel = a[11]; v.hp = a[6]; }
     }
@@ -288,6 +293,7 @@ class Game {
 
   onFx(m) {
     const cam = this.camera.position;
+    if (m.k === 'spray') { if (cam.distanceTo(new THREE.Vector3(...m.p)) < 30) audio.spray(); return; }
     if (m.k === 'shot') {
       const p = this.entities.players.get(m.pid);
       const o = p ? new THREE.Vector3(p.pos.x, p.pos.y + 1.45, p.pos.z) : new THREE.Vector3(...m.o);
@@ -542,7 +548,7 @@ class Game {
     if (!this.input.locked && !this.ui.open) text = 'Click to play';
     const it = this.inv[this.sel];
     const d = it && ITEMS[it.id];
-    if (!d || !(d.plan || d.deploy || d.door || d.tool?.hammer || d.explosive || d.cat === 'food' || d.cat === 'medical') || text) this.ui.prompt(text);
+    if (!d || !(d.plan || d.deploy || d.door || d.tool?.hammer || d.spray || d.explosive || d.cat === 'food' || d.cat === 'medical') || text) this.ui.prompt(text);
     this.ui.target(target);
     if (active && this.input.hit('KeyF')) this.net.send({ t: 'drink' });
   }
@@ -557,6 +563,7 @@ class Game {
     else if (code === 'Escape') { if (ui.open && ui.open !== 'pause') ui.close(); }
     else if ((code === 'Enter' || code === 'KeyT') && !ui.open) { e?.preventDefault(); this.input.unlock(); ui.openChat(); }
     else if (code === 'KeyB' && ui.open === 'build') ui.close();
+    else if (code === 'KeyR' && ui.open === 'paint') ui.close();
   }
 
   // ------------------------------------------------------------------ main loop

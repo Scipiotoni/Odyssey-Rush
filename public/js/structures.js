@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _up = new THREE.Vector3(0, 1, 0);
 import { worldBoxes, buildIndex } from '/shared/building.js';
-import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT } from './models.js';
+import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT, DOOR_MATS } from './models.js';
+import { paintGeometry, paintedMaterial, applyDecals } from './paint.js';
 
 export class Structures {
   constructor(scene, physics, effects) {
@@ -19,7 +20,7 @@ export class Structures {
     const old = this.map.get(s.id);
     if (old) {
       // tier change or door open/close -> rebuild visuals; hp only -> just store
-      const visual = old.s.tier !== s.tier || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth;
+      const visual = old.s.tier !== s.tier || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth || old.s.pa !== s.pa || JSON.stringify(old.s.dc) !== JSON.stringify(s.dc);
       old.s = s;
       if (s.k === 'piece') this.buildings.get(s.bid)?.pieces.set(s.id, s);
       if (!visual) return;
@@ -27,7 +28,8 @@ export class Structures {
     }
     let obj;
     if (s.k === 'piece') {
-      obj = new THREE.Mesh(pieceGeometry(s.type, s.tier || 0), MAT);
+      const pg = pieceGeometry(s.type, s.tier || 0);
+      obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(pg, `p_${s.type}_${s.tier || 0}`, s.pa) : pg, MAT);
       if (s.rf) { const rg = reinforceGeometry(s.type, s.rf); if (rg) obj.add(new THREE.Mesh(rg, MAT)); }
       if (s.b) {
         let b = this.buildings.get(s.bid);
@@ -36,9 +38,12 @@ export class Structures {
       }
     } else if (s.k === 'door') {
       obj = makeDoor(s.dt);
+      if (s.pa !== undefined) { const slab = obj.userData.pivot.children[0]; slab.material = paintedMaterial(s.pa, DOOR_MATS[s.dt] || DOOR_MATS.wood); }
+      obj.userData.decalRoot = obj.userData.pivot;
       if (s.open) obj.userData.pivot.rotation.y = -Math.PI / 2 * 0.95;
     } else {
-      obj = new THREE.Mesh(deployGeometry(s.type), MAT);
+      const dg = deployGeometry(s.type);
+      obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(dg, 'd_' + s.type, s.pa) : dg, MAT);
       if (s.type === 'lamp') { const light = new THREE.PointLight(0xffe2a8, 5, 16, 1.4); light.position.y = 1.5; obj.add(light); }
       if (s.type === 'campfire' || s.type === 'furnace') {
         const light = new THREE.PointLight(0xff9040, 6, 14, 1.6);
@@ -49,7 +54,8 @@ export class Structures {
     }
     obj.position.set(s.x, s.y, s.z);
     obj.rotation.y = s.yaw;
-    obj.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    if (s.dc?.length) applyDecals(obj.userData.decalRoot || obj, s.dc);
+    obj.traverse((o) => { if (!o.userData.decal) { o.castShadow = true; o.receiveShadow = true; } });
     if (s.veh) {
       // rides on a vehicle: transform follows the vehicle every frame, colliders are dynamic
       const [lx, ly, lz, lyaw] = s.l;

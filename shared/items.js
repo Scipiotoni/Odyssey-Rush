@@ -48,6 +48,7 @@ export const ITEMS = {
   shovel: { name: 'Shovel', cat: 'tool', stack: 1, icon: '🪏', tool: { tree: 2, ore: 4, dmg: 12, range: 3.2, rate: 2.2 }, dig: true },
   hammer: { name: 'Hammer', cat: 'tool', stack: 1, icon: '🔨', tool: { tree: 0, ore: 0, dmg: 5, range: 3.5, rate: 2 }, hammer: true },
   building_plan: { name: 'Building Plan', cat: 'tool', stack: 1, icon: '📐', plan: true },
+  spray_can: { name: 'Spray Can', cat: 'tool', stack: 1, icon: '🎨', spray: true },
   // --- melee weapons ---
   wooden_spear: { name: 'Wooden Spear', cat: 'weapon', stack: 1, icon: '🗡️', tool: { tree: 2, ore: 1, dmg: 32, range: 3.0, rate: 1.0 } },
   machete: { name: 'Machete', cat: 'weapon', stack: 1, icon: '🔪', tool: { tree: 10, ore: 2, dmg: 40, range: 2.6, rate: 1.4 } },
@@ -202,6 +203,7 @@ export const RECIPES = [
   { out: 'painting', n: 1, time: 4, station: 'wb1', cost: { wood: 30, cloth: 20 } },
   { out: 'fridge', n: 1, time: 12, station: 'wb2', cost: { metal_frags: 200, gears: 1, tech_trash: 1 } },
 ];
+RECIPES.push({ out: 'spray_can', n: 1, time: 3, cost: { metal_frags: 25, cloth: 5 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace' };
