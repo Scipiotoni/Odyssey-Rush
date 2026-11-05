@@ -70,33 +70,49 @@ export function nodeGeometry(type) {
   return cached('node_' + type, () => {
     switch (type) {
       case 'tree_oak': {
-        const parts = [
-          part(cyl(0.2, 0.36, 4.4, 8), 0x6b4a2e, { y: 2.2 }, 0.06),
-          part(cyl(0.08, 0.13, 2.0, 6), 0x6b4a2e, { x: 0.75, y: 3.7, rz: -0.85 }),
-          part(cyl(0.07, 0.12, 1.8, 6), 0x5f4128, { x: -0.6, y: 3.9, z: 0.3, rz: 0.8, rx: 0.3 }),
-        ];
-        for (let i = 0; i < 3; i++) { const a = i * 2.1; parts.push(part(cyl(0.05, 0.14, 0.9, 5), 0x5f4128, { x: Math.cos(a) * 0.35, y: 0.18, z: Math.sin(a) * 0.35, rz: Math.cos(a) * 1.1, rx: -Math.sin(a) * 1.1 })); }
-        const blobs = [[0, 5.4, 0, 2.3, 0x3f7a2c], [1.4, 4.7, 0.5, 1.6, 0x4a8a33], [-1.2, 4.9, -0.7, 1.6, 0x376b26], [0.3, 4.6, -1.3, 1.4, 0x447f2f], [-0.4, 6.3, 0.5, 1.4, 0x4f9236], [0.9, 5.9, -0.6, 1.2, 0x3c752a]];
-        blobs.forEach(([x, y, z, r, c], i) => parts.push(part(jitter(ico(r, 1), 0.28, i + 1), c, { x, y, z, sy: 0.85 }, 0.12)));
+        const bark = 0x6b4a2e, barkD = 0x56391f;
+        const parts = [part(jitter(cyl(0.22, 0.38, 4.4, 9), 0.06, 3), bark, { y: 2.2 }, 0.06)];
+        // root flare
+        for (let i = 0; i < 5; i++) { const a = i * 1.26 + 0.3; parts.push(part(cyl(0.05, 0.16, 0.9, 5), barkD, { x: Math.cos(a) * 0.32, y: 0.16, z: Math.sin(a) * 0.32, rz: Math.cos(a) * 1.15, rx: -Math.sin(a) * 1.15 })); }
+        // limbs
+        const limbs = [[0.85, 3.8, 0.1, -0.9, 0.1, 2.2], [-0.7, 4.0, 0.35, 0.85, 0.3, 2.0], [0.15, 4.2, -0.75, 0.2, -0.85, 1.9], [-0.25, 4.6, -0.2, 0.35, 0, 1.4]];
+        limbs.forEach(([x, y, z, rz, rx, l]) => parts.push(part(cyl(0.06, 0.13, l, 6), bark, { x, y, z, rz, rx })));
+        // crown: layered clumps, darker underneath and lighter on top
+        const clumps = [[0, 6.3, 0, 1.7, 0x4f9236], [1.6, 5.4, 0.4, 1.5, 0x46872f], [-1.5, 5.5, -0.5, 1.5, 0x3f7c2a], [0.4, 5.3, -1.6, 1.4, 0x447f2f], [-0.5, 5.4, 1.5, 1.45, 0x4a8a33],
+          [1.1, 4.6, -1.0, 1.15, 0x356a24], [-1.2, 4.6, 0.9, 1.15, 0x346724], [0.9, 6.7, 0.8, 1.1, 0x5a9e3e], [-0.9, 6.6, -0.6, 1.1, 0x56993b], [0, 4.4, 0.2, 1.3, 0x2f5f20], [1.9, 4.9, 1.3, 0.9, 0x3c7529], [-1.9, 5.0, -1.4, 0.9, 0x3a7128]];
+        clumps.forEach(([x, y, z, r, c], i) => parts.push(part(jitter(ico(r, 1), 0.32, i + 1), c, { x, y, z, sy: 0.82 }, 0.14)));
         return merge(parts);
       }
       case 'tree_pine': {
-        const parts = [part(cyl(0.16, 0.3, 3.2, 7), 0x5b3d24, { y: 1.6 }, 0.06)];
-        const tiers = [[2.5, 3.2, 3.4], [2.1, 2.8, 4.9], [1.7, 2.5, 6.2], [1.25, 2.2, 7.4], [0.75, 1.8, 8.5]];
-        tiers.forEach(([r, h, y], i) => parts.push(part(jitter(cone(r, h, 10), 0.12, i + 3), i % 2 ? 0x23653b : 0x1d5732, { y, ry: i * 0.6 }, 0.1)));
+        const parts = [part(jitter(cyl(0.14, 0.32, 3.4, 8), 0.05, 2), 0x5b3d24, { y: 1.7 }, 0.06), part(cyl(0.06, 0.12, 5.5, 6), 0x5b3d24, { y: 5.2 })];
+        const tiers = [[2.7, 2.4, 2.9], [2.45, 2.3, 3.9], [2.2, 2.2, 4.85], [1.9, 2.0, 5.8], [1.6, 1.9, 6.7], [1.3, 1.7, 7.55], [0.95, 1.5, 8.35], [0.6, 1.3, 9.1]];
+        tiers.forEach(([r, h, y], i) => {
+          const c = [0x1d5732, 0x23653b, 0x1f5c35, 0x276b3e][i % 4];
+          parts.push(part(jitter(cone(r, h, 9), 0.16, i + 3), c, { y, ry: i * 0.7 }, 0.12));
+          parts.push(part(jitter(cone(r * 0.92, h * 0.5, 9), 0.12, i + 30), 0x173f27, { y: y - h * 0.42, ry: i * 0.7 + 0.35 }, 0.08)); // dark underside
+        });
+        parts.push(part(cone(0.18, 0.7, 6), 0x2c7344, { y: 10.0 }));
         return merge(parts);
       }
       case 'tree_palm': {
         const parts = [];
-        for (let i = 0; i < 7; i++) { parts.push(part(cyl(0.16 - i * 0.012, 0.19 - i * 0.012, 1.35, 7), i % 2 ? 0x8a6d45 : 0x7a5f3a, { x: i * i * 0.035, y: 0.7 + i * 1.3, rz: -i * 0.055 })); }
-        const top = [1.7, 9.3, 0];
-        for (let k = 0; k < 9; k++) {
-          const a = (k / 9) * Math.PI * 2;
-          const dx = Math.sin(a), dz = Math.cos(a);
-          parts.push(part(box(0.55, 0.04, 1.8), 0x3e8a2e, { x: top[0] + dx * 0.9, y: top[1] + 0.25, z: dz * 0.9, ry: a, rx: -0.25 }, 0.15));
-          parts.push(part(box(0.45, 0.04, 1.5), 0x357a28, { x: top[0] + dx * 2.3, y: top[1] - 0.35, z: dz * 2.3, ry: a, rx: 0.55 }, 0.15));
+        for (let i = 0; i < 8; i++) {
+          parts.push(part(cyl(0.15 - i * 0.01, 0.19 - i * 0.01, 1.2, 8), i % 2 ? 0x8a6d45 : 0x7a5f3a, { x: i * i * 0.028, y: 0.6 + i * 1.15, rz: -i * 0.05 }));
+          parts.push(part(cyl(0.2 - i * 0.01, 0.2 - i * 0.01, 0.08, 8), 0x6a5032, { x: i * i * 0.028, y: 1.18 + i * 1.15, rz: -i * 0.05 })); // ring scars
         }
-        for (let k = 0; k < 4; k++) { const a = k * 1.6; parts.push(part(ico(0.14, 1), 0x5a4020, { x: top[0] + Math.sin(a) * 0.25, y: top[1] - 0.15, z: Math.cos(a) * 0.25 })); }
+        const top = [1.8, 9.4, 0];
+        for (let k = 0; k < 10; k++) {
+          const a = (k / 10) * Math.PI * 2 + (k % 2) * 0.2, droop = 0.25 + (k % 3) * 0.12;
+          let px = top[0], py = top[1], pz = 0, pitch = -0.35 - (k % 2) * 0.15;
+          for (let sgi = 0; sgi < 5; sgi++) {
+            const len = 0.62, w = 0.75 - sgi * 0.12;
+            const dx = Math.sin(a) * Math.cos(pitch) * len, dz = Math.cos(a) * Math.cos(pitch) * len, dy = Math.sin(-pitch) * len;
+            parts.push(part(box(w, 0.03, len + 0.05), sgi % 2 ? 0x3e8a2e : 0x469636, { x: px + dx / 2, y: py + dy / 2, z: pz + dz / 2, ry: a, rx: pitch }, 0.12));
+            parts.push(part(box(0.04, 0.05, len + 0.05), 0x5a7a2a, { x: px + dx / 2, y: py + dy / 2 + 0.02, z: pz + dz / 2, ry: a, rx: pitch }));
+            px += dx; py += dy; pz += dz; pitch += droop;
+          }
+        }
+        for (let k = 0; k < 5; k++) { const a = k * 1.3; parts.push(part(ico(0.15, 1), k % 2 ? 0x5a4020 : 0x4a3418, { x: top[0] + Math.sin(a) * 0.26, y: top[1] - 0.2 - (k % 2) * 0.1, z: Math.cos(a) * 0.26 })); }
         return merge(parts);
       }
       case 'tree_dead': return merge([
@@ -156,11 +172,42 @@ export function detailGeometry(kind) {
       return part(g, col, { ry: a });
     };
     const parts = [];
+    const plane = (w, h, col, t) => { const g = new THREE.PlaneGeometry(w, h); g.translate(0, h / 2, 0); return part(g, col, t); };
     if (kind === 'grass' || kind === 'flower') {
-      for (let i = 0; i < 7; i++) parts.push(blade(0.35 + (i % 3) * 0.12, 0.05, i * 0.9, (i - 3) * 0.2, i % 2 ? 0x5a9a3a : 0x4a8a30));
-      if (kind === 'flower') { parts.push(part(ico(0.05, 0), [0xe8d040, 0xe05060, 0xf0f0f0, 0x9060d0][Math.floor(Math.random() * 4)], { y: 0.5, x: 0.05 })); parts.push(part(ico(0.045, 0), 0xf0f0f0, { y: 0.42, x: -0.08, z: 0.05 })); }
+      if (kind === 'grass') for (let i = 0; i < 7; i++) parts.push(blade(0.35 + (i % 3) * 0.12, 0.05, i * 0.9, (i - 3) * 0.2, i % 2 ? 0x5a9a3a : 0x4a8a30));
+      else {
+        // a few stems with five-petal heads; petals are white so each instance can be tinted
+        for (let f = 0; f < 3; f++) {
+          const fx = Math.cos(f * 2.1) * 0.08, fz = Math.sin(f * 2.1) * 0.08, h = 0.32 + f * 0.09;
+          parts.push(part(cyl(0.006, 0.008, h, 4), 0x3f7a2a, { x: fx, y: h / 2, z: fz }));
+          parts.push(part(box(0.09, 0.005, 0.03), 0x4a8a30, { x: fx + 0.03, y: h * 0.4, z: fz, rz: 0.4 }));
+          for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2; parts.push(part(new THREE.CircleGeometry(0.035, 5), 0xffffff, { x: fx + Math.cos(a) * 0.035, y: h + 0.005, z: fz + Math.sin(a) * 0.035, rx: -Math.PI / 2 + 0.25, rz: a })); }
+          parts.push(part(ico(0.018, 0), 0x6a3a14, { x: fx, y: h + 0.015, z: fz }));
+        }
+      }
     } else if (kind === 'drygrass') { for (let i = 0; i < 6; i++) parts.push(blade(0.3 + (i % 3) * 0.1, 0.04, i * 1.1, (i - 3) * 0.25, i % 2 ? 0xb8a060 : 0xa08a50)); }
     else if (kind === 'pebbles') { for (let i = 0; i < 4; i++) parts.push(part(jitter(dodec(0.06 + (i % 2) * 0.04, 0), 0.3, 30 + i), 0x8a867e, { x: Math.cos(i * 1.7) * 0.25, y: 0.02, z: Math.sin(i * 1.7) * 0.25, sy: 0.6 })); }
+    else if (kind === 'fern') {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        for (let sgi = 0; sgi < 3; sgi++) parts.push(plane(0.18 - sgi * 0.04, 0.32, sgi ? 0x4f8f34 : 0x3f7a2a, { x: Math.sin(a) * (0.1 + sgi * 0.24), y: 0.05 + sgi * 0.2 - sgi * sgi * 0.06, z: Math.cos(a) * (0.1 + sgi * 0.24), ry: a, rx: 0.5 + sgi * 0.45 }));
+      }
+    } else if (kind === 'bush') {
+      const cl = [[0, 0.35, 0, 0.45, 0x3d7a2c], [0.35, 0.25, 0.15, 0.32, 0x356e26], [-0.3, 0.28, -0.12, 0.34, 0x447f30], [0.05, 0.55, -0.1, 0.3, 0x4c8c36]];
+      cl.forEach(([x, y, z, r, c], i) => parts.push(part(jitter(ico(r, 1), 0.3, 50 + i), c, { x, y, z, sy: 0.8 }, 0.15)));
+    } else if (kind === 'mushroom') {
+      const red = Math.random() < 0.5;
+      [[0, 0, 1], [0.1, 0.05, 0.65], [-0.08, 0.07, 0.5]].forEach(([x, z, k], i) => {
+        parts.push(part(cyl(0.018 * k, 0.025 * k, 0.12 * k, 6), 0xece4d4, { x, y: 0.06 * k, z }));
+        parts.push(part(new THREE.SphereGeometry(0.06 * k, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), red ? 0xc8281e : 0x9a6a3a, { x, y: 0.11 * k, z }));
+        if (red) for (let d = 0; d < 4; d++) parts.push(part(ico(0.008 * k, 0), 0xffffff, { x: x + Math.cos(d * 1.6) * 0.035 * k, y: 0.15 * k, z: z + Math.sin(d * 1.6) * 0.035 * k }));
+      });
+    } else if (kind === 'reeds') {
+      for (let i = 0; i < 9; i++) parts.push(blade(1.1 + (i % 3) * 0.3, 0.035, i * 0.7, (i - 4) * 0.08, i % 2 ? 0x6a8a3a : 0x5a7a32));
+      for (let i = 0; i < 3; i++) { const a = i * 2.2; parts.push(part(cyl(0.005, 0.005, 1.5, 3), 0x6a7a3a, { x: Math.cos(a) * 0.06, y: 0.75, z: Math.sin(a) * 0.06 })); parts.push(part(cyl(0.025, 0.025, 0.16, 6), 0x5a3a1e, { x: Math.cos(a) * 0.06, y: 1.42, z: Math.sin(a) * 0.06 })); }
+    } else if (kind === 'stick') {
+      parts.push(part(cyl(0.02, 0.028, 0.7, 4), 0x6a4a2a, { y: 0.025, rz: Math.PI / 2 }), part(cyl(0.012, 0.016, 0.3, 4), 0x5e4126, { x: 0.15, y: 0.03, z: 0.08, rz: Math.PI / 2, ry: 0.7 }));
+    }
     return merge(parts);
   });
 }
@@ -169,57 +216,8 @@ export function detailGeometry(kind) {
 export { makeHumanoid, makeFPArm } from './character.js';
 export { makeVehicle } from './cars.js';
 
-// ---------------------------------------------------------------- animals
-export function makeAnimal(type, color, size) {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color });
-  const dark = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.62) });
-  const light = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xf0e6d0), 0.5) });
-  const hoof = new THREE.MeshLambertMaterial({ color: 0x2a2018 });
-  const eye = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
-  const s = size;
-  const add = (geo, m, x, y, z, parent = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
-  const rb = (w, h, d, r) => new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2.1, h / 2.1, d / 2.1));
-  const body = new THREE.Group(); g.add(body);
-  let legH = 0.72 * s, bodyL = 1.25 * s, bodyH = 0.55 * s, bodyW = 0.46 * s;
-  if (type === 'boar') { legH = 0.38 * s; bodyL = 1.15 * s; bodyH = 0.66 * s; bodyW = 0.58 * s; }
-  if (type === 'bear') { legH = 0.62 * s; bodyL = 1.35 * s; bodyH = 0.85 * s; bodyW = 0.82 * s; }
-  if (type === 'wolf') { legH = 0.58 * s; bodyL = 1.15 * s; bodyH = 0.42 * s; bodyW = 0.36 * s; }
-  add(rb(bodyW, bodyH, bodyL, bodyH * 0.35), mat, 0, legH + bodyH / 2, 0, body);
-  add(rb(bodyW * 0.85, bodyH * 0.5, bodyL * 0.7, bodyH * 0.2), light, 0, legH + bodyH * 0.18, 0, body);
-  if (type === 'bear' || type === 'boar') add(rb(bodyW * 1.02, bodyH * 0.8, bodyL * 0.4, bodyH * 0.3), type === 'boar' ? dark : mat, 0, legH + bodyH * 0.62, bodyL * 0.28, body);
-  const neck = new THREE.Group(); neck.position.set(0, legH + bodyH * 0.75, bodyL / 2 - 0.05 * s); body.add(neck);
-  const hs = type === 'bear' ? 0.48 * s : type === 'boar' ? 0.4 * s : 0.3 * s;
-  const hy = type === 'deer' ? 0.42 * s : type === 'wolf' ? 0.1 * s : 0.02;
-  if (type === 'deer') { const n = add(rb(0.16 * s, 0.55 * s, 0.18 * s, 0.06 * s), mat, 0, 0.16 * s, 0.06, neck); n.rotation.x = 0.35; }
-  add(rb(hs, hs * 0.9, hs * 1.15, hs * 0.3), mat, 0, hy, hs * 0.45, neck);
-  add(rb(hs * 0.55, hs * 0.5, hs * 0.6, hs * 0.18), type === 'boar' ? dark : light, 0, hy - hs * 0.15, hs * 1.1, neck);
-  add(rb(hs * 0.3, hs * 0.2, hs * 0.08, hs * 0.05), hoof, 0, hy - hs * 0.1, hs * 1.4, neck);
-  for (const sx of [-1, 1]) {
-    add(new THREE.SphereGeometry(hs * 0.07, 6, 5), eye, sx * hs * 0.34, hy + hs * 0.15, hs * 0.85, neck);
-    const ear = add(new THREE.ConeGeometry(hs * 0.14, hs * 0.38, 4), dark, sx * hs * 0.3, hy + hs * 0.5, hs * 0.25, neck);
-    ear.rotation.z = -sx * 0.35;
-  }
-  if (type === 'deer') for (const sx of [-1, 1]) {
-    const a = add(new THREE.CylinderGeometry(0.018, 0.028, 0.5 * s, 5), hoof, sx * 0.1, hy + 0.42 * s, 0.1, neck); a.rotation.z = -sx * 0.4;
-    for (let k = 0; k < 2; k++) { const t = add(new THREE.CylinderGeometry(0.012, 0.018, 0.22 * s, 4), hoof, sx * (0.18 + k * 0.05), hy + (0.5 + k * 0.12) * s, 0.12 - k * 0.06, neck); t.rotation.z = -sx * 0.9; t.rotation.x = -0.4; }
-  }
-  if (type === 'boar') for (const sx of [-1, 1]) { const t = add(new THREE.ConeGeometry(0.02, 0.12, 5), new THREE.MeshLambertMaterial({ color: 0xeeeadd }), sx * 0.09, hy - 0.08, hs * 1.35, neck); t.rotation.x = -0.6; }
-  if (type === 'wolf') { const sn = add(rb(hs * 0.45, hs * 0.38, hs * 0.55, hs * 0.12), mat, 0, hy - hs * 0.12, hs * 1.25, neck); }
-  const tail = add(rb(0.09 * s, 0.09 * s, type === 'wolf' ? 0.5 * s : type === 'deer' ? 0.14 * s : 0.18 * s, 0.04 * s), type === 'deer' ? light : dark, 0, legH + bodyH * 0.82, -bodyL / 2 - 0.08 * s, body);
-  tail.rotation.x = type === 'wolf' ? 0.6 : -0.3;
-  const legs = [];
-  for (const [lx, lz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
-    const p = new THREE.Group(); p.position.set(lx * bodyW * 0.3, legH + 0.04, lz * bodyL * 0.36); body.add(p);
-    const th = type === 'bear' ? 0.2 * s : type === 'boar' ? 0.15 * s : 0.11 * s;
-    add(rb(th * 1.2, legH * 0.55, th * 1.3, th * 0.4), mat, 0, -legH * 0.22, 0, p);
-    add(rb(th, legH * 0.55, th, th * 0.35), dark, 0, -legH * 0.66, 0, p);
-    add(rb(th * 1.1, 0.06 * s, th * 1.3, 0.02), hoof, 0, -legH + 0.03, 0.01, p);
-    legs.push(p);
-  }
-  g.userData = { legs, neck, body, tail, tailRx: tail.rotation.x };
-  return g;
-}
+// ---------------------------------------------------------------- animals (see animals.js)
+export { makeAnimal } from './animals.js';
 
 // ---------------------------------------------------------------- building pieces
 export const TIER_MATS = TIERS.map((t) => new THREE.MeshLambertMaterial({ color: t.color, flatShading: true }));

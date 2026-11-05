@@ -7,6 +7,25 @@ import { MAT, MAT_DS, nodeGeometry, poiGeometry, detailGeometry } from './models
 import { BIOME } from '/shared/worldgen.js';
 import { hashRng } from '/shared/noise.js';
 import { buildChunkData } from './chunkgen.js';
+import { windMaterial } from './nature.js';
+
+// Trees and plants bend in the wind (more toward the top); each instance gets a slight colour shift.
+const TREE_MATS = {
+  tree_oak: windMaterial(MAT, { amp: 0.22, height: 8, freq: 0.9, key: 'oak' }),
+  tree_pine: windMaterial(MAT, { amp: 0.3, height: 10, freq: 0.75, key: 'pine' }),
+  tree_palm: windMaterial(MAT, { amp: 0.45, height: 10, freq: 0.7, key: 'palm' }),
+  tree_dead: windMaterial(MAT, { amp: 0.08, height: 6, freq: 0.8, key: 'dead' }),
+  hemp: windMaterial(MAT, { amp: 0.12, height: 1.2, freq: 1.6, key: 'hemp' }),
+  berry: windMaterial(MAT, { amp: 0.05, height: 1, freq: 1.4, key: 'berry' }),
+};
+const DETAIL_MATS = {
+  flower: windMaterial(MAT_DS, { amp: 0.1, height: 0.5, freq: 1.7, key: 'flower' }),
+  fern: windMaterial(MAT_DS, { amp: 0.12, height: 0.8, freq: 1.3, key: 'fern' }),
+  bush: windMaterial(MAT, { amp: 0.06, height: 1, freq: 1.2, key: 'bush' }),
+  reeds: windMaterial(MAT_DS, { amp: 0.2, height: 1.6, freq: 1.4, key: 'reeds' }),
+};
+const FLOWER_COLS = [0xf2d23a, 0xe2485e, 0xf4f0ea, 0x9a62d8, 0xf08a2a, 0x5aa0f0, 0xf07ab8];
+const _tc = new THREE.Color();
 
 const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const NODE_RADIUS = 3;   // chunks around player with resource nodes
@@ -173,7 +192,7 @@ export class Terrain {
     const meshes = [];
     const group = 'nodes:' + k;
     for (const [type, list] of byType) {
-      const im = new THREE.InstancedMesh(nodeGeometry(type), MAT, list.length);
+      const im = new THREE.InstancedMesh(nodeGeometry(type), TREE_MATS[type] || MAT, list.length);
       im.castShadow = this.shadows && NODES[type].kind !== 'pick';
       im.receiveShadow = false;
       const def = NODES[type];
@@ -183,12 +202,14 @@ export class Terrain {
         n._mat = _m.clone();
         const dep = this.depleted.has(n.id);
         im.setMatrixAt(i, dep ? ZERO : n._mat);
+        if (TREE_MATS[type]) { const h = Math.sin(n.x * 12.9898 + n.z * 78.233) * 43758.5453, r = h - Math.floor(h); im.setColorAt(i, _tc.setRGB(0.86 + r * 0.24, 0.9 + ((r * 7) % 1) * 0.16, 0.86 + ((r * 13) % 1) * 0.2)); }
         this.nodeIndex.set(n.id, { mesh: im, i, node: n });
         if (def.kind !== 'pick') n._col = this.physics.add(group, { t: 'cyl', x: n.x, y: n.y - 0.2, z: n.z, r: def.radius * n.s, h: dep ? -100 : def.height * n.s, ref: { kind: 'n', id: n.id, node: n } });
         // pickables are raycast-only (the body ignores ghost colliders)
         else n._col = this.physics.add(group, { t: 'cyl', x: n.x, y: n.y, z: n.z, r: 0.5, h: dep ? -100 : def.height, ref: { kind: 'n', id: n.id, node: n }, ghost: true });
       });
       im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
       im.computeBoundingSphere();
       this.scene.add(im);
       meshes.push(im);
@@ -198,19 +219,21 @@ export class Terrain {
   // Cosmetic ground cover: deterministic tufts of grass, flowers and pebbles
   buildDetail(cx, cz) {
     const w = this.world, rng = hashRng(cx, cz, 404, w.seed);
-    const lists = { grass: [], flower: [], drygrass: [], pebbles: [] };
-    for (let i = 0; i < 900; i++) {
+    const lists = { flower: [], pebbles: [], fern: [], bush: [], mushroom: [], reeds: [], stick: [] };
+    for (let i = 0; i < 700; i++) {
       const x = cx * CHUNK + rng() * CHUNK, z = cz * CHUNK + rng() * CHUNK;
       const h = w.ground(x, z);
       if (h < 0.8) continue;
       const b = w.biome(x, z, h);
       const r = rng();
       let kind = null;
-      if (b === BIOME.GRASS) kind = r < 0.08 ? 'flower' : r < 0.7 ? 'grass' : r < 0.74 ? 'pebbles' : null;
-      else if (b === BIOME.FOREST) kind = r < 0.5 ? 'grass' : r < 0.53 ? 'flower' : r < 0.58 ? 'pebbles' : null;
-      else if (b === BIOME.SWAMP) kind = r < 0.6 ? 'drygrass' : r < 0.7 ? 'grass' : null;
-      else if (b === BIOME.DESERT) kind = r < 0.12 ? 'drygrass' : r < 0.2 ? 'pebbles' : null;
-      else if (b === BIOME.BEACH) kind = r < 0.1 ? 'pebbles' : r < 0.14 ? 'drygrass' : null;
+      // flowers grow in patches
+      const patch = Math.sin(x * 0.045 + Math.sin(z * 0.03) * 3) * Math.cos(z * 0.05 - x * 0.012) > 0.35;
+      if (b === BIOME.GRASS) kind = r < (patch ? 0.32 : 0.05) ? 'flower' : r < 0.36 ? 'pebbles' : r < 0.4 ? 'bush' : r < 0.42 ? 'stick' : null;
+      else if (b === BIOME.FOREST) kind = r < 0.16 ? 'fern' : r < 0.21 ? 'bush' : r < 0.25 ? 'mushroom' : r < (patch ? 0.33 : 0.27) ? 'flower' : r < 0.33 ? 'pebbles' : r < 0.38 ? 'stick' : null;
+      else if (b === BIOME.SWAMP) kind = r < 0.22 ? 'reeds' : r < 0.27 ? 'mushroom' : r < 0.32 ? 'fern' : null;
+      else if (b === BIOME.DESERT) kind = r < 0.1 ? 'pebbles' : r < 0.12 ? 'stick' : null;
+      else if (b === BIOME.BEACH) kind = r < 0.1 ? 'pebbles' : r < 0.12 ? 'stick' : null;
       else if (b === BIOME.ROCK || b === BIOME.SNOW) kind = r < 0.12 ? 'pebbles' : null;
       if (!kind) continue;
       if (w.groundNormal(x, z)[1] < 0.8) continue;
@@ -220,9 +243,13 @@ export class Terrain {
     for (const kind in lists) {
       const L = lists[kind];
       if (!L.length) continue;
-      const im = new THREE.InstancedMesh(detailGeometry(kind), kind === 'pebbles' ? MAT : MAT_DS, L.length);
-      L.forEach(([x, y, z, r, sc], i) => { _q.setFromAxisAngle(_up, r); _s.set(sc, sc, sc); _p.set(x, y - 0.02, z); _m.compose(_p, _q, _s); im.setMatrixAt(i, _m); });
-      im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere();
+      const im = new THREE.InstancedMesh(detailGeometry(kind), DETAIL_MATS[kind] || (kind === 'pebbles' || kind === 'mushroom' || kind === 'stick' ? MAT : MAT_DS), L.length);
+      L.forEach(([x, y, z, r, sc], i) => {
+        _q.setFromAxisAngle(_up, r); _s.set(sc, sc, sc); _p.set(x, y - 0.02, z); _m.compose(_p, _q, _s); im.setMatrixAt(i, _m);
+        if (kind === 'flower') im.setColorAt(i, _tc.set(FLOWER_COLS[Math.floor((r * 1000) % FLOWER_COLS.length)]));
+        else if (kind === 'bush' || kind === 'fern') im.setColorAt(i, _tc.setRGB(0.85 + (r % 0.3), 0.92 + (sc % 0.12), 0.85));
+      });
+      im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.computeBoundingSphere();
       im.castShadow = false; im.receiveShadow = true;
       this.scene.add(im); out.push(im);
     }

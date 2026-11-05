@@ -29,9 +29,9 @@ export class Audio {
     src.connect(f); f.connect(g); g.connect(this.master);
     src.start(t, Math.random() * 0.5, dur + 0.05);
   }
-  _tone(freq, dur, { type = 'sine', gain = 0.3, slide = 1, attack = 0.005 } = {}) {
+  _tone(freq, dur, { type = 'sine', gain = 0.3, slide = 1, attack = 0.005, at = 0 } = {}) {
     if (!this.ok) return;
-    const t = this.ctx.currentTime;
+    const t = this.ctx.currentTime + at;
     const o = this.ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t);
     if (slide !== 1) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
     const g = this.ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
@@ -53,6 +53,15 @@ export class Audio {
   beep() { this._tone(2200, 0.06, { type: 'square', gain: 0.05 }); }
   door() { this._noise(0.25, { freq: 300, q: 4, type: 'bandpass', gain: 0.3 }); }
   spray() { this._noise(0.35, { freq: 5000, q: 0.6, type: 'highpass', gain: 0.18 }); }
+  // ---- ambience (quiet, procedural)
+  birdsong(v = Math.random()) {
+    const base = 2600 + v * 1800, n = 2 + Math.floor(v * 5);
+    for (let i = 0; i < n; i++) this._tone(base * (0.9 + Math.random() * 0.25), 0.07 + Math.random() * 0.06, { gain: 0.018, slide: Math.random() < 0.5 ? 1.35 : 0.75, at: i * (0.09 + v * 0.05), attack: 0.01 });
+  }
+  cricket() { for (let i = 0; i < 3; i++) this._tone(4300 + Math.random() * 300, 0.035, { type: 'square', gain: 0.006, at: i * 0.055 }); }
+  owl() { this._tone(380, 0.35, { gain: 0.03, slide: 0.92, attack: 0.06 }); this._tone(360, 0.5, { gain: 0.03, slide: 0.88, attack: 0.08, at: 0.55 }); }
+  gull() { for (let i = 0; i < 3; i++) this._tone(1500 - i * 120, 0.16, { type: 'triangle', gain: 0.015, slide: 0.7, at: i * 0.2 }); }
+  wave() { this._noise(1.4, { freq: 520, q: 0.4, gain: 0.07, attack: 0.6, decay: 1.4, sweep: 0.5 }); }
   click() { this._tone(900, 0.03, { type: 'square', gain: 0.04 }); }
   pickup() { this._tone(600, 0.06, { gain: 0.08, slide: 1.5 }); }
   hurt() { this._tone(220, 0.25, { type: 'sawtooth', gain: 0.08, slide: 0.6 }); }

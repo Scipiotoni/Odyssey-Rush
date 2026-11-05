@@ -14,6 +14,7 @@ import { VehicleSim, VehicleView } from './vehicles.js';
 import { Player } from './player.js';
 import { Builder } from './building.js';
 import { Painter } from './painter.js';
+import { Nature } from './nature.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -88,6 +89,8 @@ class Game {
     this.terrain.shadows = this.settings.shadows;
     this.terrain.setViewDist(this.settings.viewDist);
     this.structures = new Structures(this.scene, this.physics, this.effects);
+    this.nature = new Nature(this.scene, this.world, this.physics);
+    this.structures.onChange = (x, z) => this.nature.grass.invalidate(x, z);
     this.entities = new Entities(this.scene, this.effects);
     this.player = new Player(this);
     this.ui = new UI(this);
@@ -678,6 +681,7 @@ class Game {
     // world
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;
     this.terrain.update(cp.x, cp.z, 5);
+    this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, audio);
     this.structures.update(dt);
     this.entities.updatePlayers(dt, this.camera.position, this.vehicleViews);
     this.entities.updateAnimals(dt);

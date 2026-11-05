@@ -28,7 +28,7 @@ npm install
 npm start
 ```
 
-Open <http://localhost:3000>, type a name and press **Wake Up**. Other players on your
+Open <http://localhost:3000>, type a name (and optionally a password) and press **Wake Up**. Other players on your
 network can join at `http://<your-ip>:3000`. The world is saved to `data/world.json`
 every minute and when the server stops.
 
@@ -64,7 +64,10 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 ## How to play
 
-0. **Create your survivor.** The main menu has a character creator with a live 3D preview: body type, height,
+0. **Sign in.** Type a name and press Wake Up to play on this device. Add a **password** to turn the name into an
+   account: sign in with the same name and password on any other device (phone, laptop, a friend's PC) and you continue
+   with the same survivor, inventory and bases. Change it later with `/password new`.
+0b. **Create your survivor.** The main menu has a character creator with a live 3D preview: body type, height,
    skin tone, 8 hair styles and 11 colours, facial hair, eye colour, tops, legs and shoes. Everyone sees your look.
 1. **Start with nothing.** You wake up empty-handed. Find a **loose rock** on the ground (beaches have plenty) and
    press E to pick it up — that's your first tool. Branches give wood. Bare fists can fight but can't gather.
@@ -123,6 +126,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
 | `/c message` | Clan chat |
 | `/admin password` | Unlocks the admin commands (needs `ADMIN_PASSWORD` on the server) |
+| `/password new` | Protect your name with a password / change it (sign in on other devices) |
 | `/help` | Lists the commands |
 
 **Admin commands** (after `/admin`):
@@ -132,6 +136,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/items [search]` | Opens the item spawner: every item in the game with its icon, searchable — click to get a full stack (or 1 / 10 / 100 / 1000) |
 | `/give <item> [amount]` | Gives any item by id or name, e.g. `/give assault rifle`, `/give c4 10`, `/give spray can` |
 | `/tpdeath` | Teleports you to where you last died (to get your loot back) |
+| `/resetserver` | Wipes the whole world for everyone (optionally a brand-new island). Asks you to type RESET and a one-time code, then confirm once more. Sign-in accounts are kept |
 | `/tp x z [y]` · `/tppoi [type]` · `/kit` · `/heal` · `/day 0-1` | Teleport, monument teleport, starter kit, full heal, time of day |
 
 ### Vehicle physics
@@ -141,6 +146,12 @@ torque curve. Grip and rolling resistance depend on the surface under each wheel
 rock, building floors); the jeeps' long-travel suspension, all-wheel drive and offroad tyres grip extra well off the road. Water adds buoyancy, drag and can flood the engine. The chassis collides with terrain,
 trees, rocks, buildings and other vehicles; hard impacts damage the vehicle and its passengers, and you can run
 over animals and players. Wheels kick up dust, mud, snow or spray depending on the ground.
+
+### A living world
+
+Wind moves through dense grass, flowers, ferns, reeds and the trees; birds and gulls circle overhead by day and bats
+at night, butterflies drift over meadows, rabbits bolt when you get close, leaves fall in forests and fireflies come
+out after dark — with birdsong, crickets, owls and waves to match. Deer graze, wolves sniff the ground, bears waddle.
 
 ### Survival
 

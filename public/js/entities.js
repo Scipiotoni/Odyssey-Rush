@@ -7,6 +7,7 @@ import { poseHumanoid } from './character.js';
 import { decodeLook } from '/shared/look.js';
 import { ITEMS as ITEMDEFS } from '/shared/items.js';
 import { makeHumanoid, makeAnimal, makeItemModel, deployGeometry, MAT } from './models.js';
+import { animateAnimal } from './animals.js';
 
 const _v = new THREE.Vector3();
 const _o = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -151,24 +152,7 @@ export class Entities {
       if (e.interp.sample(performance.now() - INTERP_DELAY, _o)) { e.pos.set(_o.x, _o.y, _o.z); e.yaw = _o.yaw; }
       const speed = before.distanceTo(e.pos) / Math.max(dt, 1e-3);
       e.model.position.copy(e.pos); e.model.rotation.y = e.yaw;
-      const ud = e.model.userData, t = performance.now() / 1000;
-      const running = speed > 3.5;
-      e.walk += speed * dt * (running ? 1.5 : 2.4);
-      e.amt = (e.amt || 0) + (Math.min(1, speed / 3) - (e.amt || 0)) * Math.min(1, dt * 8);
-      const sw = e.amt * (running ? 0.85 : 0.55);
-      // walk = diagonal trot; run = gallop (front pair and back pair move together, offset)
-      ud.legs.forEach((l, i) => {
-        const ph = running ? (i > 1 ? Math.PI * 0.6 : 0) + (i % 2 ? 0.25 : 0) : (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI : 0);
-        l.rotation.x = Math.sin(e.walk + ph) * sw;
-      });
-      ud.body.rotation.x = running ? Math.sin(e.walk) * 0.08 * e.amt : 0;
-      ud.body.position.y = running ? Math.abs(Math.sin(e.walk)) * 0.12 * e.amt : Math.abs(Math.sin(e.walk)) * 0.02 * e.amt;
-      let neck = Math.sin(e.walk * 2) * 0.06 * e.amt;
-      if (e.st === 2) neck = Math.sin(t * 14) * 0.35 - 0.1;                // biting lunge
-      else if (e.amt < 0.1) neck = Math.sin(t * 0.7 + e.id.length) * 0.15 + 0.15; // grazing / looking around
-      ud.neck.rotation.x = neck;
-      ud.neck.rotation.y = e.amt < 0.1 ? Math.sin(t * 0.4 + e.id.length) * 0.3 : 0;
-      if (ud.tail) { ud.tail.rotation.y = Math.sin(t * (running ? 9 : 3)) * 0.35; ud.tail.rotation.x = ud.tailRx + (running ? -0.3 : 0); }
+      animateAnimal(e.model.userData, e, speed, dt);
     }
   }
   animalTargets() {

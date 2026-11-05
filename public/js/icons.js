@@ -22,6 +22,13 @@ class IconRenderer {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x50463a, 1.5));
     const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(1.5, 2.5, 2.5); this.scene.add(key);
     const rim = new THREE.DirectionalLight(0xbfd4ff, 1.1); rim.position.set(-2, 1, -2); this.scene.add(rim);
+    // a soft studio environment so metal parts get reflections in the icons
+    import('three/addons/environments/RoomEnvironment.js').then(({ RoomEnvironment }) => {
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.scene.environmentIntensity = 0.8;
+      this.envReady = true;
+    }).catch(() => (this.envReady = true));
     this.camera = new THREE.PerspectiveCamera(24, 1, 0.01, 50);
     const tick = () => { this.process(); requestAnimationFrame(tick); };
     requestAnimationFrame(tick);
@@ -35,7 +42,7 @@ class IconRenderer {
     return null;
   }
   process() {
-    if (!this.queue.length) return;
+    if (!this.queue.length || !this.envReady) return;
     const done = [];
     const t0 = performance.now();
     while (this.queue.length && performance.now() - t0 < 6) {

@@ -83,6 +83,7 @@ export class Structures {
     else if (!worldBoxes(s).length && s.type !== 'sleeping_bag') this.physics.add('s:' + s.id, { t: 'cyl', x: s.x, y: s.y, z: s.z, r: 0.5, h: 0.4, ref: { kind: 's', id: s.id }, ghost: true });
     if (s.type === 'sleeping_bag') this.physics.add('s:' + s.id, { t: 'box', x: s.x, y: s.y + 0.08, z: s.z, hx: 0.4, hy: 0.08, hz: 1, yaw: s.yaw, ref: { kind: 's', id: s.id }, ghost: true });
     this.map.set(s.id, { s, obj });
+    if (s.k === 'piece' || s.type === 'bed' || s.type === 'rug') this.onChange?.(s.x, s.z);
   }
 
   remove(id, fx = false) {
