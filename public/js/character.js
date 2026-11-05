@@ -185,22 +185,51 @@ export function poseHumanoid(ud, st) {
     head.rotation.x = (st.pitch || 0) * 0.4;
     return;
   }
-  const w = st.walk || 0, a = st.amt || 0;
+  const w = st.walk || 0, a = st.amt || 0, run = st.run ? 1 : 0;
   const s = Math.sin(w), c = Math.cos(w);
-  legL.rotation.x = s * 0.75 * a; legR.rotation.x = -s * 0.75 * a;
-  kneeL.rotation.x = -Math.max(0, -c) * 1.1 * a - 0.05; kneeR.rotation.x = -Math.max(0, c) * 1.1 * a - 0.05;
-  hips.position.y = 0.92 - Math.abs(c) * 0.03 * a;
-  spine.rotation.y = s * 0.08 * a; spine.rotation.x = 0.04 * a;
-  armL.rotation.x = -s * 0.55 * a; elbowL.rotation.x = 0.25 + Math.max(0, -s) * 0.4 * a;
-  armR.rotation.x = s * 0.55 * a; elbowR.rotation.x = 0.25 + Math.max(0, s) * 0.4 * a;
+  const stride = 0.7 + run * 0.35;
+  const t = st.t || 0;
+  if (st.air) {
+    // jumping / falling: knees tucked, arms out for balance
+    legL.rotation.x = 0.7; legR.rotation.x = -0.15; kneeL.rotation.x = -1.2; kneeR.rotation.x = -0.5;
+    armL.rotation.x = 0.4; armR.rotation.x = 0.4; armL.rotation.z = -0.6; armR.rotation.z = 0.6; elbowL.rotation.x = elbowR.rotation.x = 0.5;
+    spine.rotation.x = 0.12;
+  } else {
+    legL.rotation.x = s * stride * a; legR.rotation.x = -s * stride * a;
+    kneeL.rotation.x = -Math.max(0, -c) * (1.1 + run * 0.6) * a - 0.05 - run * 0.2 * a;
+    kneeR.rotation.x = -Math.max(0, c) * (1.1 + run * 0.6) * a - 0.05 - run * 0.2 * a;
+    hips.position.y = 0.92 - Math.abs(c) * (0.03 + run * 0.04) * a;
+    spine.rotation.y = s * (0.08 + run * 0.06) * a; spine.rotation.x = (0.04 + run * 0.22) * a;
+    armL.rotation.x = -s * (0.55 + run * 0.4) * a; elbowL.rotation.x = 0.25 + run * 0.9 * a + Math.max(0, -s) * 0.4 * a;
+    armR.rotation.x = s * (0.55 + run * 0.4) * a; elbowR.rotation.x = 0.25 + run * 0.9 * a + Math.max(0, s) * 0.4 * a;
+    // idle breathing / weight shift
+    const idle = 1 - Math.min(1, a * 3);
+    spine.rotation.x += Math.sin(t * 1.7) * 0.02 * idle;
+    hips.rotation.z = Math.sin(t * 0.6) * 0.025 * idle;
+    armL.rotation.z -= Math.sin(t * 1.7) * 0.03 * idle; armR.rotation.z += Math.sin(t * 1.7) * 0.03 * idle;
+  }
   if (st.crouch) {
     hips.position.y = 0.62; legL.rotation.x += 1.0; legR.rotation.x += 1.0; kneeL.rotation.x -= 1.7; kneeR.rotation.x -= 1.7;
     spine.rotation.x = 0.35; head.rotation.x = -0.3;
   }
   if (st.held) {
-    armR.rotation.x = 1.15 + (st.pitch || 0) * 0.8 + (st.swing ? Math.sin(st.swing * Math.PI) * 1.1 : 0);
-    elbowR.rotation.x = 0.35;
-    if (st.gun) { armL.rotation.x = 1.25 + (st.pitch || 0) * 0.8; armL.rotation.z = 0.45; elbowL.rotation.x = 0.6; }
+    const pitch = st.pitch || 0;
+    if (st.gun) {
+      // two-handed aim
+      armR.rotation.set(1.35 + pitch * 0.9, 0, 0.1); elbowR.rotation.x = 0.35;
+      armL.rotation.set(1.45 + pitch * 0.9, 0.0, 0.55); elbowL.rotation.x = 0.75;
+      spine.rotation.y += 0.15;
+    } else {
+      let lift = 0, fwd = 0;
+      if (st.swing) {
+        const p = st.swing;
+        if (p < 0.3) lift = Math.sin((p / 0.3) * Math.PI / 2) * 1.2;            // wind up overhead
+        else if (p < 0.5) { const q = (p - 0.3) / 0.2; lift = 1.2 * (1 - q) - 1.0 * q; fwd = q; }   // strike down
+        else { const q = (p - 0.5) / 0.5; lift = -1.0 * (1 - q); fwd = 1 - q; }  // recover
+      }
+      armR.rotation.x = 1.0 + pitch * 0.7 + lift; elbowR.rotation.x = 0.35 + (lift > 0 ? lift * 0.5 : 0);
+      spine.rotation.y -= fwd * 0.35; spine.rotation.x += fwd * 0.15;
+    }
   }
   head.rotation.x += (st.pitch || 0) * 0.5;
 }

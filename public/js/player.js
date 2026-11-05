@@ -56,6 +56,7 @@ export class Player {
     const preVy = this.vel.y;
     const res = ph.moveBody(this.pos, this.vel, this.radius, this.height, dt);
     this.onGround = res.ground;
+    if (!wasGround && this.onGround && preVy < -2) g.held?.landed(-preVy);
     // ground snapping when walking down slopes
     if (wasGround && !this.onGround && this.vel.y <= 0 && !this.swimming) {
       const gy = ph.groundAt(this.pos.x, this.pos.z, this.pos.y, 0.3, this.radius * 0.5);

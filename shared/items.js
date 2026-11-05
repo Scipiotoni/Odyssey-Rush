@@ -56,14 +56,24 @@ export const ITEMS = {
   revolver: { name: 'Revolver', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 38, rate: 3, mag: 8, ammo: 'pistol_ammo', spread: 0.012, range: 120, reload: 2.2, recoil: 0.03, auto: false } },
   shotgun: { name: 'Pump Shotgun', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 14, pellets: 9, rate: 1.1, mag: 6, ammo: 'shells', spread: 0.06, range: 45, reload: 3.2, recoil: 0.07, auto: false } },
   smg: { name: 'Custom SMG', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 22, rate: 10, mag: 24, ammo: 'pistol_ammo', spread: 0.025, range: 110, reload: 2.8, recoil: 0.012, auto: true } },
+  sword: { name: 'Salvaged Sword', cat: 'weapon', stack: 1, icon: '🗡️', tool: { tree: 6, ore: 2, dmg: 55, range: 2.8, rate: 1.2 } },
+  battle_axe: { name: 'Battle Axe', cat: 'weapon', stack: 1, icon: '🪓', tool: { tree: 26, ore: 4, dmg: 65, range: 2.8, rate: 0.95 }, tint: 0x8d969e },
+  pistol: { name: 'Semi-Auto Pistol', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 30, rate: 6, mag: 12, ammo: 'pistol_ammo', spread: 0.01, range: 110, reload: 1.8, recoil: 0.022, auto: false } },
+  double_barrel: { name: 'Double Barrel Shotgun', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 16, pellets: 10, rate: 3, mag: 2, ammo: 'shells', spread: 0.07, range: 40, reload: 2.4, recoil: 0.09, auto: false } },
+  crossbow: { name: 'Crossbow', cat: 'weapon', stack: 1, icon: '🏹', gun: { dmg: 70, rate: 0.6, mag: 1, ammo: 'arrow', spread: 0.002, range: 120, reload: 2.2, recoil: 0.015, auto: false, zoom: 0.8 } },
+  bolt_rifle: { name: 'Bolt Action Rifle', cat: 'weapon', stack: 1, icon: '🔭', gun: { dmg: 85, rate: 0.7, mag: 4, ammo: 'rifle_ammo', spread: 0.003, range: 400, reload: 3.6, recoil: 0.06, auto: false, zoom: 0.3, scope: true } },
+  lmg: { name: 'Light Machine Gun', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 30, rate: 9, mag: 60, ammo: 'rifle_ammo', spread: 0.022, range: 220, reload: 5.5, recoil: 0.014, auto: true } },
+  rocket_launcher: { name: 'Rocket Launcher', cat: 'weapon', stack: 1, icon: '🚀', gun: { dmg: 0, rate: 0.5, mag: 1, ammo: 'rocket', spread: 0.004, range: 200, reload: 4, recoil: 0.08, auto: false, blast: { dmg: 280, radius: 3.5, playerDmg: 110 } } },
   rifle: { name: 'Assault Rifle', cat: 'weapon', stack: 1, icon: '🔫', gun: { dmg: 34, rate: 8, mag: 30, ammo: 'rifle_ammo', spread: 0.012, range: 250, reload: 3.0, recoil: 0.018, auto: true } },
   // --- ammo ---
   arrow: { name: 'Wooden Arrow', cat: 'ammo', stack: 64, icon: '➹' },
   pistol_ammo: { name: 'Pistol Bullet', cat: 'ammo', stack: 128, icon: '•' },
   rifle_ammo: { name: '5.56 Rifle Ammo', cat: 'ammo', stack: 128, icon: '⁍' },
+  rocket: { name: 'Rocket', cat: 'ammo', stack: 3, icon: '🚀' },
   shells: { name: '12 Gauge Buckshot', cat: 'ammo', stack: 64, icon: '▮' },
   // --- explosives ---
   satchel: { name: 'Satchel Charge', cat: 'explosive', stack: 10, icon: '🎒', explosive: { fuse: 6, dmg: 130, radius: 3.2, playerDmg: 70 } },
+  grenade: { name: 'Frag Grenade', cat: 'explosive', stack: 5, icon: '💣', explosive: { fuse: 3, dmg: 40, radius: 4, playerDmg: 95, thrown: true } },
   c4: { name: 'Timed Explosive (C4)', cat: 'explosive', stack: 10, icon: '🧨', explosive: { fuse: 10, dmg: 520, radius: 4, playerDmg: 150 } },
   // --- armor ---
   cloth_hood: { name: 'Burlap Hood', cat: 'armor', stack: 1, icon: '🧢', armor: { slot: 'head', prot: 0.1, cold: 0.15, color: 0xb9a57a } },
@@ -156,6 +166,17 @@ export const RECIPES = [
   { out: 'rifle_ammo', n: 4, time: 2, station: 'wb3', cost: { metal_frags: 10, gunpowder: 5 } },
   { out: 'c4', n: 1, time: 15, station: 'wb3', cost: { explosives: 20, cloth: 5, tech_trash: 2 } },
   { out: 'armored_door', n: 1, time: 15, station: 'wb3', cost: { hqm: 20, gears: 5 } },
+  // --- added weapons ---
+  { out: 'sword', n: 1, time: 8, station: 'wb1', cost: { metal_frags: 200, wood: 50, leather: 5 } },
+  { out: 'pistol', n: 1, time: 10, station: 'wb1', cost: { metal_frags: 150, spring: 1, pipe: 1 } },
+  { out: 'double_barrel', n: 1, time: 10, station: 'wb1', cost: { metal_frags: 175, pipe: 2, wood: 150 } },
+  { out: 'crossbow', n: 1, time: 10, station: 'wb1', cost: { wood: 250, metal_frags: 75, rope: 2 } },
+  { out: 'battle_axe', n: 1, time: 10, station: 'wb2', cost: { metal_frags: 250, hqm: 5, wood: 100 } },
+  { out: 'grenade', n: 1, time: 5, station: 'wb2', cost: { gunpowder: 40, metal_frags: 30 } },
+  { out: 'bolt_rifle', n: 1, time: 18, station: 'wb3', cost: { hqm: 40, spring: 3, pipe: 2, metal_frags: 200 } },
+  { out: 'lmg', n: 1, time: 20, station: 'wb3', cost: { hqm: 70, spring: 5, gears: 4, metal_frags: 300 } },
+  { out: 'rocket_launcher', n: 1, time: 20, station: 'wb3', cost: { hqm: 50, pipe: 4, metal_frags: 200 } },
+  { out: 'rocket', n: 1, time: 8, station: 'wb3', cost: { explosives: 8, pipe: 1, gunpowder: 50 } },
 ];
 RECIPES.forEach((r, i) => (r.id = i));
 
@@ -195,9 +216,9 @@ export const DIG = { step: 0.45, min: -6, max: 4, raiseCost: { stone: 5 }, reach
 
 export const LOOT = {
   barrel: [['scrap', 2, 6, 1], ['metal_frags', 10, 30, 0.4], ['fuel', 2, 6, 0.3], ['rope', 1, 1, 0.15], ['pipe', 1, 1, 0.1], ['gears', 1, 1, 0.08], ['spring', 1, 1, 0.06], ['pistol_ammo', 4, 10, 0.1], ['bandage', 1, 2, 0.15], ['cloth', 5, 15, 0.2]],
-  1: [['scrap', 5, 12, 1], ['metal_frags', 20, 60, 0.6], ['fuel', 5, 15, 0.5], ['rope', 1, 2, 0.3], ['pipe', 1, 2, 0.25], ['gears', 1, 1, 0.2], ['spring', 1, 1, 0.15], ['wheel', 1, 1, 0.12], ['engine_parts', 1, 1, 0.08], ['bandage', 1, 3, 0.3], ['pistol_ammo', 8, 16, 0.2], ['cloth_shirt', 1, 1, 0.05], ['metal_hatchet', 1, 1, 0.05], ['revolver', 1, 1, 0.03], ['water_bottle', 1, 1, 0.2]],
-  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05]],
-  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2]],
+  1: [['scrap', 5, 12, 1], ['metal_frags', 20, 60, 0.6], ['fuel', 5, 15, 0.5], ['rope', 1, 2, 0.3], ['pipe', 1, 2, 0.25], ['gears', 1, 1, 0.2], ['spring', 1, 1, 0.15], ['wheel', 1, 1, 0.12], ['engine_parts', 1, 1, 0.08], ['bandage', 1, 3, 0.3], ['pistol_ammo', 8, 16, 0.2], ['cloth_shirt', 1, 1, 0.05], ['metal_hatchet', 1, 1, 0.05], ['revolver', 1, 1, 0.03], ['pistol', 1, 1, 0.02], ['crossbow', 1, 1, 0.02], ['water_bottle', 1, 1, 0.2]],
+  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1]],
+  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08]],
 };
 
 export function rollLoot(table, rnd = Math.random) {
@@ -219,6 +240,6 @@ export function newStack(id, n = 1) {
 export const ANIMALS = {
   deer: { name: 'Deer', hp: 80, speed: 9, aggro: false, dmg: 0, drops: { raw_meat: 4, leather: 18, animal_fat: 4, bone: 8 }, color: 0x9b6a3c, size: 1 },
   boar: { name: 'Boar', hp: 120, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
-  wolf: { name: 'Wolf', hp: 110, speed: 8.5, aggro: true, dmg: 14, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
+  wolf: { name: 'Wolf', hp: 55, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
   bear: { name: 'Bear', hp: 350, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
 };

@@ -53,6 +53,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | Tab or Q | Inventory & crafting (drag items, Shift-click quick move, right-click use/equip, drag out to drop) |
 | R | Reload · rotate building piece · flip a vehicle back on its wheels |
 | F | Drink (standing in a river or lake — the ocean is salty) |
+| L | Clan menu (create, invite, accept, kick) · clan chat: type `/c message` |
 | M | Map with fog-of-war (reveals as you explore, remembers discovered places) |
 | LMB / RMB with Shovel | Dig a hole (gives stone, sometimes ore) / pile up dirt (costs stone) |
 | X | Demolish your own piece (hammer, within 10 min of placing) |
@@ -77,11 +78,18 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    anyone else building within 30 m. Pieces need support — blow out a wall and the floor above can collapse.
 4. **Hide.** Bases are only streamed to players within ~300 m, and the map shows no other players. The island is
    huge — a remote valley is a safer home than the beach next to a monument. You can't build inside monuments.
-5. **Raid (and be raided).** Craft Satchel Charges (Lv1) or Timed Explosives / C4 (Lv3) and stick them on doors
+5. **Fight.** Melee: rock, spear, machete, salvaged sword, battle axe. Ranged: hunting bow, crossbow, revolver,
+   semi-auto pistol, pump & double-barrel shotguns, custom SMG, assault rifle, scoped bolt-action rifle (RMB to
+   scope), light machine gun and a rocket launcher. Throwable frag grenades. Wolves are dangerous in packs but
+   go down quickly.
+6. **Team up.** Press L to found a clan (name + 2-5 letter tag) and invite players. Clanmates share building rights
+   at each other's tool cupboards, open each other's doors, can't hurt each other, see each other's green
+   nametags from 400 m and on the map, and get a private clan chat (`/c hello`).
+7. **Raid (and be raided).** Craft Satchel Charges (Lv1), Timed Explosives / C4 (Lv3) or rockets (Lv3) to blow through doors
    and walls. Logged-off players remain as sleeping bodies that can be killed and looted.
-6. **Develop.** Gathering, crafting and fighting earn XP: every level adds max health and gather rate.
+8. **Develop.** Gathering, crafting and fighting earn XP: every level adds max health and gather rate.
    Armor (burlap → hide → metal) reduces damage and keeps you warm in the tundra and at night.
-7. **Explore & drive.** ~117 monuments (ruins, gas stations, farms, radio towers, military outposts, junkyards)
+9. **Explore & drive.** ~117 monuments (ruins, gas stations, farms, radio towers, military outposts, junkyards)
    hold loot crates that respawn, and **broken vehicles**: an ATV, a Rally Hatchback, an Offroad SUV or a Double-Cab Pickup. Look at one
    and press E to install the parts it needs (wheels, engine parts, scrap, metal), add Low Grade Fuel, and drive.
 

@@ -155,7 +155,8 @@ class Game {
     n.on('queue', (m) => { const done = this.queue.length > m.q.length; this.queue = m.q; this.ui.renderQueue(m.q); if (done) audio.craftDone(); });
     n.on('gain', (m) => { this.ui.gain(m.id, m.n); audio.pickup(); });
     n.on('toast', (m) => this.ui.toast(m.m));
-    n.on('chat', (m) => this.ui.chat(m.from, m.m));
+    n.on('chat', (m) => this.ui.chat(m.from, m.m, m.clan));
+    n.on('claninfo', (m) => { this.clanInfo = m; if (this.ui.open === 'clan') this.ui.renderClan(); });
     n.on('time', (m) => (this.day = m.day));
     n.on('tp', (m) => { this.tpSeq = m.seq || 0; this.player.pos.set(m.p[0], m.p[1], m.p[2]); this.player.vel.set(0, 0, 0); });
     n.on('rg', (m) => {
@@ -179,7 +180,7 @@ class Game {
     n.on('supd', (m) => this.structures.upsert(m.s));
     n.on('sdel', (m) => { const e = this.structures.map.get(m.id); this.structures.remove(m.id, m.fx); if (e) this.regionContents.get(regionOf(e.s.x, e.s.z))?.s.delete(m.id); if (m.fx) audio.hitStruct(); this.refreshBags(); });
     n.on('ladd', (m) => { this.entities.addLoot(m.l, this.physics); this.regionContents.get(regionOf(m.l.x, m.l.z))?.l.add(m.l.id); });
-    n.on('lupd', (m) => { const e = this.entities.loot.get(m.l.id); if (e) e.data = m.l; });
+    n.on('lupd', (m) => { const e = this.entities.loot.get(m.l.id); if (e && e.data.item !== m.l.item) this.entities.addLoot(m.l, this.physics); else if (e) e.data = m.l; });
     n.on('ldel', (m) => this.entities.removeLoot(m.id, this.physics));
     n.on('node', (m) => {
       this.terrain.setDepleted(m.id, !!m.dep);
@@ -256,14 +257,16 @@ class Game {
       const o = p ? new THREE.Vector3(p.pos.x, p.pos.y + 1.45, p.pos.z) : new THREE.Vector3(...m.o);
       const dist = cam.distanceTo(o);
       audio.shot(m.w, dist);
+      const rocket = !!ITEMS[m.w]?.gun?.blast;
       for (const e of m.e || []) {
         const end = new THREE.Vector3(e[0], e[1], e[2]);
+        if (rocket) { this.held.launchRocket(o, end); continue; }
         this.effects.tracer(o, end);
         this.effects.burst(end, { count: 3, color: 0xccbb99, speed: 2, size: 0.05, life: 0.4 });
       }
       if (m.w !== 'bow') this.effects.flash(o, 3);
       if (p) p.swingT = 0.1;
-    } else if (m.k === 'swing') { const p = this.entities.players.get(m.pid); if (p) p.swingT = 0.35; }
+    } else if (m.k === 'swing') { const p = this.entities.players.get(m.pid); if (p) p.swingT = 0.45; }
     else if (m.k === 'expl') {
       const pos = new THREE.Vector3(...m.p);
       this.effects.explosion(pos, m.r);
@@ -456,9 +459,14 @@ class Game {
       } else if (hit.kind === 'l') {
         const l = this.entities.loot.get(hit.id)?.data;
         if (l) {
-          const name = l.kind === 'crate' ? ['', 'Supply Crate', 'Military Crate', 'Elite Crate'][l.tier] : l.kind === 'corpse' ? `${ANIMALS[l.an]?.name || 'Animal'} corpse` : 'Backpack';
-          text = `<kbd>E</kbd> Loot ${name}${l.empty ? ' (empty)' : ''}`;
-          if (E) this.net.send({ t: 'open', id: l.id });
+          if (l.item) {
+            text = `<kbd>E</kbd> Pick up ${ITEMS[l.item].name}`;
+            if (E) this.net.send({ t: 'take', id: l.id });
+          } else {
+            const name = l.kind === 'crate' ? ['', 'Supply Crate', 'Military Crate', 'Elite Crate'][l.tier] : l.kind === 'corpse' ? `${ANIMALS[l.an]?.name || 'Animal'} corpse` : 'Backpack';
+            text = `<kbd>E</kbd> Loot ${name}${l.empty ? ' (empty)' : ''}`;
+            if (E) this.net.send({ t: 'open', id: l.id });
+          }
         }
       } else if (hit.kind === 's') {
         const s = this.structures.map.get(hit.id)?.s;
@@ -506,6 +514,7 @@ class Game {
     if (ui.open === 'death' || ui.open === 'chat') return;
     if (code === 'Tab' || code === 'KeyQ' || code === 'KeyI') { if (ui.open === 'inv') ui.close(); else if (!ui.open) ui.show('inv'); }
     else if (code === 'KeyM') { if (ui.open === 'map') ui.close(); else if (!ui.open) ui.show('map'); }
+    else if (code === 'KeyL') { if (ui.open === 'clan') ui.close(); else if (!ui.open) ui.show('clan'); }
     else if (code === 'Escape') { if (ui.open && ui.open !== 'pause') ui.close(); }
     else if (code === 'Enter' && !ui.open) { this.input.unlock(); ui.openChat(); }
     else if (code === 'KeyB' && ui.open === 'build') ui.close();
@@ -570,7 +579,7 @@ class Game {
     if (now - this.lastSend > 66) {
       this.lastSend = now;
       const p = this.player;
-      this.net.send({ t: 'st', p: this.vehicle ? undefined : [+p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2)], yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3), cr: p.crouch ? 1 : 0, sel: this.sel, seq: this.tpSeq });
+      this.net.send({ t: 'st', p: this.vehicle ? undefined : [+p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2)], yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3), cr: p.crouch ? 1 : 0, air: !p.onGround && !p.swimming ? 1 : 0, spr: p.sprinting ? 1 : 0, sel: this.sel, seq: this.tpSeq });
     }
     // world
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;

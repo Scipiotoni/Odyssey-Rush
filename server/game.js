@@ -42,6 +42,7 @@ export class Game {
     this.explosives = new Map();
     this.nodeState = new Map(); // nodeId -> {hp, until}
     this.regions = new Map();   // key -> {s:Set, l:Set, d:Set}
+    this.clans = new Map();     // id -> {id, name, tag, leader, members:[pid], invites:[pid]}
     this.spawned = new Set();   // POI ids / wreck cells that have spawned their content
     this.nextId = 1;
     this.nextPid = 1;
@@ -73,13 +74,14 @@ export class Game {
       for (const v of d.vehicles || []) { v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); this.vehicles.set(v.id, v); }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
       for (const k of d.spawned || []) this.spawned.add(k);
+      for (const c of d.clans || []) this.clans.set(c.id, c);
       for (const [ix, iz, v] of d.terrain || []) this.world.setMod(ix, iz, v);
       console.log(`[world] loaded: ${this.players.size} players, ${this.structs.size} structures, ${this.vehicles.size} vehicles`);
     } catch (e) { console.error('[world] failed to load save:', e.message); }
   }
   // Serializable snapshot of the whole persistent world.
   serialize() {
-    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, ...rest } = p; return rest; };
+    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, ...rest } = p; return rest; };
     const d = {
       seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day,
       players: [...this.players.values()].map(strip),
@@ -89,6 +91,7 @@ export class Game {
       vehicles: [...this.vehicles.values()].map(({ seats, ...v }) => v),
       nodes: [...this.nodeState.entries()],
       spawned: [...this.spawned],
+      clans: [...this.clans.values()],
       terrain: this.world.modList(),
     };
     return d;
@@ -143,7 +146,8 @@ export class Game {
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
-    this.toAll({ t: 'chat', from: '', m: `${p.name} woke up` });
+    this.clanInfo(p);
+    this.toAll({ t: 'chat', from: '', m: `${this.displayName(p)} woke up` });
   }
 
   disconnect(p) {
@@ -170,6 +174,7 @@ export class Game {
       case 'use': return this.onUse(p, m);
       case 'open': return this.onOpen(p, m);
       case 'close': p.openCont = null; return;
+      case 'take': return this.onTake(p, m);
       case 'move': return this.onMove(p, m);
       case 'drop': return this.onDrop(p, m);
       case 'eat': return this.onEat(p, m);
@@ -186,6 +191,7 @@ export class Game {
       case 'v_hit': return this.onVehicleHit(p, m);
       case 'demolish': return this.onDemolish(p, m);
       case 'dig': return this.onDig(p, m);
+      case 'clan': return this.onClan(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
       case 'fall': if (p.alive && !p.vehicle) this.damagePlayer(p, Math.min(150, Math.max(0, num(m.d))), 'falling'); return;
     }
@@ -234,7 +240,7 @@ export class Game {
       } else { p.x = x; p.y = y; p.z = z; }
     }
     p.lastSt = t;
-    p.yaw = num(m.yaw); p.pitch = num(m.pitch); p.cr = m.cr ? 1 : 0;
+    p.yaw = num(m.yaw); p.pitch = num(m.pitch); p.cr = m.cr ? 1 : 0; p.air = m.air ? 1 : 0; p.spr = m.spr ? 1 : 0;
     p.sel = Math.max(0, Math.min(5, num(m.sel) | 0));
     this.updateRegions(p);
   }
@@ -320,7 +326,11 @@ export class Game {
     if (s.type === 'tool_cupboard') o.auth = s.auth;
     return o;
   }
-  sLoot(l) { if (!l) return null; return { id: l.id, kind: l.kind, tier: l.tier, x: r2(l.x), y: r2(l.y), z: r2(l.z), yaw: l.yaw || 0, an: l.an, empty: Inv.isEmpty(l.slots) }; }
+  sLoot(l) {
+    if (!l) return null;
+    const filled = l.slots.filter(Boolean);
+    return { id: l.id, kind: l.kind, tier: l.tier, x: r2(l.x), y: r2(l.y), z: r2(l.z), yaw: l.yaw || 0, an: l.an, empty: !filled.length, item: l.kind === 'bag' && filled.length === 1 ? filled[0].id : undefined };
+  }
 
   addStruct(s) {
     this.structs.set(s.id, s);
@@ -370,14 +380,14 @@ export class Game {
   }
   privBlocked(p, x, z) {
     for (const s of this.structsNear(x, z)) {
-      if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < PRIV_RADIUS * PRIV_RADIUS && !s.auth.includes(p.pid)) return true;
+      if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < PRIV_RADIUS * PRIV_RADIUS && !this.tcAuthed(s, p)) return true;
     }
     return false;
   }
   authorizedAt(p, x, z) {
     let anyTc = false;
     for (const s of this.structsNear(x, z)) {
-      if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < PRIV_RADIUS * PRIV_RADIUS) { anyTc = true; if (s.auth.includes(p.pid)) return true; }
+      if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < PRIV_RADIUS * PRIV_RADIUS) { anyTc = true; if (this.tcAuthed(s, p)) return true; }
     }
     return anyTc ? false : null; // null: no TC around
   }
@@ -424,6 +434,15 @@ export class Game {
     const o = Array.isArray(m.o) ? m.o.map((v) => num(v)) : [p.x, p.y + 1.6, p.z];
     const d = Array.isArray(m.d) ? m.d.map((v) => num(v)) : [0, 0, 1];
     this.toNear(p.x, p.z, 350, { t: 'fx', k: 'shot', pid: p.pid, w: h.stack.id, o, d, e: Array.isArray(m.e) ? m.e.slice(0, 12) : [] }, p);
+    if (g.blast) {
+      // rocket: explode at the first impact point (validated against range)
+      const e0 = Array.isArray(m.e) && Array.isArray(m.e[0]) ? m.e[0].map((v) => num(v)) : null;
+      if (e0 && Math.hypot(e0[0] - o[0], e0[1] - o[1], e0[2] - o[2]) <= g.range + 2 && Math.hypot(o[0] - p.x, o[2] - p.z) < 4) {
+        const dly = Math.min(2, Math.hypot(e0[0] - o[0], e0[1] - o[1], e0[2] - o[2]) / 60);
+        setTimeout(() => this.explode(e0[0], e0[1], e0[2], g.blast, p, null), dly * 1000);
+      }
+      return;
+    }
     const hits = Array.isArray(m.hits) ? m.hits.slice(0, g.pellets || 1) : [];
     for (const hit of hits) {
       const dist = Math.hypot(num(hit.pt?.[0]) - o[0], num(hit.pt?.[1]) - o[1], num(hit.pt?.[2]) - o[2]);
@@ -453,6 +472,7 @@ export class Game {
 
   damagePlayer(o, amt, src, hs = false) {
     if (!o.alive) return;
+    if (src && src.pid && src !== o && this.sameClan(src, o)) return; // no friendly fire
     if (o.vehicle) amt *= 0.6;
     const dmg = amt * (1 - this.armorProt(o, hs));
     o.hp -= dmg;
@@ -865,7 +885,7 @@ export class Game {
     if (!s || !p.alive || dist3(s, p) > 4.5) return;
     if (s.kind === 'door') {
       const auth = this.authorizedAt(p, s.x, s.z);
-      if (auth === false || (auth === null && s.owner !== p.pid)) return this.toast(p, '🔒 Locked');
+      if (auth === false || (auth === null && s.owner !== p.pid && !this.sameClan(p, this.byPid.get(s.owner)))) return this.toast(p, '🔒 Locked');
       s.open = !s.open;
       this.updStruct(s);
       this.toNear(s.x, s.z, 40, { t: 'fx', k: 'door', p: [s.x, s.y, s.z] });
@@ -896,6 +916,21 @@ export class Game {
     if (!c || !p.alive || dist3(c.obj, p) > 4.5) return;
     p.openCont = id;
     this.send(p, { t: 'cont', id, title: c.title, slots: c.slots });
+  }
+  // pick up everything from a dropped bag / item
+  onTake(p, m) {
+    const l = this.loot.get(String(m.id));
+    if (!l || l.kind !== 'bag' || !p.alive || dist3(l, p) > 4.5) return;
+    let got = false;
+    l.slots.forEach((st, i) => {
+      if (!st) return;
+      const left = Inv.addStack(p.inv, st);
+      if (left < st.n) { got = true; this.send(p, { t: 'gain', id: st.id, n: st.n - left }); }
+      if (left <= 0) l.slots[i] = null; else st.n = left;
+    });
+    if (!got) return this.toast(p, 'Inventory full');
+    this.sendInv(p);
+    this.afterContainerChange(l.id);
   }
   pushContainer(id) {
     const c = this.getContainer(id);
@@ -994,13 +1029,15 @@ export class Game {
   }
 
   onThrow(p, m) {
-    const sel = num(m.sel) | 0;
+    let sel = num(m.sel) | 0;
+    if (m.id && ITEMS[m.id]?.explosive && p.inv[sel]?.id !== m.id) sel = p.inv.findIndex((s) => s && s.id === m.id);
+    if (sel < 0) return;
     const st = p.inv[sel];
     if (!st || !p.alive) return;
     const ex = ITEMS[st.id].explosive;
     if (!ex) return;
     const pt = Array.isArray(m.pt) ? m.pt.map((v) => num(v)) : null;
-    if (!pt || Math.hypot(pt[0] - p.x, pt[1] - p.y - 1.6, pt[2] - p.z) > 6) return;
+    if (!pt || Math.hypot(pt[0] - p.x, pt[1] - p.y - 1.6, pt[2] - p.z) > (ex.thrown ? 32 : 6)) return;
     st.n -= 1; if (st.n <= 0) p.inv[sel] = null;
     this.sendInv(p);
     const e = { id: this.id('E'), type: st.id, x: pt[0], y: pt[1], z: pt[2], at: now() + ex.fuse, owner: p.pid };
@@ -1012,36 +1049,107 @@ export class Game {
     for (const e of [...this.explosives.values()]) {
       if (e.at > t) continue;
       this.explosives.delete(e.id);
-      const ex = ITEMS[e.type].explosive;
-      const src = this.byPid.get(e.owner);
-      this.toNear(e.x, e.z, 600, { t: 'fx', k: 'expl', id: e.id, p: [e.x, e.y, e.z], r: ex.radius });
-      for (const s of this.structsNear(e.x, e.z)) {
-        let best = Infinity;
-        for (const b of worldBoxes(s).length ? worldBoxes(s) : [{ x: s.x, y: s.y + 0.5, z: s.z, hx: 0.5, hy: 0.5, hz: 0.5, yaw: 0 }]) {
-          const [lx, lz] = invRotY(e.x - b.x, e.z - b.z, b.yaw);
-          const dx = Math.max(0, Math.abs(lx) - b.hx), dy = Math.max(0, Math.abs(e.y - b.y) - b.hy), dz = Math.max(0, Math.abs(lz) - b.hz);
-          best = Math.min(best, Math.hypot(dx, dy, dz));
-        }
-        if (best <= ex.radius) this.damageStruct(s, ex.dmg * (1 - 0.5 * best / ex.radius), 'explosive', src);
-      }
-      for (const p of this.players.values()) {
-        if (!p.alive) continue;
-        const d = Math.hypot(p.x - e.x, p.y + 1 - e.y, p.z - e.z);
-        if (d < ex.radius * 1.6) this.damagePlayer(p, ex.playerDmg * (1 - d / (ex.radius * 1.6)), src || 'an explosion');
-      }
-      for (const a of [...this.animals.values()]) { const d = dist3(a, e); if (d < ex.radius * 1.6) this.damageAnimal(a, ex.playerDmg, src); }
-      // craters (only when the blast is near the ground and away from buildings)
-      const ix = Math.round(e.x / GRID), iz = Math.round(e.z / GRID);
-      if (e.y - this.world.ground(e.x, e.z) < 1.2 && !this.digBlocked(ix, iz)) this.editTerrain(ix, iz, -ex.radius * 0.18);
-      for (const v of this.vehicles.values()) { const d = dist3(v, e); if (d < ex.radius * 1.6) this.damageVehicle(v, ex.dmg * 0.6 * (1 - d / (ex.radius * 1.6))); }
+      this.explode(e.x, e.y, e.z, ITEMS[e.type].explosive, this.byPid.get(e.owner), e.id);
     }
   }
+  // Area damage to structures, players, animals and vehicles + crater.
+  explode(x, y, z, ex, src, id) {
+    const e = { x, y, z };
+    this.toNear(x, z, 600, { t: 'fx', k: 'expl', id, p: [x, y, z], r: ex.radius });
+    for (const s of this.structsNear(x, z)) {
+      let best = Infinity;
+      for (const b of worldBoxes(s).length ? worldBoxes(s) : [{ x: s.x, y: s.y + 0.5, z: s.z, hx: 0.5, hy: 0.5, hz: 0.5, yaw: 0 }]) {
+        const [lx, lz] = invRotY(x - b.x, z - b.z, b.yaw);
+        const dx = Math.max(0, Math.abs(lx) - b.hx), dy = Math.max(0, Math.abs(y - b.y) - b.hy), dz = Math.max(0, Math.abs(lz) - b.hz);
+        best = Math.min(best, Math.hypot(dx, dy, dz));
+      }
+      if (best <= ex.radius) this.damageStruct(s, ex.dmg * (1 - 0.5 * best / ex.radius), 'explosive', src);
+    }
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      if (src && src !== p && this.sameClan(src, p)) continue;
+      const d = Math.hypot(p.x - x, p.y + 1 - y, p.z - z);
+      if (d < ex.radius * 1.6) this.damagePlayer(p, ex.playerDmg * (1 - d / (ex.radius * 1.6)), src || 'an explosion');
+    }
+    for (const a of [...this.animals.values()]) { const d = dist3(a, e); if (d < ex.radius * 1.6) this.damageAnimal(a, ex.playerDmg, src); }
+    const ix = Math.round(x / GRID), iz = Math.round(z / GRID);
+    if (y - this.world.ground(x, z) < 1.2 && !this.digBlocked(ix, iz)) this.editTerrain(ix, iz, -ex.radius * 0.18);
+    for (const v of this.vehicles.values()) { const d = dist3(v, e); if (d < ex.radius * 1.6) this.damageVehicle(v, ex.dmg * 0.6 * (1 - d / (ex.radius * 1.6))); }
+  }
+
 
   onChat(p, m) {
     const msg = String(m.m || '').replace(/[<>]/g, '').slice(0, 200).trim();
     if (!msg) return;
-    if (msg.startsWith('/') && process.env.DEV) return this.devCommand(p, msg.slice(1).split(/\s+/));
-    this.toAll({ t: 'chat', from: p.name, m: msg });
+    if (msg.startsWith('/') && !msg.startsWith('/c ') && process.env.DEV) return this.devCommand(p, msg.slice(1).split(/\s+/));
+    if (msg.startsWith('/c ')) {
+      const c = this.clans.get(p.clan);
+      if (!c) return this.toast(p, 'You are not in a clan');
+      for (const pid of c.members) this.send(this.byPid.get(pid), { t: 'chat', from: `[${c.tag}] ${p.name}`, m: msg.slice(3), clan: 1 });
+      return;
+    }
+    this.toAll({ t: 'chat', from: this.displayName(p), m: msg });
+  }
+
+  // ------------------------------------------------------------ clans
+  sameClan(a, b) { return !!(a && b && a.clan && a.clan === b.clan && this.clans.has(a.clan)); }
+  tcAuthed(tc, p) { return tc.auth.includes(p.pid) || (!!p.clan && tc.auth.some((pid) => this.sameClan(p, this.byPid.get(pid)))); }
+  displayName(p) { const c = this.clans.get(p.clan); return c ? `[${c.tag}] ${p.name}` : p.name; }
+  clanInfo(p) {
+    const c = this.clans.get(p.clan);
+    const invites = [...this.clans.values()].filter((k) => k.invites.includes(p.pid)).map((k) => ({ id: k.id, name: k.name, tag: k.tag, members: k.members.length }));
+    const online = [...this.players.values()].filter((o) => o.online && o !== p).map((o) => ({ pid: o.pid, name: o.name, clan: this.clans.get(o.clan)?.tag || '' }));
+    this.send(p, { t: 'claninfo', invites, online, clan: c ? { id: c.id, name: c.name, tag: c.tag, leader: c.leader, members: c.members.map((pid) => { const o = this.byPid.get(pid); return { pid, name: o?.name || '?', online: !!o?.online, alive: !!o?.alive }; }) } : null });
+  }
+  clanBroadcast(c) { for (const pid of c.members) { const o = this.byPid.get(pid); if (o?.online) this.clanInfo(o); } }
+  onClan(p, m) {
+    const a = String(m.a || '');
+    let c = this.clans.get(p.clan);
+    if (a === 'info') return this.clanInfo(p);
+    if (a === 'create') {
+      if (c) return this.toast(p, 'Leave your current clan first');
+      const name = String(m.name || '').replace(/[<>&"]/g, '').trim().slice(0, 20);
+      const tag = String(m.tag || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 5);
+      if (name.length < 3 || tag.length < 2) return this.toast(p, 'Clan name needs 3+ characters and the tag 2-5 letters/numbers');
+      if ([...this.clans.values()].some((k) => k.tag === tag || k.name.toLowerCase() === name.toLowerCase())) return this.toast(p, 'That clan name or tag is taken');
+      c = { id: this.id('K'), name, tag, leader: p.pid, members: [p.pid], invites: [] };
+      this.clans.set(c.id, c); p.clan = c.id;
+      this.toAll({ t: 'chat', from: '', m: `⚑ ${p.name} founded the clan [${tag}] ${name}` });
+      return this.clanBroadcast(c);
+    }
+    if (a === 'accept' || a === 'decline') {
+      const k = this.clans.get(String(m.id));
+      if (!k || !k.invites.includes(p.pid)) return this.clanInfo(p);
+      k.invites = k.invites.filter((x) => x !== p.pid);
+      if (a === 'decline') return this.clanInfo(p);
+      if (c) return this.toast(p, 'Leave your current clan first');
+      if (k.members.length >= 12) return this.toast(p, 'That clan is full (12 members)');
+      k.members.push(p.pid); p.clan = k.id;
+      for (const pid of k.members) this.send(this.byPid.get(pid), { t: 'chat', from: '', m: `⚑ ${p.name} joined [${k.tag}]`, clan: 1 });
+      return this.clanBroadcast(k);
+    }
+    if (!c) return this.toast(p, 'You are not in a clan');
+    if (a === 'invite') {
+      const target = [...this.players.values()].find((o) => o.pid === num(m.pid) || (m.name && o.name.toLowerCase() === String(m.name).toLowerCase()));
+      if (!target || target === p) return this.toast(p, 'Player not found (they must have joined the server before)');
+      if (target.clan === c.id) return this.toast(p, 'Already in your clan');
+      if (!c.invites.includes(target.pid)) c.invites.push(target.pid);
+      this.toast(p, `Invited ${target.name}`);
+      if (target.online) { this.toast(target, `⚑ ${p.name} invited you to [${c.tag}] ${c.name} — press L to answer`); this.clanInfo(target); }
+      return this.clanInfo(p);
+    }
+    if (a === 'leave' || (a === 'kick' && c.leader === p.pid)) {
+      const pid = a === 'leave' ? p.pid : num(m.pid);
+      if (!c.members.includes(pid)) return;
+      c.members = c.members.filter((x) => x !== pid);
+      const o = this.byPid.get(pid);
+      if (o) { o.clan = null; this.clanInfo(o); if (a === 'kick') this.toast(o, `You were removed from [${c.tag}]`); }
+      if (!c.members.length) { this.clans.delete(c.id); return; }
+      if (c.leader === pid) c.leader = c.members[0];
+      for (const q of c.members) this.send(this.byPid.get(q), { t: 'chat', from: '', m: `⚑ ${o?.name || 'A member'} ${a === 'kick' ? 'was kicked from' : 'left'} [${c.tag}]`, clan: 1 });
+      return this.clanBroadcast(c);
+    }
+    if (a === 'promote' && c.leader === p.pid && c.members.includes(num(m.pid))) { c.leader = num(m.pid); return this.clanBroadcast(c); }
   }
 
   // Developer / admin commands (only when the server runs with DEV=1)
@@ -1309,8 +1417,8 @@ export class Game {
       for (const o of all) {
         if (o === p || !o.alive || dist2(o, p) > R2) continue;
         const held = o.inv[o.sel]?.id || '';
-        const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0);
-        pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1, o.lookStr || '']);
+        const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0) | (o.air ? 8 : 0) | (o.spr ? 16 : 0) | (this.sameClan(o, p) ? 32 : 0);
+        pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1, o.lookStr || '', this.clans.get(o.clan)?.tag || '']);
       }
       for (const v of this.vehicles.values()) {
         if (dist2(v, p) > R2) continue;

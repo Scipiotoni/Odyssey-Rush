@@ -217,7 +217,7 @@ export function makeAnimal(type, color, size) {
     add(rb(th * 1.1, 0.06 * s, th * 1.3, 0.02), hoof, 0, -legH + 0.03, 0.01, p);
     legs.push(p);
   }
-  g.userData = { legs, neck, body };
+  g.userData = { legs, neck, body, tail, tailRx: tail.rotation.x };
   return g;
 }
 
@@ -312,45 +312,8 @@ export function deployGeometry(kind) {
   });
 }
 
-// ---------------------------------------------------------------- held items (view models)
-export function makeItemModel(id) {
-  const g = new THREE.Group();
-  const d = ITEMS[id];
-  if (!d) return g;
-  const wood = 0x7a5534, metal = d.tint || 0x9aa0a6, stone = 0x8a8680, dark = 0x2c2c2c;
-  const M = (geo) => { const m = new THREE.Mesh(geo, MAT); m.castShadow = true; g.add(m); return m; };
-  switch (id) {
-    case 'rock': M(merge([part(jitter(dodec(0.12), 0.4, 3), stone)])); break;
-    case 'torch': M(merge([part(cyl(0.025, 0.03, 0.6, 5), wood, { y: 0.1 }), part(cyl(0.05, 0.04, 0.12, 5), 0x9a8a6a, { y: 0.42 })])); {
-      const f = new THREE.Mesh(cone(0.05, 0.18, 5), new THREE.MeshBasicMaterial({ color: 0xffa030 })); f.position.y = 0.56; g.add(f); g.userData.flame = f;
-    } break;
-    case 'stone_hatchet': case 'metal_hatchet': M(merge([part(cyl(0.022, 0.026, 0.6, 5), wood, { y: 0.1 }), part(box(0.04, 0.12, 0.16), id === 'stone_hatchet' ? stone : metal, { y: 0.34, z: -0.06 })])); break;
-    case 'stone_pickaxe': case 'metal_pickaxe': M(merge([part(cyl(0.022, 0.026, 0.62, 5), wood, { y: 0.1 }), part(box(0.04, 0.05, 0.42), id === 'stone_pickaxe' ? stone : metal, { y: 0.38 })])); break;
-    case 'shovel': M(merge([part(cyl(0.02, 0.024, 0.8, 5), wood, { y: 0.15 }), part(box(0.14, 0.03, 0.03), wood, { y: -0.24 }), part(box(0.16, 0.2, 0.02), metal, { y: 0.62, rx: 0.15 })])); break;
-    case 'hammer': M(merge([part(cyl(0.02, 0.025, 0.45, 5), wood, { y: 0.05 }), part(box(0.07, 0.07, 0.2), metal, { y: 0.26 })])); break;
-    case 'building_plan': M(merge([part(box(0.25, 0.01, 0.32), 0x3a6aa8, { rx: -0.5 }), part(box(0.2, 0.012, 0.02), 0xffffff, { rx: -0.5, y: 0.01 })])); break;
-    case 'wooden_spear': M(merge([part(cyl(0.02, 0.025, 1.6, 5), wood, { y: 0.3 }), part(cone(0.03, 0.15, 4), 0x9a8060, { y: 1.15 })])); break;
-    case 'machete': M(merge([part(box(0.035, 0.12, 0.035), dark, { y: 0 }), part(box(0.01, 0.5, 0.06), metal, { y: 0.3 })])); break;
-    case 'bow': {
-      const t = new THREE.TorusGeometry(0.4, 0.015, 4, 10, Math.PI * 0.9); t.rotateZ(Math.PI * 0.55);
-      M(merge([part(t, wood, { rz: 0 }), part(box(0.003, 0.76, 0.003), 0xdddddd, { x: -0.08 })]));
-    } break;
-    case 'revolver': M(merge([part(box(0.04, 0.05, 0.24), dark, { y: 0.05, z: -0.06 }), part(cyl(0.035, 0.035, 0.06, 6), 0x555555, { y: 0.045, rx: Math.PI / 2 }), part(box(0.035, 0.11, 0.05), wood, { y: -0.03, z: 0.06, rx: -0.3 })])); break;
-    case 'shotgun': M(merge([part(box(0.05, 0.06, 0.8), dark, { y: 0.05, z: -0.25 }), part(box(0.05, 0.04, 0.3), wood, { y: 0.0, z: -0.25 }), part(box(0.05, 0.1, 0.32), wood, { y: 0.0, z: 0.25 })])); break;
-    case 'smg': M(merge([part(box(0.05, 0.08, 0.45), 0x3a3a3a, { y: 0.05, z: -0.1 }), part(box(0.03, 0.15, 0.04), dark, { y: -0.06, z: -0.05 }), part(box(0.035, 0.1, 0.05), dark, { y: -0.03, z: 0.1, rx: -0.3 }), part(box(0.02, 0.02, 0.15), 0x555555, { y: 0.06, z: -0.4 })])); break;
-    case 'rifle': M(merge([part(box(0.05, 0.08, 0.6), 0x3a3a35, { y: 0.05, z: -0.15 }), part(box(0.04, 0.18, 0.06), dark, { y: -0.07, z: -0.12, rx: 0.2 }), part(box(0.045, 0.11, 0.25), wood, { y: 0.02, z: 0.25 }), part(box(0.02, 0.02, 0.25), 0x555555, { y: 0.06, z: -0.55 }), part(box(0.03, 0.04, 0.12), dark, { y: 0.11, z: -0.1 })])); break;
-    case 'satchel': M(merge([part(box(0.22, 0.16, 0.1), 0x6a5a3a), part(box(0.04, 0.2, 0.02), 0x4a3a2a, { y: 0.12 })])); break;
-    case 'c4': M(merge([part(box(0.22, 0.08, 0.14), 0xa8a070), part(box(0.08, 0.04, 0.06), dark, { y: 0.06 }), part(box(0.02, 0.02, 0.02), 0xff2020, { y: 0.085, x: 0.02 })])); break;
-    case 'bandage': M(merge([part(cyl(0.05, 0.05, 0.08, 8), 0xf0f0f0, { rz: Math.PI / 2 })])); break;
-    case 'medkit': M(merge([part(box(0.2, 0.14, 0.08), 0xd0d0d0), part(box(0.1, 0.03, 0.01), 0xd02020, { z: 0.045 }), part(box(0.03, 0.1, 0.01), 0xd02020, { z: 0.045 })])); break;
-    default: {
-      if (d.cat === 'food') M(merge([part(ico(0.07, 0), d.icon === '🫐' ? 0x4050c0 : 0xa04030)]));
-      else if (d.cat === 'deployable') M(merge([part(box(0.18, 0.14, 0.14), 0x8a6238)]));
-      else M(merge([part(box(0.12, 0.12, 0.12), 0x888888)]));
-    }
-  }
-  return g;
-}
+// ---------------------------------------------------------------- items (see items3d.js)
+export { makeItemModel } from './items3d.js';
 
 // ---------------------------------------------------------------- POI props
 export function poiGeometry(layout) {

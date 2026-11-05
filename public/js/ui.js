@@ -3,6 +3,10 @@ import { ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_
 import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
 import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
 import { audio } from './audio.js';
+import { icons } from './icons.js';
+
+// <img> for an item's rendered icon (falls back to the emoji until it's ready)
+export function iconHTML(id, cls = 'ico') { const src = icons.get(id); return src ? `<img class="${cls}" src="${src}" alt="">` : `<span class="${cls} emo">${ITEMS[id]?.icon || '?'}</span>`; }
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -10,7 +14,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export const CONTROLS = [
   ['WASD', 'Move'], ['Shift', 'Sprint'], ['Ctrl / C', 'Crouch'], ['Space', 'Jump / swim up'], ['LMB', 'Use / attack / build'], ['RMB', 'Aim · build menu · repair'],
   ['E', 'Interact / pick up / enter vehicle'], ['R', 'Reload · rotate piece · flip vehicle'], ['1-6 / wheel', 'Belt slots'], ['Tab', 'Inventory & crafting'],
-  ['Q', 'Crafting'], ['M', 'Map'], ['F', 'Drink water (stand in it)'], ['X', 'Demolish (hammer, own piece)'], ['V', 'Vehicle camera'], ['Enter', 'Chat'], ['Esc', 'Pause / settings'],
+  ['Q', 'Crafting'], ['M', 'Map'], ['L', 'Clan'], ['F', 'Drink water (stand in it)'], ['X', 'Demolish (hammer, own piece)'], ['V', 'Vehicle camera'], ['Enter', 'Chat'], ['Esc', 'Pause / settings'],
 ];
 
 const BIOME_COLORS = { [BIOME.OCEAN]: [30, 70, 105], [BIOME.BEACH]: [214, 198, 140], [BIOME.GRASS]: [110, 160, 70], [BIOME.FOREST]: [55, 105, 45], [BIOME.DESERT]: [215, 170, 105], [BIOME.SWAMP]: [80, 90, 55], [BIOME.SNOW]: [230, 235, 245], [BIOME.ROCK]: [130, 125, 118] };
@@ -31,6 +35,7 @@ export class UI {
     document.addEventListener('mousemove', (e) => this.onMouseMove(e));
     document.addEventListener('mouseup', (e) => this.onMouseUp(e));
     $('craftsearch').addEventListener('input', () => this.renderCrafting());
+    icons.onReady(() => { clearTimeout(this._icoT); this._icoT = setTimeout(() => { this.renderHotbar(); if (this.open === 'inv') this.renderInventory(); }, 50); });
   }
 
   // ------------------------------------------------------------------ HUD
@@ -50,7 +55,7 @@ export class UI {
     const d = ITEMS[st.id] || { icon: '?', name: st.id };
     let n = st.n > 1 ? `<span class="n">${st.n}</span>` : '';
     if (d.gun) n = `<span class="n">${st.a || 0}</span>`;
-    return `${key ? `<span class="k">${key}</span>` : ''}${d.icon}${n}`;
+    return `${key ? `<span class="k">${key}</span>` : ''}${iconHTML(st.id)}${n}`;
   }
   renderHotbar() {
     const g = this.game;
@@ -82,12 +87,12 @@ export class UI {
     const last = $('gains').firstChild;
     if (last && last.dataset.id === id && Date.now() - +last.dataset.t < 1500) {
       last.dataset.n = +last.dataset.n + n; last.dataset.t = Date.now();
-      last.textContent = `+${last.dataset.n} ${d.icon} ${d.name}`;
+      last.innerHTML = `+${last.dataset.n} ${iconHTML(id, 'gico')} ${d.name}`;
       last.style.animation = 'none'; void last.offsetWidth; last.style.animation = '';
       return;
     }
     const el = document.createElement('div'); el.className = 'gain'; el.dataset.id = id; el.dataset.n = n; el.dataset.t = Date.now();
-    el.textContent = `+${n} ${d.icon} ${d.name}`;
+    el.innerHTML = `+${n} ${iconHTML(id, 'gico')} ${d.name}`;
     $('gains').prepend(el);
     setTimeout(() => el.remove(), 3000);
   }
@@ -121,9 +126,42 @@ export class UI {
     $('vhp').textContent = `🔧 ${Math.ceil(v.hp)} / ${v.maxHp}`;
   }
 
+  // ------------------------------------------------------------------ clans
+  renderClan() {
+    const g = this.game, info = g.clanInfo || { clan: null, invites: [], online: [] };
+    const send = (m) => g.net.send({ t: 'clan', ...m });
+    const box = $('clanbox');
+    const c = info.clan;
+    let h = '';
+    if (!c) {
+      h += `<h2>Clans</h2><p class="hint">Clanmates share building rights at each other's tool cupboards, open each other's doors, can't hurt each other, see each other's names from far away and on the map, and get clan chat (<kbd>/c message</kbd>).</p>`;
+      h += `<h3>Found a clan</h3><div class="row"><input id="clanname" maxlength="20" placeholder="Clan name"><input id="clantag" maxlength="5" placeholder="TAG" style="width:80px"><button id="clancreate">Create</button></div>`;
+      h += `<h3>Invites</h3>` + (info.invites.length ? info.invites.map((i) => `<div class="mem"><span class="nm">[${esc(i.tag)}] ${esc(i.name)} <small>(${i.members} members)</small></span><button data-acc="${i.id}">Join</button><button class="alt" data-dec="${i.id}">Decline</button></div>`).join('') : '<p class="hint">No invites yet.</p>');
+    } else {
+      const lead = c.leader === g.pid;
+      h += `<h2><span>[${esc(c.tag)}]</span> ${esc(c.name)}</h2><p class="hint">${c.members.length}/12 members · clan chat: <kbd>/c message</kbd></p>`;
+      h += `<h3>Members</h3><div class="list">` + c.members.map((m) => `<div class="mem"><i class="dot ${m.online ? 'on' : ''}"></i><span class="nm">${esc(m.name)}${m.pid === c.leader ? ' 👑' : ''}${m.pid === g.pid ? ' (you)' : ''}</span>${lead && m.pid !== g.pid ? `<button class="alt" data-pro="${m.pid}">Make leader</button><button data-kick="${m.pid}">Kick</button>` : ''}</div>`).join('') + `</div>`;
+      h += `<h3>Invite players</h3><div class="row"><input id="clanin" placeholder="Player name"><button id="claninv">Invite</button></div><div class="list">` + info.online.filter((o) => !c.members.some((m) => m.pid === o.pid)).map((o) => `<div class="mem"><i class="dot on"></i><span class="nm">${o.clan ? `[${esc(o.clan)}] ` : ''}${esc(o.name)}</span><button data-inv="${o.pid}">Invite</button></div>`).join('') + `</div>`;
+      h += `<div class="row" style="margin-top:12px"><button class="alt" id="clanleave">Leave clan</button></div>`;
+    }
+    h += `<div class="hint">Press <kbd>L</kbd> or <kbd>Esc</kbd> to close</div>`;
+    box.innerHTML = h;
+    const on = (sel, fn) => box.querySelectorAll(sel).forEach((el) => (el.onclick = () => fn(el)));
+    on('#clancreate', () => send({ a: 'create', name: $('clanname').value, tag: $('clantag').value }));
+    on('[data-acc]', (el) => send({ a: 'accept', id: el.dataset.acc }));
+    on('[data-dec]', (el) => send({ a: 'decline', id: el.dataset.dec }));
+    on('[data-kick]', (el) => send({ a: 'kick', pid: +el.dataset.kick }));
+    on('[data-pro]', (el) => send({ a: 'promote', pid: +el.dataset.pro }));
+    on('[data-inv]', (el) => send({ a: 'invite', pid: +el.dataset.inv }));
+    on('#claninv', () => send({ a: 'invite', name: $('clanin').value }));
+    on('#clanleave', () => { if (confirm('Leave your clan?')) send({ a: 'leave' }); });
+    box.querySelectorAll('input').forEach((i) => i.addEventListener('keydown', (e) => e.stopPropagation()));
+  }
+
   // ------------------------------------------------------------------ chat
-  chat(from, m) {
+  chat(from, m, clan) {
     const el = document.createElement('div');
+    if (clan) el.classList.add('clanmsg');
     if (!from) { el.className = 'sys'; el.textContent = m; } else el.innerHTML = `<b>${esc(from)}:</b> ${esc(m)}`;
     $('chatlog').appendChild(el);
     while ($('chatlog').children.length > 12) $('chatlog').firstChild.remove();
@@ -212,7 +250,7 @@ export class UI {
       return;
     }
     this.drag = { ...r, half: e.ctrlKey };
-    const gh = document.createElement('div'); gh.id = 'dragghost'; gh.textContent = ITEMS[st.id].icon;
+    const gh = document.createElement('div'); gh.id = 'dragghost'; gh.innerHTML = iconHTML(st.id);
     gh.style.left = e.clientX + 'px'; gh.style.top = e.clientY + 'px';
     document.body.appendChild(gh);
     this.dragEl = gh;
@@ -280,7 +318,7 @@ export class UI {
       for (const r of list) {
         const can = (!r.station || near.has(r.station)) && affordable(g.inv, r.cost);
         const locked = r.station && !near.has(r.station);
-        html += `<div class="recipe ${can ? 'can' : ''} ${locked ? 'locked' : ''} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}"><span class="ic">${ITEMS[r.out].icon}</span><span class="nm">${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</span><span class="st">${r.time}s</span></div>`;
+        html += `<div class="recipe ${can ? 'can' : ''} ${locked ? 'locked' : ''} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}"><span class="ic">${iconHTML(r.out, 'rico')}</span><span class="nm">${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</span><span class="st">${r.time}s</span></div>`;
       }
     }
     const list = $('craftlist');
@@ -291,8 +329,8 @@ export class UI {
     const det = $('craftdetail');
     const r = RECIPES[this.selRecipe];
     if (!r) { det.innerHTML = '<span class="hint">Select a recipe. Stand near a workbench, camp fire or furnace to unlock more.</span>'; return; }
-    const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${countItem(g.inv, k) < v ? 'miss' : ''}">${ITEMS[k].icon} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
-    det.innerHTML = `<b>${ITEMS[r.out].icon} ${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Requires ' + STATION_NAMES[r.station] : ''}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
+    const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${countItem(g.inv, k) < v ? 'miss' : ''}">${iconHTML(k, 'gico')} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
+    det.innerHTML = `<div class="bigico">${iconHTML(r.out, 'bico')}</div><b>${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Requires ' + STATION_NAMES[r.station] : ''}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
     $('c1').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 1 }); audio.click(); };
     $('c5').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 5 }); audio.click(); };
   }
@@ -313,15 +351,16 @@ export class UI {
   show(which) {
     this.close(true);
     this.open = which;
-    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen' }[which];
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') this.renderInventory();
     if (which === 'map') this.renderMap();
     if (which === 'build') this.renderBuildMenu();
+    if (which === 'clan') { this.renderClan(); this.game.net.send({ t: 'clan', a: 'info' }); }
     this.game.input.unlock();
   }
   close(silent) {
-    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen']) $(id).classList.add('hidden');
+    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen']) $(id).classList.add('hidden');
     $('itemtip').classList.add('hidden');
     this.endDrag();
     if (this.open === 'inv' && this.game.container) { this.game.net.send({ t: 'close' }); this.game.container = null; }
@@ -404,6 +443,7 @@ export class UI {
       ctx.fillStyle = '#e0a040'; ctx.fillRect(mx - 2, mz - 2, 4, 4);
       ctx.fillStyle = '#fff'; ctx.fillText(p.name, mx, mz - 5);
     }
+    for (const p of this.game.entities.players.values()) if (p.flags & 32) { const mx = (p.pos.x + HALF) / 32, mz = (p.pos.z + HALF) / 32; ctx.fillStyle = '#6ad04a'; ctx.beginPath(); ctx.arc(mx, mz, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(p.name, mx, mz - 6); }
     for (const b of this.game.bags || []) { const mx = (b.x + HALF) / 32, mz = (b.z + HALF) / 32; ctx.fillStyle = '#60c0ff'; ctx.fillRect(mx - 2, mz - 2, 4, 4); }
     const pp = this.game.player.pos, yaw = this.game.player.yaw;
     const mx = (pp.x + HALF) / 32, mz = (pp.z + HALF) / 32;
@@ -421,7 +461,7 @@ function firstFree(inv) { for (let i = HOTBAR; i < inv.length; i++) if (!inv[i])
 export function itemDesc(st, short) {
   const d = ITEMS[st.id];
   if (!d) return st.id;
-  let s = short ? '' : `<b>${d.icon} ${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
+  let s = short ? '' : `<div class="bigico">${iconHTML(st.id, 'bico')}</div><b>${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
   if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
   else if (d.dig) s += 'LMB dig the ground (finds stone, sometimes ore) · RMB pile up dirt. Everyone sees your holes and mounds.';
   else if (d.tool && d.tool.hammer) s += 'LMB upgrade building piece · RMB repair · X demolish';
