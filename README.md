@@ -76,7 +76,10 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 3. **Build.** Equip the building plan and right-click for the **build wheel**: the outer ring has the pieces
    (foundations, walls, doorways, windows, low walls, floors, roofs, stairs) or your furniture, the middle ring
    switches Construction / Furniture, and the centre picks the material (Twig, Wood, Stone, Sheet Metal, Armored).
-   Pieces snap to a 3 m grid; you can also use the hammer to upgrade to **Wood → Stone → Sheet Metal → Armored**.
+   Pieces snap to a 3 m grid. With the **hammer**: LMB upgrades the material, **R reinforces** (Braced, then Plated —
+   each +50% max HP), RMB repairs. You can also use the hammer to upgrade to **Wood → Stone → Sheet Metal → Armored**.
+   Furnish it: chairs, tables, rugs, plants, paintings, lamps (real light), a sofa, bookshelf / wardrobe / fridge
+   storage and a bed you can respawn in (workbench 1-2, placed from the wheel's Furniture ring).
    Put a door in the doorway and a **Tool Cupboard** inside: it locks your doors to authorized players and stops
    anyone else building within 30 m. Pieces need support — blow out a wall and the floor above can collapse.
 4. **Hide.** Bases are only streamed to players within ~300 m, and the map shows no other players. The island is

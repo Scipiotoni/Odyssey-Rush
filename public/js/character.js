@@ -6,16 +6,16 @@ import { DEFAULT_LOOK, lookColor } from '/shared/look.js';
 import { ITEMS } from '/shared/items.js';
 import { bakeVertexColors } from './bake.js';
 
-const VC = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02 });
+const VC = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.0, flatShading: true }); // faceted low-poly look
 const HEIGHTS = [0.92, 0.96, 1.0, 1.04, 1.08];
 const geoCache = new Map();
 const G = (key, fn) => { if (!geoCache.has(key)) geoCache.set(key, fn()); return geoCache.get(key); };
-const rbox = (w, h, d, r) => G(`rb${w}_${h}_${d}_${r}`, () => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2.05, h / 2.05, d / 2.05)));
-const sph = (r, ws = 14, hs = 10) => G(`sp${r}_${ws}`, () => new THREE.SphereGeometry(r, ws, hs));
-const cap = (r, coverage, tilt) => G(`cap${r}_${coverage}_${tilt}`, () => { const g = new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI * coverage); g.rotateX(tilt); return g; });
-const taper = (r0, r1, len) => G(`tp${r0}_${r1}_${len}`, () => { const g = new THREE.CylinderGeometry(r1, r0, len, 12, 1); g.translate(0, -len / 2, 0); return g; }); // hangs down from origin
-const capsule = (r, len) => G(`cs${r}_${len}`, () => new THREE.CapsuleGeometry(r, len, 4, 10));
-const lathe = (key, pts, zs = 0.62) => G(key, () => { const g = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 20); g.scale(1, 1, zs); return g; });
+const rbox = (w, h, d, r) => G(`rb${w}_${h}_${d}_${r}`, () => new RoundedBoxGeometry(w, h, d, 1, Math.min(r, w / 2.05, h / 2.05, d / 2.05)));
+const sph = (r, ws = 8, hs = 6) => G(`sp${r}_${ws}`, () => new THREE.SphereGeometry(r, Math.min(ws, 10), Math.min(hs, 8)));
+const cap = (r, coverage, tilt) => G(`cap${r}_${coverage}_${tilt}`, () => { const g = new THREE.SphereGeometry(r, 10, 6, 0, Math.PI * 2, 0, Math.PI * coverage); g.rotateX(tilt); return g; });
+const taper = (r0, r1, len) => G(`tp${r0}_${r1}_${len}`, () => { const g = new THREE.CylinderGeometry(r1, r0, len, 7, 2); g.translate(0, -len / 2, 0); return g; }); // hangs down from origin
+const capsule = (r, len) => G(`cs${r}_${len}`, () => new THREE.CapsuleGeometry(r, len, 2, 7));
+const lathe = (key, pts, zs = 0.62) => G(key, () => { const g = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 9); g.scale(1, 1, zs); return g; });
 const lam = (color, opacity = 1) => { const m = new THREE.MeshLambertMaterial({ color }); if (opacity < 1) { m.transparent = true; m.opacity = opacity; } return m; };
 const shade = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
 const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
@@ -42,7 +42,8 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
     skin: lam(skinC), skinD: lam(shade(skinC, 0.86)), lip: lam(mix(skinC, 0x8a3030, 0.35)), hair: lam(hairC), brow: lam(shade(hairC, 0.85)),
     top: lam(topC), topD: lam(shade(topC, 0.72)), topL: lam(mix(topC, 0xffffff, 0.15)), pants: lam(pantsC), pantsD: lam(shade(pantsC, 0.7)), seam: lam(mix(pantsC, 0xd8b060, 0.35)),
     shoe: lam(shoeC), sole: lam(mix(shoeC, 0x202020, 0.7)), lace: lam(mix(shoeC, 0xffffff, 0.6)), belt: lam(0x2a2018), metal: lam(0xb8b0a0),
-    white: lam(0xf4f2ee), iris: lam(lookColor(L, 'eyes')), pupil: lam(0x0a0a0a), stubble: lam(hairC, 0.4),
+    white: lam(0xf4f2ee), pupil: lam(0x0a0a0a), stubble: lam(hairC, 0.4), eye: lam(mix(lookColor(L, 'eyes'), 0x101010, 0.6)), mouth: lam(mix(skinC, 0x301010, 0.6)),
+    pack: lam(mix(topC, 0x9a8a5a, 0.75)), packD: lam(shade(mix(topC, 0x9a8a5a, 0.75), 0.7)), strap: lam(0x3a3020),
   };
   const sleeveLong = L.top === 1 || L.top === 2 || L.top === 4;
   const bareArms = L.top === 3;
@@ -58,21 +59,23 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
     const hp = joint(hips, sx * 0.082, -0.045, 0);
     mk(sph(0.074), M.pants, hp, 0, 0, 0);
     mk(taper(0.08, 0.058, 0.42), M.pants, hp, 0, 0, 0);
-    if (L.pants === 1) mk(rbox(0.04, 0.11, 0.09, 0.015), M.pantsD, hp, sx * 0.07, -0.22, 0);
+    mk(rbox(0.04, 0.12, 0.1, 0.01), M.pantsD, hp, sx * 0.072, -0.2, 0, 0, 0, sx * 0.08);          // thigh pocket
+    if (L.pants === 1) mk(rbox(0.035, 0.09, 0.09, 0.01), M.pantsD, hp, -sx * 0.06, -0.26, 0);
     if (L.pants === 0) mk(rbox(0.004, 0.36, 0.006, 0.002), M.seam, hp, sx * 0.07, -0.2, 0);
     if (shorts) mk(taper(0.086, 0.07, 0.06), M.pantsD, hp, 0, -0.27, 0);
     const kn = joint(hp, 0, -0.43, 0);
     mk(sph(0.06), shorts ? M.skin : M.pants, kn);
+    if (!shorts) mk(rbox(0.1, 0.11, 0.04, 0.012), M.pantsD, kn, 0, -0.03, -0.05, -0.1);             // knee patch
     mk(taper(0.06, 0.042, 0.41), shorts ? M.skin : M.pants, kn);
-    mk(capsule(0.05, 0.12), shorts ? M.skin : M.pants, kn, 0, -0.14, 0.014); // calf
     if (L.pants === 3) mk(taper(0.052, 0.052, 0.05), M.pantsD, kn, 0, -0.36, 0);
     const an = joint(kn, 0, -0.42, 0);
     mk(sph(0.045), shorts || L.pants === 3 ? M.skin : M.pants, an);
-    // shoe: toe, upper, heel, sole, laces
-    mk(rbox(0.1, 0.075, 0.2, 0.035), M.shoe, an, 0, -0.03, -0.045);
-    mk(rbox(0.095, 0.09, 0.09, 0.035), M.shoe, an, 0, -0.01, 0.03);
-    mk(rbox(0.106, 0.022, 0.27, 0.01), M.sole, an, 0, -0.066, -0.03);
-    mk(rbox(0.05, 0.008, 0.08, 0.003), M.lace, an, 0, 0.008, -0.06, 0.35);
+    // chunky boots: shaft, toe, heel, thick sole, laces
+    mk(taper(0.064, 0.06, 0.15), M.shoe, an, 0, 0.1, 0.0);
+    mk(rbox(0.112, 0.085, 0.21, 0.03), M.shoe, an, 0, -0.03, -0.05);
+    mk(rbox(0.11, 0.1, 0.1, 0.03), M.shoe, an, 0, -0.015, 0.03);
+    mk(rbox(0.12, 0.03, 0.28, 0.01), M.sole, an, 0, -0.072, -0.035);
+    mk(rbox(0.05, 0.01, 0.1, 0.004), M.lace, an, 0, 0.02, -0.065, 0.35);
     return { hp, kn, an };
   };
   const lL = leg(-1), lR = leg(1);
@@ -90,6 +93,16 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   if (fem) for (const sx of [-1, 1]) mk(sph(0.05), M.top, chest, sx * 0.052, 0.165, -0.06, 0, 0, 0, 1, 0.85, 0.55);
   else mk(sph(0.11), M.top, chest, 0, 0.18, -0.03, 0, 0, 0, 1.45, 0.8, 0.62); // broad chest
   // clothing details
+  if (L.top === 0 || L.top === 1) {
+    mk(G('vneck', () => { const g = new THREE.ConeGeometry(0.04, 0.09, 3); g.rotateX(Math.PI); return g; }), M.skin, chest, 0, 0.29, -0.1, 0.15, 0, 0, 1, 1, 0.35);
+    mk(rbox(fem ? 0.24 : 0.3, 0.09, 0.03, 0.01), M.topD, chest, 0, 0.215, -0.095, 0.05);           // chest panel
+  }
+  // backpack with straps and bedroll
+  mk(rbox(0.26, 0.3, 0.13, 0.03), M.pack, chest, 0, 0.17, 0.155);
+  mk(rbox(0.27, 0.09, 0.14, 0.02), M.packD, chest, 0, 0.3, 0.155, -0.15);
+  mk(rbox(0.16, 0.1, 0.04, 0.01), M.packD, chest, 0, 0.1, 0.23);
+  mk(G('roll', () => new THREE.CylinderGeometry(0.048, 0.048, 0.28, 7)), M.packD, chest, 0, 0.37, 0.16, 0, 0, Math.PI / 2);
+  for (const sx of [-1, 1]) mk(rbox(0.035, 0.03, 0.2, 0.006), M.strap, chest, sx * 0.09, 0.315, 0.02, 0.1);  // straps over the shoulders
   if (L.top === 0 || L.top === 3) mk(G('collar', () => { const g = new THREE.TorusGeometry(0.06, 0.009, 6, 18); g.rotateX(Math.PI / 2 - 0.25); return g; }), M.topD, chest, 0, 0.325, -0.01);
   if (L.top === 3) for (const sx of [-1, 1]) mk(rbox(0.035, 0.012, 0.18, 0.005), M.topD, chest, sx * 0.1, 0.305, 0, 0, 0, sx * 0.2);
   if (L.top === 2) {
@@ -109,21 +122,17 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   // ---------------- neck & head
   const neck = joint(chest, 0, 0.33, 0);
   mk(taper(0.05, 0.048, 0.09), M.skin, neck, 0, 0.09, 0);
-  const head = joint(neck, 0, 0.08, 0);
+  const head = joint(neck, 0, 0.08, 0); head.scale.setScalar(1.08);
   mk(sph(0.108, 20, 16), M.skin, head, 0, 0.125, 0, 0, 0, 0, 0.94, 1.1, 1.02);                // skull
   mk(sph(0.075, 16, 12), M.skin, head, 0, 0.05, -0.028, 0, 0, 0, fem ? 1.0 : 1.12, 0.82, 0.95); // jaw
   for (const sx of [-1, 1]) {
-    mk(sph(0.017, 10, 8), M.white, head, sx * 0.04, 0.135, -0.091);
-    mk(sph(0.011, 10, 8), M.iris, head, sx * 0.04, 0.135, -0.1);
-    mk(sph(0.0055, 8, 6), M.pupil, head, sx * 0.04, 0.135, -0.108);
-    mk(sph(0.019, 10, 8), M.skinD, head, sx * 0.04, 0.142, -0.088, 0, 0, 0, 1.05, 0.5, 1); // upper lid
-    mk(rbox(0.042, 0.01, 0.014, 0.004), M.brow, head, sx * 0.043, 0.163, -0.1, 0, 0, sx * (fem ? -0.12 : -0.05));
-    mk(sph(0.026, 10, 8), M.skin, head, sx * 0.1, 0.12, 0.008, 0, 0, 0, 0.4, 1, 0.75);        // ears
+    // stylised eyes: dark almond shapes under bold brows
+    mk(sph(0.015, 6, 4), M.eye, head, sx * 0.041, 0.133, -0.098, 0, 0, sx * -0.15, 1.35, 0.75, 0.55);
+    mk(rbox(0.05, 0.017, 0.022, 0.004), M.brow, head, sx * 0.042, 0.162, -0.1, 0, 0, sx * (fem ? -0.15 : -0.08));
+    mk(sph(0.026, 6, 4), M.skin, head, sx * 0.1, 0.12, 0.008, 0, 0, 0, 0.4, 1, 0.75);            // ears
   }
-  mk(rbox(0.024, 0.05, 0.03, 0.01), M.skin, head, 0, 0.108, -0.11, -0.15);
-  mk(sph(0.016, 10, 8), M.skinD, head, 0, 0.087, -0.118, 0, 0, 0, 1.3, 0.7, 0.9);             // nose tip
-  mk(capsule(0.007, 0.03), M.lip, head, 0, 0.064, -0.1, 0, 0, Math.PI / 2);
-  mk(capsule(0.006, 0.026), M.lip, head, 0, 0.055, -0.098, 0, 0, Math.PI / 2);
+  mk(G('nose', () => { const g = new THREE.ConeGeometry(0.022, 0.06, 4); g.rotateX(-0.25); return g; }), M.skinD, head, 0, 0.1, -0.112, 0, Math.PI / 4, 0, 1, 1, 0.9);
+  mk(rbox(0.04, 0.008, 0.01, 0.003), M.mouth, head, 0, 0.06, -0.1);
 
   // ---------------- hair
   const hairG = joint(head, 0, 0, 0);
@@ -131,7 +140,10 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
   if (!helmeted && L.hair >= 1) {
     const r = L.hair === 1 ? 0.112 : 0.118;
     mk(cap(r, 0.5, 0.55), M.hair, hairG, 0, 0.13, 0.008, 0, 0, 0, 0.97, 1.08, 1.04);
-    if (L.hair >= 2 && L.hair !== 6) mk(capsule(0.018, 0.13), M.hair, hairG, 0.012, 0.2, -0.085, 0.5, 0, Math.PI / 2 + 0.12, 1, 1, 0.8);   // fringe
+    if (L.hair >= 2 && L.hair !== 6) {
+      mk(sph(0.095, 8, 5), M.hair, hairG, 0.008, 0.215, -0.012, -0.2, 0, 0.1, 1.12, 0.62, 1.1);    // swept volume
+      mk(sph(0.05, 6, 4), M.hair, hairG, -0.035, 0.205, -0.08, 0, 0, 0.3, 1.3, 0.6, 0.8);           // fringe sweep
+    }
     for (const sx of [-1, 1]) mk(rbox(0.01, 0.04, 0.025, 0.004), M.hair, hairG, sx * 0.093, 0.125, -0.02);
   }
   if (!helmeted) {
@@ -142,11 +154,11 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
     if (L.hair === 7) mk(sph(0.055), M.hair, hairG, 0, 0.24, 0.06);
   }
   // facial hair
-  const beardGeo = G('beard', () => { const g = new THREE.SphereGeometry(0.08, 16, 10, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5); g.rotateX(0.35); return g; });
-  if (L.beard === 1) mk(beardGeo, M.stubble, head, 0, 0.075, -0.03, 0, 0, 0, 1.12, 0.95, 1.0);
-  if (L.beard === 2) { mk(beardGeo, M.hair, head, 0, 0.07, -0.034, 0, 0, 0, 1.18, 1.15, 1.05); mk(capsule(0.009, 0.04), M.hair, head, 0, 0.074, -0.105, 0, 0, Math.PI / 2); }
-  if (L.beard === 3) mk(capsule(0.009, 0.045), M.hair, head, 0, 0.074, -0.106, 0, 0, Math.PI / 2);
-  if (L.beard === 4) { mk(sph(0.028), M.hair, head, 0, 0.022, -0.085, 0, 0, 0, 1, 1.1, 0.8); mk(capsule(0.008, 0.04), M.hair, head, 0, 0.074, -0.106, 0, 0, Math.PI / 2); }
+  const beardGeo = G('beard', () => { const g = new THREE.SphereGeometry(0.08, 9, 5, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5); g.rotateX(0.35); return g; });
+  if (!helmeted && L.beard === 1) mk(beardGeo, M.stubble, head, 0, 0.075, -0.03, 0, 0, 0, 1.12, 0.95, 1.0);
+  if (!helmeted && L.beard === 2) { mk(beardGeo, M.hair, head, 0, 0.07, -0.034, 0, 0, 0, 1.22, 1.3, 1.12); mk(sph(0.04, 6, 4), M.hair, head, 0, 0.012, -0.075, 0, 0, 0, 1.2, 0.9, 0.9); mk(capsule(0.009, 0.04), M.hair, head, 0, 0.074, -0.105, 0, 0, Math.PI / 2); }
+  if (!helmeted && L.beard === 3) mk(capsule(0.009, 0.045), M.hair, head, 0, 0.074, -0.106, 0, 0, Math.PI / 2);
+  if (!helmeted && L.beard === 4) { mk(sph(0.028), M.hair, head, 0, 0.022, -0.085, 0, 0, 0, 1, 1.1, 0.8); mk(capsule(0.008, 0.04), M.hair, head, 0, 0.074, -0.106, 0, 0, Math.PI / 2); }
 
   // ---------------- arms
   const arm = (sx) => {

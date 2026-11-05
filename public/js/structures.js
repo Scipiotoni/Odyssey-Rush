@@ -1,7 +1,7 @@
 // Client mirror of server structures: meshes, colliders and building indexes.
 import * as THREE from 'three';
 import { worldBoxes, buildIndex } from '/shared/building.js';
-import { TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT } from './models.js';
+import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT } from './models.js';
 
 export class Structures {
   constructor(scene, physics, effects) {
@@ -15,7 +15,7 @@ export class Structures {
     const old = this.map.get(s.id);
     if (old) {
       // tier change or door open/close -> rebuild visuals; hp only -> just store
-      const visual = old.s.tier !== s.tier || old.s.open !== s.open || old.s.auth !== s.auth;
+      const visual = old.s.tier !== s.tier || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth;
       old.s = s;
       if (s.k === 'piece') this.buildings.get(s.bid)?.pieces.set(s.id, s);
       if (!visual) return;
@@ -24,6 +24,7 @@ export class Structures {
     let obj;
     if (s.k === 'piece') {
       obj = new THREE.Mesh(pieceGeometry(s.type, s.tier || 0), MAT);
+      if (s.rf) { const rg = reinforceGeometry(s.type, s.rf); if (rg) obj.add(new THREE.Mesh(rg, MAT)); }
       if (s.b) {
         let b = this.buildings.get(s.bid);
         if (!b) { b = { id: s.bid, x: s.b[0], y: s.b[1], z: s.b[2], yaw: s.b[3], pieces: new Map() }; this.buildings.set(s.bid, b); }
@@ -34,6 +35,7 @@ export class Structures {
       if (s.open) obj.userData.pivot.rotation.y = -Math.PI / 2 * 0.95;
     } else {
       obj = new THREE.Mesh(deployGeometry(s.type), MAT);
+      if (s.type === 'lamp') { const light = new THREE.PointLight(0xffe2a8, 5, 16, 1.4); light.position.y = 1.5; obj.add(light); }
       if (s.type === 'campfire' || s.type === 'furnace') {
         const light = new THREE.PointLight(0xff9040, 6, 14, 1.6);
         light.position.y = s.type === 'campfire' ? 0.6 : 1.0;

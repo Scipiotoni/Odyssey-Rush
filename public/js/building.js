@@ -1,6 +1,6 @@
 // Building plan / deployable / hammer placement logic with snapping ghosts.
 import * as THREE from 'three';
-import { G, LEVEL_H, BUILD_REACH, PIECES, TIERS, pieceTransform, canPlaceAny, pieceCost, invRotY, rotY } from '/shared/building.js';
+import { REINFORCE, reinforceCost, G, LEVEL_H, BUILD_REACH, PIECES, TIERS, pieceTransform, canPlaceAny, pieceCost, invRotY, rotY } from '/shared/building.js';
 import { POI_FLAT } from '/shared/worldgen.js';
 import { ITEMS } from '/shared/items.js';
 import { pieceGeometry, deployGeometry } from './models.js';
@@ -148,17 +148,18 @@ export class Builder {
     this.ghost.visible = false;
     const { hit } = this.aim(4.5);
     const e = hit && hit.kind === 's' ? g.structures.map.get(hit.id) : null;
-    if (!e) { g.ui.prompt('<small>Hammer: aim at a building piece. <kbd>LMB</kbd> upgrade · <kbd>RMB</kbd> repair · <kbd>X</kbd> demolish</small>'); return; }
+    if (!e) { g.ui.prompt('<small>Hammer: aim at a building piece. <kbd>LMB</kbd> upgrade material · <kbd>R</kbd> reinforce · <kbd>RMB</kbd> repair · <kbd>X</kbd> demolish</small>'); return; }
     const s = e.s;
-    const name = s.k === 'piece' ? `${TIERS[s.tier].name} ${PIECES[s.type].name}` : s.k === 'door' ? `${s.dt} door` : ITEMS[s.type]?.name || s.type;
+    const rf = s.rf || 0;
+    const name = s.k === 'piece' ? `${rf ? REINFORCE[rf].name + ' ' : ''}${TIERS[s.tier].name} ${PIECES[s.type].name}` : s.k === 'door' ? `${s.dt} door` : ITEMS[s.type]?.name || s.type;
+    const ct = (c) => Object.entries(c).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ');
     let txt = `<b>${name}</b> ${s.hp}/${s.mhp}`;
-    if (s.k === 'piece' && s.tier < TIERS.length - 1) {
-      const c = pieceCost(s.type, s.tier + 1);
-      txt += `<br><kbd>LMB</kbd> upgrade to ${TIERS[s.tier + 1].name} (${Object.entries(c).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})`;
-    }
-    if (s.hp < s.mhp) txt += ` · <kbd>RMB</kbd> repair`;
+    if (s.k === 'piece' && s.tier < TIERS.length - 1) txt += `<br><kbd>LMB</kbd> upgrade to ${TIERS[s.tier + 1].name} (${ct(pieceCost(s.type, s.tier + 1))})`;
+    if (s.k === 'piece' && rf < REINFORCE.length - 1) txt += `<br><kbd>R</kbd> reinforce: ${REINFORCE[rf + 1].name} +50% HP (${ct(reinforceCost(s.type, rf + 1))})`;
+    if (s.hp < s.mhp) txt += `<br><kbd>RMB</kbd> repair`;
     g.ui.prompt(txt);
     if (input.mouse.leftPressed && s.k === 'piece' && s.tier < TIERS.length - 1) { g.net.send({ t: 'upgrade', id: s.id, tier: s.tier + 1 }); g.held.swingAnim(); }
+    if (input.hit('KeyR') && s.k === 'piece' && rf < REINFORCE.length - 1) { g.net.send({ t: 'reinforce', id: s.id }); g.held.swingAnim(0.5, true); }
     if (input.mouse.rightPressed) { g.net.send({ t: 'repair', id: s.id }); g.held.swingAnim(); }
     if (input.hit('KeyX')) g.net.send({ t: 'demolish', id: s.id });
   }

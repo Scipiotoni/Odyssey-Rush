@@ -448,7 +448,7 @@ export class UI {
     opts.innerHTML = '';
     const b0 = document.createElement('button'); b0.textContent = '🏖️ Respawn on a random beach'; b0.onclick = () => this.game.net.send({ t: 'respawn' }); opts.appendChild(b0);
     for (const b of bags || []) {
-      const el = document.createElement('button'); el.className = 'alt'; el.textContent = `🛏️ Sleeping bag at ${b.x}, ${b.z}`;
+      const el = document.createElement('button'); el.className = 'alt'; el.textContent = `🛏️ Respawn at bed / sleeping bag (${b.x}, ${b.z})`;
       el.onclick = () => this.game.net.send({ t: 'respawn', bag: b.id });
       opts.appendChild(el);
     }
@@ -536,13 +536,14 @@ export function itemDesc(st, short) {
   let s = short ? '' : `<div class="bigico">${iconHTML(st.id, 'bico')}</div><b>${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
   if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
   else if (d.dig) s += 'LMB dig the ground (finds stone, sometimes ore) · RMB pile up dirt. Everyone sees your holes and mounds.';
-  else if (d.tool && d.tool.hammer) s += 'LMB upgrade building piece · RMB repair · X demolish';
+  else if (d.tool && d.tool.hammer) s += 'LMB upgrade material · R reinforce (+50% HP, twice) · RMB repair · X demolish';
   else if (d.tool) s += `Damage ${d.tool.dmg} · tree ${d.tool.tree} · ore ${d.tool.ore}`;
   else if (d.plan) s += 'Place foundations, walls, floors… RMB to choose piece, R to rotate.';
   else if (d.armor) s += `${d.armor.slot} armor · ${Math.round(d.armor.prot * 100)}% protection · warmth ${d.armor.cold}`;
   else if (d.explosive) s += `Raiding explosive · ${d.explosive.dmg} structure damage · ${d.explosive.fuse}s fuse. LMB to place/throw.`;
   else if (d.cat === 'food') s += `Food +${d.food} · Water +${d.water}${d.heal ? ' · Health ' + (d.heal > 0 ? '+' : '') + d.heal : ''} · LMB to eat`;
   else if (d.cat === 'medical') s += `Heals ${d.heal} · LMB to use`;
+  else if (d.deploy?.furniture) s += (d.deploy.slots ? `Furniture with ${d.deploy.slots} storage slots. ` : 'Furniture. ') + (d.deploy.respawn ? 'You can respawn here. ' : '') + (d.deploy.light ? 'Lights up the room. ' : '') + 'Place it with the item or from the Building Plan wheel (Furniture).';
   else if (d.deploy) s += { campfire: 'Press E on it to cook food and make charcoal & fuel. Keeps you warm.', furnace: 'Press E on it to smelt ore into metal & sulfur.', workbench1: 'Press E on it to craft tier 1 items.', workbench2: 'Press E on it to craft tier 1-2 items.', workbench3: 'Press E on it to craft tier 1-3 items.', small_box: 'Store 12 stacks.', large_box: 'Store 30 stacks.', sleeping_bag: 'Respawn point.', tool_cupboard: 'Claim a 30m building privilege. Authorize friends. Locks doors to authorized players.' }[d.deploy.kind] || '';
   else if (d.door) s += `Place in a doorway. ${d.door.hp} HP. Locked to tool cupboard authorized players.`;
   else if (st.id === 'wheel' || st.id === 'engine_parts') s += 'Used to repair broken vehicles.';

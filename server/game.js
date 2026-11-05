@@ -2,7 +2,7 @@
 // loot, animals, vehicles and persistence.
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
 import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, newStack, ARMOR_SLOTS } from '../shared/items.js';
-import { TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
+import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, restHeight } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
@@ -70,7 +70,7 @@ export class Game {
       this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
       for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.players.set(p.token, p); this.byPid.set(p.pid, p); }
       for (const b of d.buildings || []) this.buildings.set(b.id, b);
-      for (const s of d.structs || []) { this.structs.set(s.id, s); this.region(rkey(s.x, s.z)).s.add(s.id); if (s.queue?.length) this.activeStations.add(s.id); }
+      for (const s of d.structs || []) { this.structs.set(s.id, s); this.region(rkey(s.x, s.z)).s.add(s.id); if (s.queue?.length) this.activeStations.add(s.id); if (s.kind === 'piece') { const m = pieceMaxHp(s.tier, s.reinf); if (s.mhp !== m) { s.hp = Math.max(1, (s.hp / s.mhp) * m); s.mhp = m; } } }
       for (const l of d.loot || []) { this.loot.set(l.id, l); this.region(rkey(l.x, l.z)).l.add(l.id); }
       for (const v of d.vehicles || []) { v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); this.vehicles.set(v.id, v); }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
@@ -171,6 +171,7 @@ export class Game {
       case 'build': return this.onBuild(p, m);
       case 'deploy': return this.onDeploy(p, m);
       case 'upgrade': return this.onUpgrade(p, m);
+      case 'reinforce': return this.onReinforce(p, m);
       case 'repair': return this.onRepair(p, m);
       case 'use': return this.onUse(p, m);
       case 'open': return this.onOpen(p, m);
@@ -322,7 +323,7 @@ export class Game {
   sStruct(s) {
     if (!s) return null;
     const o = { id: s.id, k: s.kind, type: s.type, hp: Math.ceil(s.hp), mhp: s.mhp, x: r2(s.x), y: r2(s.y), z: r2(s.z), yaw: s.yaw, o: s.owner };
-    if (s.kind === 'piece') { o.tier = s.tier; o.bid = s.bid; o.gx = s.gx; o.gz = s.gz; o.level = s.level; o.rot = s.rot || 0; const b = this.buildings.get(s.bid); if (b) o.b = [b.x, b.y, b.z, b.yaw]; }
+    if (s.kind === 'piece') { o.tier = s.tier; o.rf = s.reinf || 0; o.bid = s.bid; o.gx = s.gx; o.gz = s.gz; o.level = s.level; o.rot = s.rot || 0; const b = this.buildings.get(s.bid); if (b) o.b = [b.x, b.y, b.z, b.yaw]; }
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
     return o;
@@ -496,7 +497,7 @@ export class Game {
   }
   bagsOf(p) {
     const out = [];
-    for (const s of this.structs.values()) if (s.type === 'sleeping_bag' && s.owner === p.pid) out.push({ id: s.id, x: Math.round(s.x), z: Math.round(s.z) });
+    for (const s of this.structs.values()) if ((s.type === 'sleeping_bag' || s.type === 'bed') && s.owner === p.pid) out.push({ id: s.id, x: Math.round(s.x), z: Math.round(s.z) });
     return out;
   }
   onRespawn(p, m) {
@@ -504,8 +505,9 @@ export class Game {
     let pos = null;
     if (m.bag) {
       const b = this.structs.get(String(m.bag));
-      if (b && b.type === 'sleeping_bag' && b.owner === p.pid) {
-        if (now() - (b.lastUse || 0) < 120) return this.toast(p, `Sleeping bag on cooldown (${Math.ceil(120 - (now() - b.lastUse))}s)`);
+      if (b && (b.type === 'sleeping_bag' || b.type === 'bed') && b.owner === p.pid) {
+        const cd = b.type === 'bed' ? 60 : 120;
+        if (now() - (b.lastUse || 0) < cd) return this.toast(p, `${b.type === 'bed' ? 'Bed' : 'Sleeping bag'} on cooldown (${Math.ceil(cd - (now() - b.lastUse))}s)`);
         b.lastUse = now(); pos = [b.x, b.y + 0.5, b.z];
       }
     }
@@ -738,7 +740,7 @@ export class Game {
     if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz); if (ge) return this.toast(p, ge); }
     if (isNew) this.buildings.set(b.id, b);
     Inv.removeAll(p.inv, cost);
-    const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, hp: TIERS[tier].hp, mhp: TIERS[tier].hp, bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
+    const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
     this.addStruct(s);
     this.sendInv(p);
     this.addXp(p, 1);
@@ -756,10 +758,29 @@ export class Game {
     const cost = pieceCost(s.type, tier);
     if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     Inv.removeAll(p.inv, cost);
-    s.tier = tier; s.mhp = TIERS[tier].hp; s.hp = s.mhp;
+    s.tier = tier; s.mhp = pieceMaxHp(tier, s.reinf); s.hp = s.mhp;
     this.updStruct(s); this.sendInv(p);
     this.toNear(s.x, s.z, 80, { t: 'fx', k: 'upgrade', p: [s.x, s.y + 1, s.z], tier });
     this.addXp(p, 2 + tier);
+  }
+  onReinforce(p, m) {
+    const s = this.structs.get(String(m.id));
+    if (!s || s.kind !== 'piece' || !p.alive) return;
+    const ham = p.inv[p.sel];
+    if (!ham || ham.id !== 'hammer') return;
+    const lvl = (s.reinf || 0) + 1;
+    if (lvl >= REINFORCE.length) return this.toast(p, 'Already fully reinforced');
+    if (dist3(s, p) > BUILD_REACH + 3) return;
+    if (this.privBlocked(p, s.x, s.z)) return this.toast(p, 'Building blocked');
+    const cost = reinforceCost(s.type, lvl);
+    if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
+    Inv.removeAll(p.inv, cost);
+    const before = s.mhp;
+    s.reinf = lvl; s.mhp = pieceMaxHp(s.tier, lvl); s.hp += s.mhp - before;
+    this.updStruct(s); this.sendInv(p);
+    this.toNear(s.x, s.z, 80, { t: 'fx', k: 'upgrade', p: [s.x, s.y + 1, s.z], tier: 3 });
+    this.toast(p, `🔩 ${REINFORCE[lvl].name}: max HP ${s.mhp}`);
+    this.addXp(p, 3);
   }
   onRepair(p, m) {
     const s = this.structs.get(String(m.id));
@@ -823,7 +844,7 @@ export class Game {
     if (kind === 'tool_cupboard') s.auth = [p.pid];
     this.addStruct(s);
     this.sendInv(p);
-    if (kind === 'sleeping_bag') this.toast(p, 'Sleeping bag placed — you can respawn here');
+    if (kind === 'sleeping_bag' || kind === 'bed') this.toast(p, `${def.name} placed — you can respawn here`);
     if (kind === 'tool_cupboard') this.toast(p, 'Tool cupboard placed — this area is now yours. Others cannot build within 30m.');
   }
 
@@ -944,7 +965,7 @@ export class Game {
       this.updStruct(s);
       return;
     }
-    if (s.type === 'sleeping_bag') {
+    if (s.type === 'sleeping_bag' || s.type === 'bed') {
       if (s.owner !== p.pid) { s.owner = p.pid; this.toast(p, 'You claimed this sleeping bag'); this.updStruct(s); }
     }
   }

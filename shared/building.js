@@ -9,12 +9,25 @@ export const BUILD_REACH = 6;
 export const PRIV_RADIUS = 30; // tool cupboard privilege radius
 
 export const TIERS = [
-  { name: 'Twig', hp: 10, cost: { wood: 50 }, color: 0xc9a66b },
-  { name: 'Wood', hp: 250, cost: { wood: 200 }, color: 0x8b5e34 },
-  { name: 'Stone', hp: 500, cost: { stone: 300 }, color: 0x9c9a94 },
-  { name: 'Sheet Metal', hp: 1000, cost: { metal_frags: 200 }, color: 0x7d858c },
-  { name: 'Armored', hp: 2000, cost: { hqm: 25 }, color: 0x4d5560 },
+  { name: 'Twig', hp: 60, cost: { wood: 50 }, color: 0xc9a66b },
+  { name: 'Wood', hp: 600, cost: { wood: 200 }, color: 0x8b5e34 },
+  { name: 'Stone', hp: 1400, cost: { stone: 300 }, color: 0x9c9a94 },
+  { name: 'Sheet Metal', hp: 2800, cost: { metal_frags: 200 }, color: 0x7d858c },
+  { name: 'Armored', hp: 5500, cost: { hqm: 25 }, color: 0x4d5560 },
 ];
+
+// Reinforcement (hammer + R): bolted braces / plating on top of the material. Each level adds +50% max HP.
+export const REINFORCE = [
+  null,
+  { name: 'Braced', cost: { wood: 150, metal_frags: 60 } },
+  { name: 'Plated', cost: { metal_frags: 250, hqm: 6 } },
+];
+export function pieceMaxHp(tier, reinf = 0) { return Math.round(TIERS[tier].hp * (1 + 0.5 * (reinf || 0))); }
+export function reinforceCost(type, level) {
+  const base = REINFORCE[level].cost, m = PIECES[type].costMul, out = {};
+  for (const k in base) out[k] = Math.ceil(base[k] * m);
+  return out;
+}
 
 export const PIECES = {
   foundation: { name: 'Foundation', slot: 'cell', costMul: 1, icon: '⬛' },
@@ -72,6 +85,14 @@ export function pieceBoxes(type, open = false) {
     case 'large_box': return [[0, 0.4, 0, 0.75, 0.4, 0.45]];
     case 'furnace': return [[0, 0.7, 0, 0.6, 0.7, 0.6]];
     case 'tool_cupboard': return [[0, 0.9, 0, 0.45, 0.9, 0.3]];
+    // furniture
+    case 'chair': return [[0, 0.25, 0, 0.26, 0.25, 0.26]];
+    case 'table': return [[0, 0.4, 0, 0.75, 0.4, 0.45]];
+    case 'bed': return [[0, 0.25, 0, 0.55, 0.25, 1.05]];
+    case 'sofa': return [[0, 0.3, 0, 0.95, 0.3, 0.42]];
+    case 'bookshelf': return [[0, 0.95, 0, 0.6, 0.95, 0.2]];
+    case 'wardrobe': return [[0, 1.0, 0, 0.55, 1.0, 0.32]];
+    case 'fridge': return [[0, 0.9, 0, 0.38, 0.9, 0.36]];
     case 'loot_crate': return [[0, 0.4, 0, 0.7, 0.4, 0.45]];
     default: return [];
   }

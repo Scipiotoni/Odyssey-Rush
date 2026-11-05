@@ -232,8 +232,19 @@ export function pieceGeometry(type, tier = 1) {
     for (const [cx, cy, cz, hx, hy, hz] of pieceBoxes(type)) {
       const h = [hx, hy, hz], c = [cx, cy, cz];
       if (tier === 0) {
-        // twig: a frame of lashed sticks
+        // twig: a solid woven panel of sticks inside a lashed frame (not see-through)
         const st = 0.07, stick = 0x9a7a4a;
+        parts.push(part(box(Math.max(0.05, hx * 2 - 0.03), Math.max(0.05, hy * 2 - 0.03), Math.max(0.05, hz * 2 - 0.03)), 0xb08a52, { x: cx, y: cy, z: cz }, 0.18));
+        {
+          const thinAx = h.indexOf(Math.min(...h));
+          const along = thinAx === 1 ? 0 : (thinAx === 0 ? 2 : 0); // sticks run horizontally
+          const across = thinAx === 1 ? 2 : 1;
+          for (let t = -h[across] + 0.09; t < h[across] - 0.05; t += 0.14) for (const sg of [-1, 1]) {
+            const sz = [0.035, 0.035, 0.035], p = [cx, cy, cz];
+            sz[along] = h[along] * 2 - 0.02; p[across] += t; p[thinAx] += sg * h[thinAx];
+            parts.push(part(box(sz[0], sz[1], sz[2]), Math.random() < 0.5 ? 0x8a6a3e : 0xa07a48, { x: p[0], y: p[1], z: p[2] }, 0.15));
+          }
+        }
         const edge = (ax, o1, o2) => { const sz = [st, st, st]; sz[ax] = h[ax] * 2; const p = [...c]; const others = [0, 1, 2].filter((k) => k !== ax); p[others[0]] += o1 * (h[others[0]] - st / 2); p[others[1]] += o2 * (h[others[1]] - st / 2); parts.push(part(box(...sz), stick, { x: p[0], y: p[1], z: p[2] }, 0.15)); };
         for (let ax = 0; ax < 3; ax++) for (const o1 of [-1, 1]) for (const o2 of [-1, 1]) if (h[ax] > 0.15 || ax === 1) edge(ax, o1, o2);
         // diagonal brace on the largest face
@@ -269,6 +280,40 @@ export function pieceGeometry(type, tier = 1) {
     return merge(parts);
   });
 }
+// Reinforcement overlay: level 1 = steel X-braces & corner brackets, level 2 = + plating bands and rivets
+export function reinforceGeometry(type, level) {
+  return cached(`reinf_${type}_${level}`, () => {
+    const parts = [];
+    const steel = 0x4a4f55, light = 0x8a9096;
+    for (const [cx, cy, cz, hx, hy, hz] of pieceBoxes(type)) {
+      const h = [hx, hy, hz], c = [cx, cy, cz];
+      for (let ax = 0; ax < 3; ax++) for (const sgn of [-1, 1]) {
+        if (ax === 1 && sgn < 0) continue;
+        const others = [0, 1, 2].filter((k) => k !== ax);
+        if (h[others[0]] < 0.3 || h[others[1]] < 0.3) continue;
+        const u = ax === 1 ? 0 : others.find((k) => k !== 1), v = ax === 1 ? 2 : 1;
+        const U = h[u] * 2, V = h[v] * 2, d = 0.03;
+        const put = (uc, vc, ul, vl, color, rot = 0, depth = d) => {
+          const sz = [0, 0, 0], p = [...c];
+          sz[u] = ul; sz[v] = vl; sz[ax] = depth * 2; p[u] += uc; p[v] += vc; p[ax] += sgn * (h[ax] + depth * 0.5);
+          const t = { x: p[0], y: p[1], z: p[2] };
+          if (rot) { if (ax === 2) t.rz = rot; else if (ax === 0) t.rx = rot; else t.ry = rot; }
+          parts.push(part(box(sz[0], sz[1], sz[2]), color, t));
+        };
+        const diag = Math.hypot(U, V) - 0.1, ang = Math.atan2(V, U);
+        put(0, 0, diag, 0.07, steel, ang); put(0, 0, diag, 0.07, steel, -ang);
+        for (const a of [-1, 1]) for (const b of [-1, 1]) put(a * (U / 2 - 0.12), b * (V / 2 - 0.12), 0.22, 0.22, steel, 0, d * 1.3);
+        put(0, 0, 0.2, 0.2, light, 0, d * 1.6);
+        if (level >= 2) {
+          for (const f of [-1 / 3, 1 / 3]) put(0, f * V, U - 0.04, 0.16, steel, 0, d * 1.2);
+          for (const f of [-1 / 3, 1 / 3]) for (let q = -U / 2 + 0.25; q < U / 2 - 0.1; q += 0.5) put(q, f * V, 0.05, 0.05, light, 0, d * 2);
+        }
+      }
+    }
+    return parts.length ? merge(parts) : null;
+  });
+}
+
 export const DOOR_MATS = { wood: new THREE.MeshLambertMaterial({ color: 0x7a5232, flatShading: true }), metal: new THREE.MeshLambertMaterial({ color: 0x6f7880, flatShading: true }), armored: new THREE.MeshLambertMaterial({ color: 0x3c444c, flatShading: true }) };
 export function makeDoor(tier) {
   const g = new THREE.Group();
@@ -310,6 +355,58 @@ export function deployGeometry(kind) {
       case 'crate1': return merge([part(box(1.4, 0.8, 0.9), 0x8a7040, { y: 0.4 }, 0.06), part(box(1.42, 0.1, 0.92), 0x5a4a28, { y: 0.7 }), part(box(0.1, 0.82, 0.92), 0x5a4a28, { x: 0.5, y: 0.4 }), part(box(0.1, 0.82, 0.92), 0x5a4a28, { x: -0.5, y: 0.4 })]);
       case 'crate2': return merge([part(box(1.4, 0.8, 0.9), 0x4f5f35, { y: 0.4 }, 0.06), part(box(1.42, 0.1, 0.92), 0x2f3a20, { y: 0.7 }), part(box(0.4, 0.2, 0.02), 0xd0d0d0, { y: 0.45, z: 0.46 })]);
       case 'crate3': return merge([part(box(1.4, 0.8, 0.9), 0x2c3a4c, { y: 0.4 }, 0.06), part(box(1.42, 0.1, 0.92), 0x1a2230, { y: 0.7 }), part(box(0.5, 0.2, 0.02), 0xc8a030, { y: 0.45, z: 0.46 })]);
+      // ---------------- furniture
+      case 'chair': return merge([
+        part(box(0.48, 0.05, 0.46), 0x8a5a32, { y: 0.45 }, 0.05), part(box(0.46, 0.5, 0.05), 0x7a4e2a, { y: 0.72, z: 0.22 }),
+        ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => part(box(0.05, 0.45, 0.05), 0x5e3c22, { x: a * 0.2, y: 0.22, z: b * 0.19 })),
+        part(box(0.44, 0.04, 0.03), 0x5e3c22, { y: 0.85, z: 0.23 }), part(box(0.4, 0.06, 0.4), 0xa83a2a, { y: 0.49 }),
+      ]);
+      case 'table': return merge([
+        part(box(1.5, 0.07, 0.9), 0x8a5a32, { y: 0.78 }, 0.04), part(box(1.4, 0.08, 0.8), 0x6a4226, { y: 0.71 }),
+        ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => part(box(0.08, 0.72, 0.08), 0x5e3c22, { x: a * 0.66, y: 0.36, z: b * 0.36 })),
+        part(cyl(0.05, 0.06, 0.12, 8), 0xe8e0d0, { x: 0.3, y: 0.87 }), part(cyl(0.1, 0.1, 0.015, 12), 0xd8d0c0, { x: -0.3, y: 0.82, z: 0.1 }),
+      ]);
+      case 'bed': return merge([
+        part(box(1.1, 0.25, 2.1), 0x6a4226, { y: 0.17 }, 0.04), part(box(1.04, 0.16, 2.0), 0xeeeae2, { y: 0.36 }),
+        part(box(1.06, 0.07, 1.35), 0x3a5a8a, { y: 0.46, z: 0.3 }, 0.05), part(box(0.8, 0.1, 0.36), 0xf6f4ee, { y: 0.48, z: -0.75 }),
+        part(box(1.14, 0.8, 0.08), 0x5e3c22, { y: 0.45, z: -1.06 }), part(box(1.14, 0.45, 0.08), 0x5e3c22, { y: 0.25, z: 1.06 }),
+      ]);
+      case 'sofa': return merge([
+        part(box(1.9, 0.3, 0.85), 0x5a6a7a, { y: 0.2 }, 0.04), part(box(1.9, 0.55, 0.2), 0x4e5e6e, { y: 0.55, z: 0.34 }),
+        ...[-1, 1].map((a) => part(box(0.2, 0.45, 0.85), 0x4e5e6e, { x: a * 0.85, y: 0.38 })),
+        ...[-0.4, 0.4].map((x) => part(box(0.78, 0.12, 0.62), 0x66788a, { x, y: 0.41, z: -0.06 }, 0.04)),
+        ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => part(box(0.06, 0.06, 0.06), 0x2a2018, { x: a * 0.88, y: 0.03, z: b * 0.36 })),
+      ]);
+      case 'bookshelf': {
+        const ps = [part(box(1.2, 1.9, 0.04), 0x5e3c22, { y: 0.95, z: 0.18 }), ...[-1, 1].map((a) => part(box(0.05, 1.9, 0.4), 0x6a4226, { x: a * 0.58, y: 0.95 }))];
+        for (let i = 0; i < 5; i++) ps.push(part(box(1.15, 0.04, 0.38), 0x7a4e2a, { y: 0.03 + i * 0.46 }));
+        const cols = [0xa83a2a, 0x2a5a8a, 0x3a7a3a, 0xc8a040, 0x6a3a7a, 0x8a6a4a];
+        for (let sh = 0; sh < 4; sh++) for (let k = 0; k < 9; k++) { const w = 0.07 + ((k * 7 + sh) % 3) * 0.02, hgt = 0.28 + ((k + sh * 3) % 4) * 0.03; ps.push(part(box(w, hgt, 0.26), cols[(k + sh) % 6], { x: -0.5 + k * 0.115, y: 0.05 + sh * 0.46 + hgt / 2, z: -0.02 })); }
+        return merge(ps);
+      }
+      case 'wardrobe': return merge([
+        part(box(1.1, 2.0, 0.62), 0x7a4e2a, { y: 1.0 }, 0.04), part(box(0.005, 1.8, 0.01), 0x3a2414, { y: 1.0, z: -0.315 }),
+        ...[-1, 1].map((a) => part(box(0.04, 0.2, 0.04), 0xc8a040, { x: a * 0.07, y: 1.05, z: -0.33 })),
+        part(box(1.16, 0.08, 0.66), 0x5e3c22, { y: 2.02 }), part(box(1.14, 0.1, 0.64), 0x5e3c22, { y: 0.05 }),
+      ]);
+      case 'fridge': return merge([
+        part(box(0.76, 1.8, 0.72), 0xe8eaec, { y: 0.9 }, 0.02), part(box(0.74, 0.01, 0.01), 0x9a9ea2, { y: 1.15, z: -0.365 }),
+        part(box(0.04, 0.4, 0.05), 0xb0b4b8, { x: 0.3, y: 1.45, z: -0.38 }), part(box(0.04, 0.3, 0.05), 0xb0b4b8, { x: 0.3, y: 0.85, z: -0.38 }),
+      ]);
+      case 'rug': return merge([part(box(1.8, 0.02, 1.2), 0x8a2a2a, { y: 0.011 }), part(box(1.5, 0.022, 0.9), 0xc8a050, { y: 0.012 }), part(box(1.2, 0.024, 0.6), 0x2a3a6a, { y: 0.013 })]);
+      case 'lamp': return merge([
+        part(cyl(0.16, 0.18, 0.04, 12), 0x2a2a2a, { y: 0.02 }), part(cyl(0.02, 0.02, 1.5, 8), 0x3a3a3a, { y: 0.77 }),
+        part(cyl(0.12, 0.22, 0.28, 14), 0xf0e0b8, { y: 1.55 }), part(ico(0.05, 1), 0xfff6c8, { y: 1.5 }),
+      ]);
+      case 'plant_pot': return merge([
+        part(cyl(0.18, 0.13, 0.32, 12), 0xb0583a, { y: 0.16 }), part(cyl(0.165, 0.165, 0.02, 12), 0x4a3020, { y: 0.31 }),
+        ...[0, 1, 2, 3, 4, 5, 6].map((i) => part(box(0.08, 0.015, 0.4), i % 2 ? 0x3a8a3a : 0x2f7030, { y: 0.48 + (i % 3) * 0.06, ry: i * 0.9, rx: 0.7, x: Math.sin(i * 0.9) * 0.1, z: Math.cos(i * 0.9) * 0.1 })),
+      ]);
+      case 'painting': return merge([
+        part(box(0.9, 0.7, 0.05), 0x6a4226, { y: 1.4 }), part(box(0.8, 0.6, 0.055), 0x7ab0d8, { y: 1.4 }),
+        part(box(0.8, 0.22, 0.057), 0x5a8a3a, { y: 1.19 }), part(cone(0.2, 0.3, 4), 0x8a8a8a, { y: 1.45, x: 0.15, z: -0.03, sz: 0.1 }), part(ico(0.06, 0), 0xf0d040, { x: -0.25, y: 1.58, z: -0.03 }),
+        part(box(0.05, 1.2, 0.05), 0x5e3c22, { y: 0.6, z: 0.15, rx: -0.15 }), part(box(0.6, 0.05, 0.05), 0x5e3c22, { y: 1.02, z: 0.0 }),
+      ]);
       case 'bag': return merge([part(jitter(ico(0.35, 0), 0.3, 9), 0x6a5236, { y: 0.25, sy: 0.75 }), part(cyl(0.08, 0.12, 0.2, 5), 0x4a3a26, { y: 0.55 })]);
     }
     return merge([part(box(0.5, 0.5, 0.5), 0xff00ff, { y: 0.25 })]);

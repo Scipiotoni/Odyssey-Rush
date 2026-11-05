@@ -229,7 +229,7 @@ class Game {
 
   refreshBags() {
     this.bags = [];
-    for (const e of this.structures.map.values()) if (e.s.type === 'sleeping_bag' && e.s.o === this.pid) this.bags.push({ id: e.s.id, x: Math.round(e.s.x), z: Math.round(e.s.z) });
+    for (const e of this.structures.map.values()) if ((e.s.type === 'sleeping_bag' || e.s.type === 'bed') && e.s.o === this.pid) this.bags.push({ id: e.s.id, x: Math.round(e.s.x), z: Math.round(e.s.z) });
   }
 
   onSnap(m) {
@@ -472,9 +472,9 @@ class Game {
         const s = this.structures.map.get(hit.id)?.s;
         if (s) {
           if (s.k === 'door') { text = `<kbd>E</kbd> ${s.open ? 'Close' : 'Open'} door`; if (E) this.net.send({ t: 'use', id: s.id }); }
-          else if (s.type === 'small_box' || s.type === 'large_box') { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
+          else if (ITEMS[s.type]?.deploy?.slots && !['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'].includes(s.type)) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.type === 'tool_cupboard') { const authed = s.auth?.includes(this.pid); text = `<kbd>E</kbd> ${authed ? 'Deauthorize' : 'Authorize'} at Tool Cupboard <small>(${s.auth?.length || 0} authorized)</small>`; if (E) this.net.send({ t: 'use', id: s.id }); }
-          else if (s.type === 'sleeping_bag') { text = s.o === this.pid ? 'Your sleeping bag' : '<kbd>E</kbd> Claim sleeping bag'; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
+          else if (s.type === 'sleeping_bag' || s.type === 'bed') { const nm = s.type === 'bed' ? 'bed' : 'sleeping bag'; text = s.o === this.pid ? `Your ${nm} (respawn point)` : `<kbd>E</kbd> Claim ${nm}`; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
           else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name}`; }
           else if (s.k === 'piece') target = `${TIERS[s.tier].name} ${PIECES[s.type].name}<div class="tbar"><div style="width:${(s.hp / s.mhp) * 100}%"></div></div>`;

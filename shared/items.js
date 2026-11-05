@@ -95,6 +95,18 @@ export const ITEMS = {
   large_box: { name: 'Large Wood Box', cat: 'deployable', stack: 1, icon: '🗃️', deploy: { kind: 'large_box', hp: 400, slots: 30 } },
   sleeping_bag: { name: 'Sleeping Bag', cat: 'deployable', stack: 1, icon: '🛏️', deploy: { kind: 'sleeping_bag', hp: 100 } },
   tool_cupboard: { name: 'Tool Cupboard', cat: 'deployable', stack: 1, icon: '🗄️', deploy: { kind: 'tool_cupboard', hp: 600 } },
+  // --- furniture ---
+  chair: { name: 'Wooden Chair', cat: 'deployable', stack: 4, icon: '🪑', deploy: { kind: 'chair', hp: 100, furniture: true } },
+  table: { name: 'Table', cat: 'deployable', stack: 2, icon: '🟫', deploy: { kind: 'table', hp: 150, furniture: true } },
+  bed: { name: 'Bed', cat: 'deployable', stack: 1, icon: '🛏️', deploy: { kind: 'bed', hp: 200, furniture: true, respawn: true } },
+  sofa: { name: 'Sofa', cat: 'deployable', stack: 1, icon: '🛋️', deploy: { kind: 'sofa', hp: 150, furniture: true } },
+  bookshelf: { name: 'Bookshelf', cat: 'deployable', stack: 1, icon: '📚', deploy: { kind: 'bookshelf', hp: 250, slots: 12, furniture: true } },
+  wardrobe: { name: 'Wardrobe', cat: 'deployable', stack: 1, icon: '🚪', deploy: { kind: 'wardrobe', hp: 350, slots: 24, furniture: true } },
+  fridge: { name: 'Fridge', cat: 'deployable', stack: 1, icon: '🧊', deploy: { kind: 'fridge', hp: 300, slots: 16, furniture: true } },
+  rug: { name: 'Rug', cat: 'deployable', stack: 4, icon: '🟥', deploy: { kind: 'rug', hp: 50, furniture: true } },
+  lamp: { name: 'Floor Lamp', cat: 'deployable', stack: 4, icon: '💡', deploy: { kind: 'lamp', hp: 80, furniture: true, light: true } },
+  plant_pot: { name: 'Potted Plant', cat: 'deployable', stack: 4, icon: '🪴', deploy: { kind: 'plant_pot', hp: 50, furniture: true } },
+  painting: { name: 'Painting', cat: 'deployable', stack: 4, icon: '🖼️', deploy: { kind: 'painting', hp: 40, furniture: true } },
   wood_door: { name: 'Wooden Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 200, tier: 'wood' } },
   metal_door: { name: 'Sheet Metal Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 400, tier: 'metal' } },
   armored_door: { name: 'Armored Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 900, tier: 'armored' } },
@@ -177,6 +189,18 @@ export const RECIPES = [
   { out: 'lmg', n: 1, time: 20, station: 'wb3', cost: { hqm: 70, spring: 5, gears: 4, metal_frags: 300 } },
   { out: 'rocket_launcher', n: 1, time: 20, station: 'wb3', cost: { hqm: 50, pipe: 4, metal_frags: 200 } },
   { out: 'rocket', n: 1, time: 8, station: 'wb3', cost: { explosives: 8, pipe: 1, gunpowder: 50 } },
+  // --- furniture ---
+  { out: 'chair', n: 1, time: 3, cost: { wood: 80 } },
+  { out: 'rug', n: 1, time: 3, cost: { cloth: 40 } },
+  { out: 'plant_pot', n: 1, time: 3, cost: { stone: 40, wood: 10 } },
+  { out: 'table', n: 1, time: 5, station: 'wb1', cost: { wood: 150, metal_frags: 10 } },
+  { out: 'bed', n: 1, time: 8, station: 'wb1', cost: { wood: 200, cloth: 60 } },
+  { out: 'sofa', n: 1, time: 8, station: 'wb1', cost: { wood: 150, cloth: 80, leather: 10 } },
+  { out: 'bookshelf', n: 1, time: 8, station: 'wb1', cost: { wood: 300 } },
+  { out: 'wardrobe', n: 1, time: 10, station: 'wb1', cost: { wood: 350, metal_frags: 30 } },
+  { out: 'lamp', n: 1, time: 6, station: 'wb1', cost: { metal_frags: 40, cloth: 5, fuel: 5 } },
+  { out: 'painting', n: 1, time: 4, station: 'wb1', cost: { wood: 30, cloth: 20 } },
+  { out: 'fridge', n: 1, time: 12, station: 'wb2', cost: { metal_frags: 200, gears: 1, tech_trash: 1 } },
 ];
 RECIPES.forEach((r, i) => (r.id = i));
 
