@@ -6,7 +6,7 @@ import zlib from 'zlib';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
-import { Game } from './game.js';
+import { Hub } from './hub.js';
 import { createStore } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,10 +40,37 @@ function getFile(file) {
   return e;
 }
 
+// small JSON API for the home screen's server browser
+function readJson(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', (c) => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch { resolve({}); } });
+  });
+}
+const apiLimit = new Map(); // ip -> {n, t}
+async function api(req, res, url) {
+  const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const ip = req.socket.remoteAddress || '?', t = Date.now(), L = apiLimit.get(ip) || { n: 0, t };
+  if (t - L.t > 60000) { L.n = 0; L.t = t; }
+  if (++L.n > 120) return send(429, { error: 'Slow down' });
+  apiLimit.set(ip, L);
+  if (!hub) return send(503, { error: 'Starting up' });
+  if (url === '/api/servers' && req.method === 'GET') return send(200, { servers: hub.list() });
+  if (req.method !== 'POST') return send(405, { error: 'POST' });
+  const b = await readJson(req);
+  if (url === '/api/servers/mine') return send(200, { servers: hub.mine(String(b.token || '')) });
+  if (url === '/api/servers/find') { const m = hub.byCode(b.code); return m ? send(200, { server: hub.view(m) && { ...hub.view(m), code: m.code } }) : send(404, { error: 'No server with that code' }); }
+  if (url === '/api/servers/create') { const r = await hub.create(b); return send(r.error ? 400 : 200, r); }
+  if (url === '/api/servers/update') { const r = await hub.update(b); return send(r.error ? 400 : 200, r); }
+  return send(404, { error: 'unknown' });
+}
+
 const server = http.createServer((req, res) => {
   let url;
   try { url = decodeURIComponent((req.url || '/').split('?')[0]); } catch { res.writeHead(400); return res.end(); }
   if (url === '/') url = '/index.html';
+  if (url.startsWith('/api/')) { api(req, res, url).catch((e) => { console.error('api', e); res.writeHead(500); res.end('{}'); }); return; }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('ok'); }
   for (const [prefix, dir, immutable] of MOUNTS) {
     if (!url.startsWith(prefix)) continue;
@@ -64,34 +91,9 @@ const server = http.createServer((req, res) => {
 });
 
 const store = await createStore({ databaseUrl: process.env.DATABASE_URL, dataFile: DATA });
-let saved = null;
-try { saved = await store.load(); } catch (e) { console.error('[store] load failed:', e.message); }
-console.log(`[store] using ${store.kind} storage${saved ? '' : ' (new world)'}`);
-let game = new Game({ seed: saved?.customSeed ? saved.seed : SEED, saved });
-
-let saving = null;
-async function save() {
-  if (saving) return saving;
-  saving = (async () => {
-    try { const n = await store.save(game.serialize()); console.log(`[store] saved world (${(n / 1024).toFixed(0)} KB)`); }
-    catch (e) { console.error('[store] save failed:', e.message); }
-    finally { saving = null; }
-  })();
-  return saving;
-}
-game.onSave = save;
-
-// Admin world reset: keep sign-in accounts, wipe everything else (optionally a brand-new island).
-async function resetWorld({ newIsland }) {
-  const seed = newIsland ? 1 + Math.floor(Math.random() * 2 ** 30) : game.seed;
-  const keep = { seed, customSeed: newIsland || !!game.customSeed, accounts: [...game.accounts.values()] };
-  for (const ws of wss.clients) { try { ws.close(4002, 'reset'); } catch {} }
-  game = new Game({ seed, saved: keep });
-  game.onSave = save; game.onReset = resetWorld;
-  await save();
-  console.log(`[admin] world reset done (seed ${seed})`);
-}
-game.onReset = resetWorld;
+const hub = new Hub(store, { seed: SEED });
+await hub.init();
+console.log(`[store] using ${store.kind} storage, ${hub.servers.size} server(s)`);
 
 const wss = new WebSocketServer({
   server, path: '/ws', maxPayload: 64 * 1024,
@@ -100,7 +102,12 @@ const wss = new WebSocketServer({
 wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
-  game.connect(ws);
+  // the first message picks the server (and carries the sign-in)
+  ws.once('message', (raw) => {
+    let msg; try { msg = JSON.parse(raw); } catch { return ws.close(); }
+    if (!msg || msg.t !== 'hello') return ws.close();
+    hub.route(ws, msg).catch((e) => { console.error('route', e); try { ws.close(); } catch {} });
+  });
 });
 // drop dead connections so sleepers appear promptly
 setInterval(() => {
@@ -111,14 +118,14 @@ setInterval(() => {
   }
 }, 20000);
 
-setInterval(() => { try { game.tick(); } catch (e) { console.error('tick error', e); } }, TICK_MS);
+setInterval(() => hub.tick(), TICK_MS);
 
 let shuttingDown = false;
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log('[server] shutting down, saving world...');
-  await save();
+  await hub.saveAll();
   await store.close().catch(() => {});
   process.exit(0);
 };

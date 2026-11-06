@@ -25,6 +25,7 @@ import { Footprints } from './footprints.js';
 import { IceView } from './ice.js';
 import { SeaLife } from './sealife.js';
 import { Fishing } from './fishing.js';
+import { Home, deviceId } from './home.js';
 import { FloodView } from './flood.js';
 import { IceField, BREATH_MAX, ICE_TOP } from '/shared/ice.js';
 import { SEASON } from './season.js';
@@ -89,7 +90,9 @@ class Game {
     $('menustatus').textContent = 'Connecting…';
     await this.net.connect(url);
     this.bindNet();
-    this.net.send({ t: 'hello', token, name, look: this.look, pass: pass || undefined });
+    const srv = this.home?.sel || { id: 'main' };
+    this.serverSel = srv;
+    this.net.send({ t: 'hello', token, name, look: this.look, pass: pass || undefined, server: srv.id, spw: this.home?.spw || undefined, devToken: deviceId() });
   }
 
   initWorld(seed) {
@@ -190,6 +193,8 @@ class Game {
       this.accountProtected = m.protected;
       if (m.created) this.pendingNote = `🔐 Account created — sign in as "${m.name}" with your password on any device.`;
     });
+    n.on('server', (m) => { this.serverInfo = m; this.rules = m.settings; });
+    n.on('rules', (m) => { this.rules = { ...this.rules, ...m.rules }; if (m.dayLen) this.dayLen = m.dayLen; if (m.yearLen) this.yearLen = m.yearLen; if (m.day !== undefined) this.day = m.day; if (m.year !== undefined) this.year = m.year; this.ui.toast('⚙️ Server settings changed'); });
     n.on('authfail', (m) => {
       this.authFailed = true;
       $('menustatus').textContent = m.m;
@@ -199,8 +204,10 @@ class Game {
     n.on('welcome', (m) => {
       this.onEnter?.(); this.onEnter = null;
       this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || []; this.pendingWeather = m.wx; this.pendingIce = m.ice;
+      this.rules = { ...this.rules, ...(m.rules || {}) };
       this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen; this.year = m.year ?? 1.05; this.yearLen = m.yearLen || 4800;
       this.initWorld(m.seed);
+      if (this.serverInfo) setTimeout(() => this.ui.toast(`🌍 ${this.serverInfo.name}${this.serverInfo.id !== 'main' ? ` — invite code ${this.serverInfo.code}` : ''}${this.rules?.creative ? ' · 🧱 creative' : ''}`), 1500);
       this.player.pos.set(m.p[0], m.p[1], m.p[2]);
       this.player.yaw = m.yaw || 0;
       this.alive = m.alive;
@@ -211,6 +218,7 @@ class Game {
     });
     n.on('close', (ev) => {
       if (this.authFailed || (ev && ev.code === 4001)) { this.authFailed = false; return; }
+      if (ev && ev.code === 4003) { this.input.unlock(); $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'This server was deleted by its owner.'; return; }
       if (ev && ev.code === 4000) { this.input.unlock(); $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'You joined from another tab or device. Close this one.'; return; }
       // Connection lost (server restart / network blip): wait for the server, then rejoin automatically.
       this.input.unlock();
@@ -1010,6 +1018,7 @@ class Game {
 const game = new Game();
 $('menucontrols').innerHTML = CONTROLS.map(([k, v]) => `<div><kbd>${k}</kbd> ${v}</div>`).join('');
 const creator = new Creator((look) => (game.look = look));
+game.home = new Home();
 game.look = creator.look;
 document.addEventListener('mousedown', () => audio.resume());
 document.addEventListener('keydown', () => audio.resume());

@@ -44,9 +44,28 @@ const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
 const r2 = (v) => Math.round(v * 100) / 100;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
+export const DEFAULT_SETTINGS = { pvp: true, dayMinutes: 40, seasonDays: 2, gather: 1, hunger: 1, animals: true, sharks: true, difficulty: 'normal', creative: false, maxPlayers: 24 };
+export function cleanSettings(x = {}, base = DEFAULT_SETTINGS) {
+  const n = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
+  return {
+    pvp: x.pvp === undefined ? base.pvp : !!x.pvp,
+    dayMinutes: Math.round(n(x.dayMinutes, 5, 180, base.dayMinutes)),
+    seasonDays: Math.round(n(x.seasonDays, 1, 14, base.seasonDays)),
+    gather: Math.round(n(x.gather, 0.25, 10, base.gather) * 100) / 100,
+    hunger: Math.round(n(x.hunger, 0, 4, base.hunger) * 100) / 100,
+    animals: x.animals === undefined ? base.animals : !!x.animals,
+    sharks: x.sharks === undefined ? base.sharks : !!x.sharks,
+    difficulty: ['peaceful', 'normal', 'hardcore'].includes(x.difficulty) ? x.difficulty : base.difficulty,
+    creative: x.creative === undefined ? base.creative : !!x.creative,
+    maxPlayers: Math.round(n(x.maxPlayers, 1, 64, base.maxPlayers)),
+  };
+}
+
 export class Game {
-  constructor({ seed = 1337, saved = null }) {
+  constructor({ seed = 1337, saved = null, settings = null, ownerHash = null }) {
     this.seed = seed;
+    this.settings = cleanSettings(settings || {});
+    this.ownerHash = ownerHash; // the server owner (hash of their device token) is its admin
     this.world = new World(seed);
     this.players = new Map();   // token -> player
     this.byPid = new Map();     // pid -> player
@@ -82,6 +101,16 @@ export class Game {
     this.weather = { state: 'clear', until: now() + 300 + Math.random() * 600, cloud: 0.1, rain: 0, storm: 0, wind: 0.3, windDir: Math.random() * 6.28 };
   }
 
+  get dayLen() { return this.settings.dayMinutes * 60; }
+  rulesMsg() { const st = this.settings; return { pvp: st.pvp, creative: st.creative, difficulty: st.difficulty }; }
+  // new settings from the owner, live
+  applySettings(st) {
+    this.settings = cleanSettings(st, this.settings);
+    for (const p of this.players.values()) if (p.online) this.send(p, { t: 'rules', rules: this.rulesMsg(), dayLen: this.dayLen, yearLen: this.dayLen * this.settings.seasonDays, day: this.day, year: this.year });
+    if (!this.settings.animals) for (const a of [...this.animals.values()]) if (a.type !== 'shark') this.animals.delete(a.id);
+    if (!this.settings.sharks) for (const a of [...this.animals.values()]) if (a.type === 'shark') this.animals.delete(a.id);
+  }
+  onlineCount() { let n = 0; for (const p of this.players.values()) if (p.online) n++; return n; }
   id(prefix) { return `${prefix}${(this.nextId++).toString(36)}`; }
 
   region(key) {
@@ -117,7 +146,7 @@ export class Game {
   }
   // Serializable snapshot of the whole persistent world.
   serialize() {
-    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, sw, fish, dry, ...rest } = p; return rest; };
+    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, sw, fish, dry, tokenHash, ...rest } = p; return rest; };
     const d = {
       seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day, year: this.year,
       players: [...this.players.values()].map(strip),
@@ -152,7 +181,8 @@ export class Game {
   toAll(msg) { const s = JSON.stringify(msg); for (const p of this.players.values()) if (p.online && p.ws.readyState === 1) p.ws.send(s); }
   toast(p, m) { this.send(p, { t: 'toast', m }); }
 
-  connect(ws) {
+  connect(ws, first = null) {
+    if (first) setImmediate(() => { try { this.hello(ws, first); } catch (e) { console.error('hello error', e); } });
     ws.on('message', (raw) => {
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
@@ -211,7 +241,8 @@ export class Game {
     this.fixInv(p);
     if (p.pendingDrop?.length) { this.dropBag(p.x, p.y, p.z, p.pendingDrop); this.toast(p, '🎒 Inventories got smaller: items that no longer fit are in a bag at your feet. Craft a Small Bag or Backpack for more room.'); } p.pendingDrop = null;
     ws.player = p;
-    this.send(p, { t: 'welcome', year: this.year, yearLen: DAY_LENGTH * SEASON_DAYS, wx: this.weatherMsg(), cm: this.caves.mods, ice: this.iceMsg(), terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
+    p.tokenHash = crypto.createHash('sha256').update(String(msg.devToken || msg.token || '')).digest('hex');
+    this.send(p, { t: 'welcome', year: this.year, yearLen: this.dayLen * this.settings.seasonDays, wx: this.weatherMsg(), cm: this.caves.mods, ice: this.iceMsg(), terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: this.dayLen, rules: this.rulesMsg(), p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
@@ -290,7 +321,7 @@ export class Game {
   sendInv(p) { p.invDirty = false; this.send(p, { t: 'inv', inv: p.inv, armor: p.armor }); }
   maxHp(p) { return Math.min(150, 100 + 2 * (this.level(p) - 1)); }
   level(p) { return Math.floor(Math.sqrt((p.xp || 0) / 60)) + 1; }
-  gatherMul(p) { return Math.min(2, 1 + 0.04 * (this.level(p) - 1)); }
+  gatherMul(p) { return Math.min(2, 1 + 0.04 * (this.level(p) - 1)) * this.settings.gather; }
   addXp(p, n) {
     const l0 = this.level(p);
     p.xp = (p.xp || 0) + n;
@@ -697,6 +728,8 @@ export class Game {
   damagePlayer(o, amt, src, hs = false) {
     if (!o.alive) return;
     if (src && src.pid && src !== o && this.sameClan(src, o)) return; // no friendly fire
+    if (src && src.pid && src !== o && !this.settings.pvp) return; // PvP off on this server
+    if (this.settings.difficulty === 'peaceful' && typeof src === 'string' && /^a /.test(src)) return; // animals don't hurt you
     if (o.vehicle) amt *= 0.6;
     const dmg = amt * (1 - this.armorProt(o, hs));
     o.hp -= dmg;
@@ -715,6 +748,7 @@ export class Game {
     p.inv = Inv.emptySlots(INV_SIZE); p.armor = { head: null, chest: null, legs: null, back: null }; p.queue = [];
     this.fixInv(p);
     p.killedBy = byName;
+    if (this.settings.difficulty === 'hardcore') { p.xp = 0; p.kills = 0; for (const s2 of this.structs.values()) if ((s2.type === 'sleeping_bag' || s2.type === 'bed') && s2.owner === p.pid) s2.owner = 0; this.toast(p, '💀 Hardcore: your survivor is gone — level, kills and respawn points are wiped'); }
     this.sendInv(p);
     this.send(p, { t: 'dead', by: byName, bags: this.bagsOf(p) });
     this.toAll({ t: 'chat', from: '', m: `☠ ${p.name} was killed by ${byName}${p.online ? '' : ' while sleeping'}` });
@@ -848,19 +882,19 @@ export class Game {
       const st = this.structs.get(String(m.st || ''));
       if (!st || !STATION_KINDS.includes(st.type) || dist3(st, p) > STATION_RANGE + 1.5) return this.toast(p, 'Open the right crafting station (press E on it) to make this');
       if (!stationRecipes(st.type).includes(r)) return this.toast(p, `A ${ITEMS[st.type].name} can't make that`);
-      if (!Inv.hasAll(p.inv, r.cost, n)) return this.toast(p, 'Not enough resources');
+      if (!this.settings.creative && !Inv.hasAll(p.inv, r.cost, n)) return this.toast(p, 'Not enough resources');
       this.ensureStation(st);
       if (st.queue.length + n > 20) return this.toast(p, 'This station is busy (20 jobs max)');
-      Inv.removeAll(p.inv, r.cost, n);
+      if (!this.settings.creative) Inv.removeAll(p.inv, r.cost, n);
       let end = Math.max(now(), st.queue.length ? st.queue[st.queue.length - 1].end : 0);
       for (let i = 0; i < n; i++) { end += r.time; st.queue.push({ r: r.id, end, by: p.pid }); }
       this.activeStations.add(st.id);
       this.sendInv(p); this.pushContainer(st.id);
       return;
     }
-    if (!Inv.hasAll(p.inv, r.cost, n)) return this.toast(p, 'Not enough resources');
+    if (!this.settings.creative && !Inv.hasAll(p.inv, r.cost, n)) return this.toast(p, 'Not enough resources');
     if (p.queue.length >= 12) return this.toast(p, 'Craft queue is full');
-    Inv.removeAll(p.inv, r.cost, n);
+    if (!this.settings.creative) Inv.removeAll(p.inv, r.cost, n);
     let end = Math.max(now(), p.queue.length ? p.queue[p.queue.length - 1].end : 0);
     for (let i = 0; i < n; i++) { end += r.time; p.queue.push({ r: r.id, end }); }
     this.sendInv(p); this.sendQueue(p);
@@ -944,7 +978,7 @@ export class Game {
     if (!plan || plan.id !== 'building_plan') return this.toast(p, 'Equip a building plan');
     const tier = Math.max(0, Math.min(TIERS.length - 1, num(m.tier, 0) | 0));
     const cost = pieceCost(type, tier);
-    if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
+    if (!this.settings.creative && !Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     let b, gx = num(m.gx) | 0, gz = num(m.gz) | 0, level = num(m.level) | 0;
     let isNew = false;
     if (m.veh) return this.onDeckBuild(p, m, type, tier, cost, gx, gz, level);
@@ -965,7 +999,7 @@ export class Game {
     if (err) return this.toast(p, err);
     if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz, tier); if (ge) return this.toast(p, ge); }
     if (isNew) this.buildings.set(b.id, b);
-    Inv.removeAll(p.inv, cost);
+    if (!this.settings.creative) Inv.removeAll(p.inv, cost);
     const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
     this.addStruct(s);
     this.sendInv(p);
@@ -985,7 +1019,7 @@ export class Game {
     const pieces = this.piecesOf(b.id);
     const err = canPlaceAny(type, gx, gz, level, buildIndex([...pieces, ...this.deckFoundations(v)]), false);
     if (err) return this.toast(p, err);
-    Inv.removeAll(p.inv, cost);
+    if (!this.settings.creative) Inv.removeAll(p.inv, cost);
     if (!v.owner) { v.owner = p.pid; b.owner = p.pid; this.toast(p, `🚛 You claimed this ${def.name} — only you and your clan can build on it`); }
     const local = pieceTransform(b, { type, gx, gz, level, rot: m.rot | 0 });
     this.addStruct({ id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, veh: v.id, local, x: 0, y: 0, z: 0, yaw: 0 });
@@ -1001,8 +1035,8 @@ export class Game {
     if (dist3(s, p) > BUILD_REACH + 3) return;
     if (this.privBlocked(p, s.x, s.z, s)) return this.toast(p, 'Building blocked');
     const cost = pieceCost(s.type, tier);
-    if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
-    Inv.removeAll(p.inv, cost);
+    if (!this.settings.creative && !Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
+    if (!this.settings.creative) Inv.removeAll(p.inv, cost);
     s.tier = tier; s.mhp = pieceMaxHp(tier, s.reinf); s.hp = s.mhp;
     this.updStruct(s); this.sendInv(p);
     this.toNear(s.x, s.z, 80, { t: 'fx', k: 'upgrade', p: [s.x, s.y + 1, s.z], tier });
@@ -1018,8 +1052,8 @@ export class Game {
     if (dist3(s, p) > BUILD_REACH + 3) return;
     if (this.privBlocked(p, s.x, s.z, s)) return this.toast(p, 'Building blocked');
     const cost = reinforceCost(s.type, lvl);
-    if (!Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
-    Inv.removeAll(p.inv, cost);
+    if (!this.settings.creative && !Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
+    if (!this.settings.creative) Inv.removeAll(p.inv, cost);
     const before = s.mhp;
     s.reinf = lvl; s.mhp = pieceMaxHp(s.tier, lvl); s.hp += s.mhp - before;
     this.updStruct(s); this.sendInv(p);
@@ -1933,6 +1967,7 @@ export class Game {
     const msg = String(m.m || '').replace(/[<>]/g, '').slice(0, 200).trim();
     if (!msg) return;
     if (/^\/(spawn|unstuck|help|admin|password)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
+    if (this.settings.creative && /^\/(items|give|kit|heal|day|tp)\b/.test(msg)) return this.devCommand(p, msg.slice(1).split(/\s+/)); // creative servers: the item spawner for everyone
     if (msg.startsWith('/') && !msg.startsWith('/c ')) {
       if (this.isAdmin(p)) return this.devCommand(p, msg.slice(1).split(/\s+/));
       return this.toast(p, 'Unknown command — type /help');
@@ -2008,7 +2043,7 @@ export class Game {
   }
 
   // Commands available to everyone
-  isAdmin(p) { return !!(process.env.DEV || p.admin); }
+  isAdmin(p) { return !!(process.env.DEV || p.admin || (this.ownerHash && p.tokenHash === this.ownerHash)); }
   publicCommand(p, [cmd, a]) {
     if (cmd === 'help') {
       this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /password new — protect your name with a password so you can sign in on other devices · /admin password — unlock admin commands' });
@@ -2426,7 +2461,7 @@ export class Game {
     for (const p of online) {
       let near = 0;
       for (const a of this.animals.values()) if (dist2(a, p) < 220 * 220) near++;
-      if (near < 4 && Math.random() < 0.05 && this.animals.size < 200) {
+      if (this.settings.animals && near < 4 && Math.random() < 0.05 && this.animals.size < 200) {
         const ang = Math.random() * Math.PI * 2, r = 110 + Math.random() * 80;
         const x = p.x + Math.cos(ang) * r, z = p.z + Math.sin(ang) * r;
         const g = this.world.ground(x, z);
@@ -2440,7 +2475,7 @@ export class Game {
     }
     // sharks patrol the open sea around swimmers and boats
     for (const p of online) {
-      if (p.y > 0.6 || p.y < CAVE_ZONE || this.ice.inland(p.x, p.z) || this.world.ground(p.x, p.z) > -6) continue;
+      if (!this.settings.sharks || p.y > 0.6 || p.y < CAVE_ZONE || this.ice.inland(p.x, p.z) || this.world.ground(p.x, p.z) > -6) continue;
       let near = 0;
       for (const a of this.animals.values()) if (a.type === 'shark' && dist2(a, p) < 160 * 160) near++;
       if (near >= 2 || Math.random() > 0.04) continue;
@@ -2546,9 +2581,9 @@ export class Game {
     const t = now();
     const dt = Math.min(0.5, t - this.lastTick);
     this.lastTick = t;
-    this.day = (this.day + dt / DAY_LENGTH) % 1;
+    this.day = (this.day + dt / this.dayLen) % 1;
     const ps = Math.floor(this.year);
-    this.year = (this.year + dt / (DAY_LENGTH * SEASON_DAYS)) % 4;
+    this.year = (this.year + dt / (this.dayLen * this.settings.seasonDays)) % 4;
     if (Math.floor(this.year) !== ps) { const si = Math.floor(this.year); this.toAll({ t: 'chat', from: '', m: ['🌸 Spring is here — the snow melts and the flowers come back.', '☀️ Summer has arrived.', '🍂 Autumn: the leaves are turning.', '❄️ Winter has come. Snow will cover the island — dress warm and keep a fire going.'][si] }); this.toAll({ t: 'time', day: this.day, year: this.year }); }
     this.tickExplosives();
     this.tickCrafting();
@@ -2568,9 +2603,9 @@ export class Game {
       if (!p.alive) continue;
       if (!p.online) continue; // sleepers don't starve
       if (now() - (p.lastSt || 0) > 5) continue; // tab closed / hidden / connection stalled: no hunger or thirst while away
-      p.food = Math.max(0, p.food - 0.045 * dt);
-      p.water = Math.max(0, p.water - 0.07 * dt);
-      if (p.food <= 0 || p.water <= 0) { p.hp -= 0.6 * dt; if (p.hp <= 0) { this.killPlayer(p, p.food <= 0 ? 'starvation' : 'dehydration'); continue; } }
+      p.food = Math.max(0, p.food - 0.045 * dt * this.settings.hunger);
+      p.water = Math.max(0, p.water - 0.07 * dt * this.settings.hunger);
+      if ((p.food <= 0 || p.water <= 0) && this.settings.difficulty !== 'peaceful') { p.hp -= 0.6 * dt; if (p.hp <= 0) { this.killPlayer(p, p.food <= 0 ? 'starvation' : 'dehydration'); continue; } }
       else if (p.food > 60 && p.water > 60 && p.hp < this.maxHp(p)) p.hp = Math.min(this.maxHp(p), p.hp + 0.25 * dt);
       // cold: tundra / night / water
       const b = this.world.biome(p.x, p.z);

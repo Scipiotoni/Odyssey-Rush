@@ -56,7 +56,17 @@ export class Player {
     let speed = this.swimming ? (k('ShiftLeft') ? SWIM_FAST : SWIM) : this.crouch ? CROUCH : this.sprinting ? SPRINT : WALK;
     if (waterDepth > 0.4 && !this.swimming) speed *= 0.7; // wading
     if (g.encumbered) speed *= 0.85;
-    if (this.swimming) {
+    // creative flight (server owner / admins): Z toggles it
+    if (g.rules?.creative && (g.serverInfo?.owner || g.isAdmin) && input.hit?.('KeyZ') && active) { this.flying = !this.flying; g.ui?.toast(this.flying ? '🕊️ Flying — Space up, Ctrl down, Shift fast' : 'Flight off'); }
+    if (!g.rules?.creative) this.flying = false;
+    if (this.flying) {
+      const sp = k('ShiftLeft') ? 30 : 12, cp = Math.cos(this.pitch), spp = Math.sin(this.pitch);
+      const tx = (fwd[0] * fx * cp + right[0] * sx) * sp, tz = (fwd[1] * fx * cp + right[1] * sx) * sp;
+      const ty = (spp * fx + (k('Space') ? 1 : 0) - (this.crouch ? 1 : 0)) * sp;
+      const a = 1 - Math.exp(-6 * dt);
+      this.vel.x += (tx - this.vel.x) * a; this.vel.y += (ty - this.vel.y) * a; this.vel.z += (tz - this.vel.z) * a;
+      this.fallStart = null;
+    } else if (this.swimming) {
       // swim where you look: pitch steers you down into the deep or back up to the light
       const submerged = this.flooded || headY < wTop - 0.35;
       const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
