@@ -143,6 +143,7 @@ class Game {
       e.stopPropagation();
     });
     $('resume').onclick = () => this.ui.close();
+    $('spawnveh').onclick = () => this.ui.showSpawn();
   }
 
   // Detail level 0-3: dense grass, ground cover, wildlife, tree distance and render resolution
@@ -181,6 +182,8 @@ class Game {
     n.on('bolt', (m) => this.weather?.bolt(m));
     n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); const r = Math.abs(m.m[3]); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], r); if (Math.abs(m.m[1] - this.world.ground(m.m[0], m.m[2])) < r + 2.5) { this.terrain.refreshHoles(m.m[0], m.m[2], r); this.nature.grass?.invalidate?.(m.m[0], m.m[2]); } });
     n.on('reset_confirm', (m) => this.showResetDialog(m));
+    n.on('spawn_menu', () => this.ui.showSpawn());
+    n.on('spawned_at', (m) => { this.spawnMark = { x: m.x, z: m.z, name: m.name }; if (this.ui.open === 'map') this.ui.renderMap(); });
     n.on('server_reset', (m) => {
       this.resetting = m;
       try { for (const k of Object.keys(localStorage)) if (k.startsWith('or_explored_') || k.startsWith('or_pois_')) localStorage.removeItem(k); } catch {}

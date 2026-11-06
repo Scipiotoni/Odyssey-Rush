@@ -164,7 +164,8 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 | Command | What it does |
 |---|---|
-| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat\|minisub\|pacific` | Spawns a working vehicle (boats on the nearest open water) (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
+| `/spawn` | Opens the vehicle picker (also in the pause menu: **🚙 Spawn a vehicle / submarine**) |
+| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat\|minisub\|pacific` | Spawns a working vehicle. Land vehicles go on a clear, flat spot in front of you (half a tank), never inside trees, rocks, buildings or other cars. Boats go on the nearest open water. **Submarines** (fully charged) go in the nearest water deep enough, up to ~450 m away and marked on your map, or **right beside you if you're diving**. 30 s cooldown (none on Creative servers), max 2 per player |
 | `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
 | `/c message` | Clan chat |
 | `/admin password` | Unlocks the admin commands (needs `ADMIN_PASSWORD` on the server) |

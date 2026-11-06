@@ -467,10 +467,28 @@ export class Game {
     return v;
   }
   // Open water deep enough for a boat's hull near (x,z), clear of other vehicles
-  findWaterSpot(type, x, z, yaw, ignoreVeh = null, minDepth = 1.2) {
+  // a sub spawned while you're diving: in front of you at your depth, if there's room
+  findUnderwaterSpot(type, p) {
+    const def = VEHICLES[type], [hx, hy, hz] = def.half;
+    if (p.vehicle || p.y > -1.5) return null;
+    for (const fwd of [hz + 3, hz + 6, hz + 10]) for (const side of [0, 4, -4]) {
+      const yaw = p.yaw, cx = p.x - Math.sin(yaw) * fwd + Math.cos(yaw) * side, cz = p.z - Math.cos(yaw) * fwd - Math.sin(yaw) * side;
+      const cy = Math.min(-hy - 0.6, p.y + 0.8);
+      let ok = true;
+      for (const [lx, lz] of [[0, 0], [0, hz], [0, -hz], [hx, 0], [-hx, 0], [hx, hz], [-hx, -hz], [hx, -hz], [-hx, hz]]) {
+        const [dx, dz] = rotY(lx, lz, yaw), px = cx + dx, pz = cz + dz;
+        if (this.world.ground(px, pz) > cy - hy - 0.6) { ok = false; break; }
+        if (this.caves.inVolume(px, cy, pz) && (this.caves.rock(px, cy - hy, pz) > -0.02 || this.caves.rock(px, cy + hy, pz) > -0.02)) { ok = false; break; }
+      }
+      if (!ok || [...this.vehicles.values()].some((v) => Math.hypot(v.x - cx, v.z - cz) < hz + Math.hypot(...VEHICLES[v.type].half) + 1)) continue;
+      return { x: cx, y: cy, z: cz, yaw };
+    }
+    return null;
+  }
+  findWaterSpot(type, x, z, yaw, ignoreVeh = null, minDepth = 1.2, dists = [0, 5, 9, 14, 20, 28, 38, 50]) {
     const def = VEHICLES[type], [hx, , hz] = def.half;
-    for (const dist of [0, 5, 9, 14, 20, 28, 38, 50]) for (let a = 0; a < (dist ? 12 : 1); a++) {
-      const ang = yaw + a * Math.PI / 6, cx = x + Math.sin(ang) * dist, cz = z + Math.cos(ang) * dist;
+    for (const dist of dists) for (let a = 0, n = dist > 60 ? 24 : dist ? 12 : 1; a < n; a++) {
+      const ang = yaw + a * Math.PI * 2 / n, cx = x + Math.sin(ang) * dist, cz = z + Math.cos(ang) * dist;
       let ok = this.world.ground(cx, cz) < -minDepth;
       for (const [lx, lz] of [[0, hz], [0, -hz], [hx, 0], [-hx, 0], [0, hz / 2], [0, -hz / 2]]) { if (!ok) break; const [dx, dz] = rotY(lx, lz, yaw); if (this.world.ground(cx + dx, cz + dz) > (def.sub ? -minDepth * 0.85 : -0.5)) ok = false; }
       if (!ok) continue;
@@ -2089,7 +2107,7 @@ export class Game {
   isAdmin(p) { return !!(process.env.DEV || p.admin || (this.ownerHash && p.tokenHash === this.ownerHash)); }
   publicCommand(p, [cmd, a]) {
     if (cmd === 'help') {
-      this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn atv|jeep|jeep4|pickup|hauler — spawn a working vehicle in a clear spot in front of you · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /password new — protect your name with a password so you can sign in on other devices · /admin password — unlock admin commands' });
+      this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn — pick a vehicle to spawn (or /spawn atv|jeep|jeep4|pickup|hauler|rowboat|motorboat|minisub|pacific) — land vehicles appear in a clear spot in front of you, boats on the nearest water, submarines in the nearest water deep enough (or right beside you when you dive) · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /password new — protect your name with a password so you can sign in on other devices · /admin password — unlock admin commands' });
       if (this.isAdmin(p)) this.send(p, { t: 'chat', from: '', m: ADMIN_HELP });
       return;
     }
@@ -2118,12 +2136,16 @@ export class Game {
     }
     if (!p.alive) return;
     if (cmd === 'spawn') {
+      if (!a) return this.send(p, { t: 'spawn_menu' });
       const type = SPAWNABLE[String(a || '').toLowerCase()];
-      if (!type) return this.toast(p, 'Usage: /spawn atv | jeep | jeep4 | pickup | hauler | rowboat | motorboat | minisub | cyclops');
+      if (!type) return this.toast(p, 'Usage: /spawn atv | jeep | jeep4 | pickup | hauler | rowboat | motorboat | minisub | pacific (or just /spawn for the menu)');
       const t = now();
-      if (!process.env.DEV && t - (p.lastSpawn || 0) < 30) return this.toast(p, `Wait ${Math.ceil(30 - (t - p.lastSpawn))}s before spawning another vehicle`);
-      const spot = VEHICLES[type].boat || VEHICLES[type].sub ? this.findWaterSpot(type, p.x, p.z, p.yaw + Math.PI, null, VEHICLES[type].sub ? VEHICLES[type].half[1] * 2 + 1.5 : 1.2) : this.findClearSpot(type, p.x, p.z, p.yaw + Math.PI, [6, 9, 13, 18, 25, 33, 42, 55].map((d) => d + VEHICLES[type].half[2]));
-      if (!spot) return this.toast(p, VEHICLES[type].boat || VEHICLES[type].sub ? 'No open water nearby — stand by a lake, river or the sea' : 'No clear, flat spot nearby — try an open area');
+      if (!process.env.DEV && !this.settings.creative && t - (p.lastSpawn || 0) < 30) return this.toast(p, `Wait ${Math.ceil(30 - (t - p.lastSpawn))}s before spawning another vehicle`);
+      const D = VEHICLES[type], water = D.boat || D.sub;
+      let spot = null, under = false;
+      if (D.sub) { spot = this.findUnderwaterSpot(type, p); under = !!spot; }
+      if (!spot) spot = water ? this.findWaterSpot(type, p.x, p.z, p.yaw + Math.PI, null, D.sub ? D.half[1] * 2 + 1.5 : 1.2, D.sub ? [0, 5, 9, 14, 20, 28, 38, 50, 70, 95, 125, 160, 200, 250, 310, 380, 460] : undefined) : this.findClearSpot(type, p.x, p.z, p.yaw + Math.PI, [6, 9, 13, 18, 25, 33, 42, 55].map((d) => d + D.half[2]));
+      if (!spot) return this.toast(p, D.sub ? `No water deep enough for the ${D.name} within 450 m — go to the coast (the sea gets deep fast) or a big lake` : water ? 'No open water nearby — stand by a lake, river or the sea' : 'No clear, flat spot nearby — try an open area');
       // each player keeps at most 2 spawned vehicles (oldest empty one is removed)
       p.spawnedVeh = (p.spawnedVeh || []).filter((id) => this.vehicles.has(id));
       if (p.spawnedVeh.length >= 2 && !process.env.DEV) {
@@ -2136,7 +2158,10 @@ export class Game {
       this.vehicles.set(id, v);
       if (def.outfit) this.outfitPacific(v);
       p.spawnedVeh.push(id); p.lastSpawn = t;
-      return this.toast(p, `🚙 ${def.name} spawned ${Math.round(Math.hypot(spot.x - p.x, spot.z - p.z))}m away (half a tank of fuel)`);
+      if (def.sub) v.fuel = def.fuelCap; // subs start fully charged
+      const dd = Math.hypot(spot.x - p.x, spot.z - p.z), dir = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((Math.atan2(spot.x - p.x, -(spot.z - p.z)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+      this.send(p, { t: 'spawned_at', x: spot.x, z: spot.z, name: def.name });
+      return this.toast(p, `${def.sub ? '🛥️' : def.boat ? '🚤' : '🚙'} ${def.name} spawned ${under ? 'right beside you' : `${Math.round(dd)} m ${dd > 8 ? 'to the ' + dir : 'away'}`}${def.sub ? ' — fully charged' : ' (half a tank of fuel)'}${dd > 60 ? ' · marked on your map' : ''}`);
     }
     if (cmd === 'unstuck') {
       let v = p.vehicle ? this.vehicles.get(p.vehicle.id) : null;

@@ -522,6 +522,17 @@ export class UI {
     pick('[data-s]', (el) => (pt.size = +el.dataset.s));
   }
 
+  // ------------------------------------------------------------------ vehicle spawner (/spawn or the pause menu)
+  showSpawn() {
+    this.show('spawn');
+    const V = [['atv', '🏍️', 'ATV', 'Land'], ['jeep', '🚙', 'Jeep', 'Land'], ['jeep4', '🚐', '4x4', 'Land'], ['pickup', '🛻', 'Pickup', 'Land'], ['hauler', '🚚', 'Hauler', 'Land — build on its deck'],
+      ['rowboat', '🛶', 'Rowboat', 'Water'], ['motorboat', '🚤', 'Motorboat', 'Water'],
+      ['minisub', '🐟', 'Mini Sub', 'Submarine — nearest deep water, or beside you while diving'], ['pacific', '🐋', 'Pacific', 'Big walk-in submarine — needs deep sea']];
+    const box = $('spawngrid');
+    box.innerHTML = V.map(([k, e, n, w]) => `<button class="islot vslot" data-v="${k}"><span class="emo">${e}</span><b>${n}</b><small>${w}</small></button>`).join('');
+    box.querySelectorAll('[data-v]').forEach((el) => el.addEventListener('click', () => { this.game.net.send({ t: 'chat', m: '/spawn ' + el.dataset.v }); audio.click(); this.close(); }));
+  }
+
   // ------------------------------------------------------------------ admin item spawner
   showItems(q) {
     this.show('items');
@@ -555,7 +566,7 @@ export class UI {
   show(which) {
     this.close(true);
     this.open = which;
-    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', reset: 'resetscreen', gunsmith: 'gunsmithscreen' }[which];
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', spawn: 'spawnscreen', reset: 'resetscreen', gunsmith: 'gunsmithscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') { this.renderInventory(); this.preview.start(); }
     if (which === 'inv') { const d = this.game.day ?? 0.5, h = Math.floor(d * 24), m = Math.floor((d * 24 - h) * 60); $('pdaclock').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
@@ -656,6 +667,8 @@ export class UI {
     }
     for (const p of this.game.entities.players.values()) if (p.flags & 32) { const mx = (p.pos.x + HALF) / 32, mz = (p.pos.z + HALF) / 32; ctx.fillStyle = '#6ad04a'; ctx.beginPath(); ctx.arc(mx, mz, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(p.name, mx, mz - 6); }
     for (const b of this.game.bags || []) { const mx = (b.x + HALF) / 32, mz = (b.z + HALF) / 32; ctx.fillStyle = '#60c0ff'; ctx.fillRect(mx - 2, mz - 2, 4, 4); }
+    const sv = this.game.spawnMark;
+    if (sv) { const mx = (sv.x + HALF) / 32, mz = (sv.z + HALF) / 32; ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mx, mz, 5, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = '#ffd24a'; ctx.fillText('Your ' + sv.name, mx, mz - 8); }
     const pp = this.game.player.pos, yaw = this.game.player.yaw;
     const mx = (pp.x + HALF) / 32, mz = (pp.z + HALF) / 32;
     ctx.save(); ctx.translate(mx, mz); ctx.rotate(-yaw + Math.PI);
