@@ -2,6 +2,7 @@
 // and an animated first-person viewmodel: equip, wind-up/strike/recover swings, spring recoil,
 // reload motion, look sway, walk/sprint bob, landing dip, idle breathing, aiming and scopes.
 import * as THREE from 'three';
+import { VEHICLES } from '/shared/vehicles.js';
 import { ICE_HITS } from '/shared/ice.js';
 import { ITEMS, NODES, FIST } from '/shared/items.js';
 import { makeItemModel, makeFPArm } from './models.js';
@@ -208,6 +209,13 @@ export class Held {
       else { b.updatePlan(); if (LP) { b.placePlan(); this.swingAnim(0.3); } }
       if (input.mouse.rightPressed) g.ui.show('build');
       if (input.hit('KeyR')) g.builder.rot = (g.builder.rot + 1) & 3;
+      return;
+    }
+    if (d.launch) {
+      g.builder.hide();
+      const vd = VEHICLES[d.launch];
+      g.ui.prompt(`<kbd>LMB</kbd> launch the ${vd.name} into the water in front of you${vd.sub ? ` <small>(needs ${Math.ceil(vd.half[1] * 2 + 1.5)} m+ of water)</small>` : ''}`);
+      if (LP && performance.now() >= this.coolUntil) { this.coolUntil = performance.now() + 1500; g.net.send({ t: 'launch', sel: g.sel }); }
       return;
     }
     if (d.deploy || d.door) { g.builder.updateDeploy(st.id); if (LP) g.builder.placeDeploy(); return; }

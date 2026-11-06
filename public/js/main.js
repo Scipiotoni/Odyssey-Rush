@@ -12,12 +12,13 @@ import { Entities } from './entities.js';
 import { Structures } from './structures.js';
 import { VehicleSim, VehicleView } from './vehicles.js';
 import { BoatSim } from './boats.js';
+import { SubSim } from './subs.js';
 import { Player } from './player.js';
 import { Builder } from './building.js';
 import { Painter } from './painter.js';
 import { Nature } from './nature.js';
 import { Gunsmith } from './gunsmith.js';
-import { Caves, CAVE_ZONE } from '/shared/caves.js';
+import { Caves, CAVE_ZONE, CAVE_TOP } from '/shared/caves.js';
 import { CaveWorld } from './caves3d.js';
 import { Weather } from './weather.js';
 import { Footprints } from './footprints.js';
@@ -97,6 +98,7 @@ class Game {
     this.physics = new Physics(this.world);
     this.caves = new Caves(seed); this.caves.setMods(this.pendingCaveMods || []);
     this.physics.caves = this.caves;
+    this.caves.seaAbove = (x, z) => this.world.ground(x, z) < -8 && !(this.iceField && this.iceField.inland(x, z));
     this.sky = new Sky(this.scene);
     this.sky.sun.castShadow = this.settings.shadows;
     this.effects = new Effects(this.scene);
@@ -396,12 +398,13 @@ class Game {
 
   onFx(m) {
     const cam = this.camera.position;
+    if (m.k === 'creak') { audio.creak?.(); this.effects.shake = Math.min(1, this.effects.shake + 0.25); return; }
     if (m.k === 'icebreak') {
       const pos = new THREE.Vector3(...m.p), d = cam.distanceTo(pos);
       if (d < 120) { audio.iceCrack(true, d); if (d < 60) { this.effects.burst(pos, { count: 40, color: 0xe4f0f8, speed: 4.5, size: 0.11, life: 1.1, gravity: 9 }); this.effects.burst(pos, { count: 18, color: 0xbfdcec, speed: 2.5, size: 0.06, life: 0.8 }); } }
       return;
     }
-    if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff][m.ore || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
+    if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff, 0x3aa080, 0xe890b0, 0xd8dce0, 0xf4f4ff, 0x3a70ff][m.ore || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
     if (m.k === 'gunmod') { audio.click(); return; }
     if (m.k === 'throw') { this.held.showThrown(m.a, m.v, m.dur); return; }
     if (m.k === 'spray') { if (cam.distanceTo(new THREE.Vector3(...m.p)) < 30) audio.spray(); return; }
@@ -445,7 +448,9 @@ class Game {
     if (!view) { view = new VehicleView(this.scene, { id: m.id, type: m.v.type, var: m.v.var }, this.world, this.physics); this.vehicleViews.set(m.id, view); this.physics.dynamic.push(...view.colliders); }
     const veh = { id: m.id, seat: m.seat, view, sim: null, camMode: this.settings.vcam || 'third' };
     if (m.seat === 0) {
-      const sim = VEHICLES[m.v.type].boat ? new BoatSim(m.v.type, this.world, this.physics) : new VehicleSim(m.v.type, this.world, this.physics);
+      const vdef = VEHICLES[m.v.type];
+      const sim = vdef.sub ? new SubSim(m.v.type, this.world, this.physics) : vdef.boat ? new BoatSim(m.v.type, this.world, this.physics) : new VehicleSim(m.v.type, this.world, this.physics);
+      if (vdef.sub && m.v.sub) { view.subInfo = { crush: m.v.sub[0], thrust: m.v.sub[1], eff: m.v.sub[2], hull: m.v.sub[3] }; }
       sim.ice = this.iceField; sim.time = () => this.sky.waterUniforms.uTime.value;
       sim.setState(m.v.p, m.v.q, m.v.vel);
       sim.fuel = m.v.fuel; sim.ignore = view.collider.ref;
@@ -456,7 +461,7 @@ class Game {
     this.camOrbit.yaw = 0;
     const vd = VEHICLES[m.v.type];
     this.engine = vd.boat && !vd.fuelCap ? null : audio.engine();
-    this.ui.toast(m.seat === 0 ? `${vd.boat ? 'Steering' : 'Driving'} ${vd.name}` : 'You are a passenger');
+    this.ui.toast(m.seat === 0 ? `${vd.sub ? 'Piloting' : vd.boat ? 'Steering' : 'Driving'} ${vd.name}${vd.sub ? ' — W/S thrust · A/D turn · Space rise · Ctrl dive' : ''}` : 'You are a passenger');
   }
   leaveVehicleLocal() {
     const v = this.vehicle;
@@ -476,7 +481,10 @@ class Game {
       const blocked = list.some((c) => !c.ghost && c.ref !== v.view.collider.ref && (c.t === 'box' ? Math.abs(c.y - p.y) < c.hy + 1 && Math.hypot(c.x - p.x, c.z - p.z) < Math.max(c.hx, c.hz) : Math.hypot(c.x - p.x, c.z - p.z) < c.r + 0.4 && p.y < c.y + c.h));
       return blocked ? null : p;
     };
-    const p = tryPos(side) || tryPos(-side) || v.view.pos.clone().add(new THREE.Vector3(0, def.half[1] + 0.6, 0));
+    let p;
+    if (def.interior) p = new THREE.Vector3(0, def.deck.y + 0.02, seat[2] - 1.4).applyQuaternion(v.view.q).add(v.view.pos);
+    else if (def.sub && v.view.pos.y < -def.half[1]) p = new THREE.Vector3(def.half[0] + 1.1, 0, 0).applyQuaternion(v.view.q).add(v.view.pos);
+    else p = tryPos(side) || tryPos(-side) || v.view.pos.clone().add(new THREE.Vector3(0, def.half[1] + 0.6, 0));
     this.player.pos.copy(p); this.player.vel.set(0, 0, 0);
     if (v.sim) { v.view.vel.copy(v.sim.vel); v.view.tPos.copy(v.sim.pos); v.view.tQ.copy(v.sim.q); v.view.interp = null; }
     return p;
@@ -492,13 +500,14 @@ class Game {
     const v = this.vehicle;
     if (!v || !v.sim) return;
     const s = v.sim;
-    this.net.send({ t: 'v_state', p: [s.pos.x, s.pos.y, s.pos.z], q: [s.q.x, s.q.y, s.q.z, s.q.w], v: [s.vel.x, s.vel.y, s.vel.z], s: s.steer, r: s.rpm, th: force ? 0 : s.throttle });
+    this.net.send({ t: 'v_state', p: [s.pos.x, s.pos.y, s.pos.z], q: [s.q.x, s.q.y, s.q.z, s.q.w], v: [s.vel.x, s.vel.y, s.vel.z], s: s.steer, r: s.rpm, th: force ? 0 : s.throttle, vt: force ? 0 : s.vert || 0 });
   }
   updateVehicle(dt, active) {
     const v = this.vehicle, input = this.input, def = VEHICLES[v.view.type];
     if (v.sim) {
       const k = (c) => active && input.down(c);
-      const inp = { throttle: (k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0), steer: (k('KeyA') ? 1 : 0) - (k('KeyD') ? 1 : 0), handbrake: k('Space') };
+      const inp = { throttle: (k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0), steer: (k('KeyA') ? 1 : 0) - (k('KeyD') ? 1 : 0), handbrake: k('Space') && !def.sub, rise: k('Space'), sink: k('ControlLeft') || k('KeyC') };
+      if (def.sub && v.view.subInfo) v.sim.stats = v.view.subInfo;
       v.sim.step(dt, inp);
       if (active && input.hit('KeyR') && v.sim.vel.length() < 3) v.sim.flip();
       this.timers.vstate -= dt;
@@ -549,7 +558,8 @@ class Game {
         if (Math.random() < s.speed * dt * 1.5) this.effects.burst({ x: s.pos.x - f.x * def.half[2], y: 0.05, z: s.pos.z - f.z * def.half[2] }, { count: 2, color: 0xffffff, speed: 0.5, up: 0.3, size: 0.18, life: 1.4, gravity: 0 });
       }
       if (def.boat && !def.fuelCap && (Math.abs(s.throttle) > 0 || Math.abs(s.steer) > 0.1)) { this.timers.oar = (this.timers.oar || 0) - dt; if (this.timers.oar <= 0) { this.timers.oar = 1.3; audio.swimStroke(false); } }
-      this.ui.vehicleHud({ speed: s.speed, fuel: s.fuel, fuelCap: def.fuelCap, hp: v.view.hp, maxHp: def.hp, engineOk: s.engineOk, stuck: s.stuck });
+      this.ui.vehicleHud({ speed: s.speed, fuel: s.fuel, fuelCap: def.fuelCap, hp: v.view.hp, maxHp: def.hp, engineOk: s.engineOk, stuck: s.stuck, power: def.power, depth: def.sub ? s.depth : undefined, crush: def.sub ? s.stats.crush : undefined });
+      if (def.sub && active && input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
       this.engine?.set(s.rpm, Math.abs(s.throttle));
     } else {
       this.ui.vehicleHud({ speed: v.view.vel.length(), fuel: v.view.fuel, fuelCap: def.fuelCap, hp: v.view.hp, maxHp: def.hp });
@@ -581,7 +591,8 @@ class Game {
       const target = v.view.pos.clone().add(new THREE.Vector3(0, def.half[1] + 1.2, 0));
       const want = target.clone().add(new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist));
       const gy = this.world.ground(want.x, want.z) + 0.6;
-      if (want.y < gy) want.y = gy;
+      if (want.y < gy && v.view.pos.y > CAVE_ZONE) want.y = gy;
+      if (v.view.pos.y < CAVE_ZONE && this.caves.rock(want.x, want.y, want.z) > 0) want.lerp(target, 0.7); // keep the camera out of the rock
       if (!this.vcamPos || this.vcamPos.distanceTo(want) > 30) this.vcamPos = want.clone();
       this.vcamPos.lerp(want, 1 - Math.exp(-dt * 10));
       cam.position.copy(this.vcamPos);
@@ -650,10 +661,16 @@ class Game {
             const needs = v.needs ? Object.entries(v.needs).map(([k, n]) => `${n}× ${ITEMS[k].name} (have ${countItem(this.inv, k)})`).join(', ') : '';
             text = `<b>Broken ${def.name}</b><br>Needs: ${needs}<br><kbd>E</kbd> Install parts`;
             if (E) this.net.send({ t: 'v_repair', id: v.id });
-          } else if (def.deck && hit.col !== v.colliders[1]) {
+          } else if (def.interior && hit.col !== v.colliders[v.colliders.length - 1]) {
+            target = `${def.name}${this.inSubInterior(this.player.pos) ? ' — walk to the helm at the bow to pilot it · build and furnish the deck with the Building Plan' : ' — swim in through the moon pool at the stern'}`;
+            if (active && this.input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
+          } else if (def.deck && !def.interior && hit.col !== v.colliders[1]) {
             target = `${def.name} deck${v.nAttached ? '' : ' — build on it with the Building Plan'}`;
           } else {
-            text = `<b>${def.name}</b> ⛽ ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp}<br><kbd>E</kbd> ${v.driver ? 'Ride as passenger' : 'Drive'} · <kbd>G</kbd> Refuel (${countItem(this.inv, 'fuel')} fuel)${v.hp < def.hp ? ' · <kbd>H</kbd> Patch with metal' : ''}`;
+            text = def.power
+              ? `<b>${def.name}</b> 🔋 ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp} · crush depth ${v.subInfo?.crush ?? def.depths[0]} m<br><kbd>E</kbd> ${def.interior ? 'Take the helm' : v.driver ? 'Ride along' : 'Pilot'} · <kbd>G</kbd> Insert batteries (${countItem(this.inv, 'battery')} 🔋 ${countItem(this.inv, 'power_cell')} cells) · <kbd>U</kbd> Module bay${v.hp < def.hp ? ' · <kbd>H</kbd> Patch' : ''}`
+              : `<b>${def.name}</b> ⛽ ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp}<br><kbd>E</kbd> ${v.driver ? 'Ride as passenger' : 'Drive'} · <kbd>G</kbd> Refuel (${countItem(this.inv, 'fuel')} fuel)${v.hp < def.hp ? ' · <kbd>H</kbd> Patch with metal' : ''}`;
+            if (def.power && active && this.input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
             if (E) this.net.send({ t: 'v_enter', id: v.id });
             if (active && this.input.hit('KeyG')) this.net.send({ t: 'v_fuel', id: v.id });
             if (active && this.input.hit('KeyH')) this.net.send({ t: 'v_repair', id: v.id });
@@ -669,7 +686,7 @@ class Game {
       if (pp.y < CAVE_ZONE) { if (this.caveWorld.nearLadder(pp)) { text = '<kbd>E</kbd> Climb up the ladder'; if (E) this.net.send({ t: 'cave_exit' }); } }
       else { const ce = this.caveEntrances(pp.x, pp.z).find((e) => Math.hypot(e.x - pp.x, e.z - pp.z) < 5.5); if (ce) { text = '<kbd>E</kbd> Climb down into the caves'; if (E) this.net.send({ t: 'cave_enter' }); } }
     }
-    if (!text && pp.y > CAVE_ZONE && pp.y < 0.2 && this.world.ground(pp.x, pp.z) < 0.2) text = '<kbd>F</kbd> Drink water';
+    if (!text && pp.y > CAVE_ZONE && pp.y < 0.2 && this.world.ground(pp.x, pp.z) < 0.2 && !this.player.dry && !this.player.underwater && !this.vehicle) text = '<kbd>F</kbd> Drink water';
     if (this.lastStructHit && performance.now() - this.lastStructHit.t < 1500) target = `Structure ${this.lastStructHit.hp}/${this.lastStructHit.mhp}`;
     if (!this.input.locked && !this.ui.open) text = 'Click to play';
     const it = this.inv[this.sel];
@@ -693,6 +710,16 @@ class Game {
   }
 
   // ------------------------------------------------------------------ main loop
+  // inside the big sub's hull (dry, breathable)
+  inSubInterior(pos) {
+    for (const v of this.vehicleViews.values()) {
+      const I = VEHICLES[v.type].interior;
+      if (!I || Math.abs(v.pos.x - pos.x) > 12 || Math.abs(v.pos.z - pos.z) > 12) continue;
+      const l = _rv.copy(pos).sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
+      if (Math.abs(l.x) < I.hx && Math.abs(l.z) < I.hz && l.y > I.y0 - 0.3 && l.y < I.y1) return v;
+    }
+    return null;
+  }
   applyIce(m) {
     const t = performance.now() / 1000;
     this.iceField.setFrozen(!!m.f);
@@ -702,8 +729,9 @@ class Game {
   // surface seen from below, muffled sound, a breath bar
   underwaterView(dt) {
     const cam = this.camera.position, p = this.player;
-    const below = cam.y < -0.04 && cam.y > CAVE_ZONE && this.world.ground(cam.x, cam.z) < cam.y;
-    const dryRoom = below && (p.dry || this.structures.dryAt(cam.x, cam.y - 1.5, cam.z));
+    const caveWet = cam.y < CAVE_ZONE && this.caves.flooded(cam.x, cam.z);
+    const below = caveWet || (cam.y < -0.04 && cam.y > CAVE_ZONE && this.world.ground(cam.x, cam.z) < cam.y);
+    const dryRoom = below && (p.dry || !!this.vehicle || !!this.inSubInterior(cam.clone().setY(cam.y - 1)) || this.structures.dryAt(cam.x, cam.y - 1.5, cam.z));
     const inWater = below && !dryRoom;
     const water = this.sky.water.material;
     if (below) {
@@ -712,7 +740,8 @@ class Game {
       const k = (1 - depth * 0.75) * lit * iced;
       const c = this.uwColor || (this.uwColor = new THREE.Color());
       c.setRGB(0.05 * k, 0.24 * k + 0.01, 0.27 * k + 0.02);
-      this.scene.fog.color.copy(c); this.scene.fog.near = dryRoom ? 6 : 0.5; this.scene.fog.far = (22 + 18 * lit * iced - depth * 10) * (dryRoom ? 1.6 : 1);
+      if (caveWet) { c.setRGB(0.02, 0.07, 0.1); this.caveWorld.ambient.intensity = 0.75; this.caveWorld.ambient.color.setRGB(0.4, 0.75, 1); this.caveWorld.lantern.intensity = 2.6; } // the blue-black of a flooded cave, lit by your lamp and the glowing life
+      this.scene.fog.color.copy(c); this.scene.fog.near = dryRoom ? 6 : 0.5; this.scene.fog.far = caveWet ? 30 : (22 + 18 * lit * iced - depth * 10) * (dryRoom ? 1.6 : 1);
       this.scene.background = c;
       this.sky.sun.intensity *= 0.55 * (1 - depth * 0.6); this.sky.hemi.intensity *= 0.7;
       if (dryRoom) { this.sky.hemi.intensity = 0.95; this.sky.hemi.color.setRGB(0.85, 0.92, 1); this.sky.hemi.groundColor.setRGB(0.45, 0.5, 0.52); } // the habitat's own lights
@@ -812,8 +841,20 @@ class Game {
     const underground = this.camera.position.y < CAVE_ZONE;
     this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, underground ? null : audio, this.season);
     this.caveWorld.update(this.camera.position, dt);
+    // blue holes: swim (or steer a sub) down into one to drop into the flooded caves, up its shaft to come back
+    this.timers.bh = (this.timers.bh || 0) - dt;
+    if (this.timers.bh <= 0 && this.alive && (!this.vehicle || this.vehicle.seat === 0)) {
+      this.timers.bh = 0.25;
+      const P = this.vehicle ? this.vehicle.view.pos : this.player.pos;
+      const h = this.world.blueHolesNear(P.x, P.z).find((q) => Math.hypot(q.x - P.x, q.z - P.z) < q.r * 0.8);
+      if (h && (!this.vehicle || VEHICLES[this.vehicle.view.type].sub)) {
+        const down = P.y > CAVE_ZONE ? P.y < this.world.ground(h.x, h.z) + 4 : P.y > CAVE_TOP - 6;
+        if (down && performance.now() - (this.lastHole || 0) > 3500) { this.lastHole = performance.now(); this.net.send({ t: 'bluehole' }); }
+      }
+      this.blueHoles = this.world.blueHolesNear(cp.x, cp.z);
+    }
     this.timers.entr = (this.timers.entr || 0) - dt;
-    if (this.timers.entr <= 0) { this.timers.entr = 1; this.caveWorld.setEntrances(this.caveEntrances(cp.x, cp.z)); }
+    if (this.timers.entr <= 0) { this.timers.entr = 1; this.caveWorld.setEntrances(this.caveEntrances(cp.x, cp.z)); this.caveWorld.setBlueHoles(this.blueHoles || []); this.seaLife.setBlueHoles(this.blueHoles || []); }
     this.structures.update(dt);
     this.entities.updatePlayers(dt, this.camera.position, this.vehicleViews);
     this.entities.updateAnimals(dt);

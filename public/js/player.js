@@ -42,17 +42,19 @@ export class Player {
     const waterDepth = inCave ? 0 : -this.pos.y; // sea level is 0 (no sea in the caves)
     const onIce = this.onGround && ph.lastSurf === ICE_SURF;
     // inside an air-filled watertight room you walk and breathe normally
-    this.dry = !inCave && this.pos.y < 0.5 && !!g.structures?.dryAt(this.pos.x, this.pos.y + 0.2, this.pos.z);
-    this.swimming = !inCave && !this.dry && waterDepth > 1.1 && groundY < -1.0 && !onIce;
+    this.dry = this.pos.y < 0.5 && (!!g.inSubInterior?.(this.pos) || (!inCave && !!g.structures?.dryAt(this.pos.x, this.pos.y + 0.2, this.pos.z)));
+    // caves under the sea are flooded: no surface down there, you swim everywhere
+    this.flooded = inCave && !this.dry && !!g.caves?.flooded(this.pos.x, this.pos.z);
+    this.swimming = this.flooded || (!inCave && !this.dry && waterDepth > 1.1 && groundY < -1.0 && !onIce);
     const headY = this.pos.y + this.eye;
-    this.underwater = this.swimming && headY < -0.06;
+    this.underwater = this.swimming && (this.flooded || headY < -0.06);
     this.sprinting = k('ShiftLeft') && fx > 0 && !this.crouch && !this.swimming;
     let speed = this.swimming ? (k('ShiftLeft') ? SWIM_FAST : SWIM) : this.crouch ? CROUCH : this.sprinting ? SPRINT : WALK;
     if (waterDepth > 0.4 && !this.swimming && !this.dry) speed *= 0.7; // wading
     if (g.encumbered) speed *= 0.85;
     if (this.swimming) {
       // swim where you look: pitch steers you down into the deep or back up to the light
-      const submerged = headY < -0.35;
+      const submerged = this.flooded || headY < -0.35;
       const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
       const steer = submerged || this.pitch < -0.35;
       const hx = fwd[0] * fx * (steer ? cp : 1) + right[0] * sx, hz = fwd[1] * fx * (steer ? cp : 1) + right[1] * sx;
@@ -62,7 +64,7 @@ export class Player {
       if (this.crouch) vy = Math.min(vy, -2.6);
       if (!k('Space') && !this.crouch && Math.abs(vy) < 0.2) {
         // buoyancy: drift slowly up, then bob gently at the surface
-        vy = submerged ? 0.9 : (FLOAT_Y + Math.sin(performance.now() / 700) * 0.05 - this.pos.y) * 2.2;
+        vy = this.flooded ? 0.2 : submerged ? 0.9 : (FLOAT_Y + Math.sin(performance.now() / 700) * 0.05 - this.pos.y) * 2.2;
       }
       const a = 1 - Math.exp(-3.2 * dt);
       this.vel.x += (hx * speed - this.vel.x) * a;
@@ -70,7 +72,7 @@ export class Player {
       this.vel.y += (vy - this.vel.y) * (1 - Math.exp(-3 * dt));
       // climb out onto a ledge, a jetty, a shore or the edge of the ice
       this.climbT -= dt;
-      if (fx > 0 && headY > -0.5 && this.climbT <= 0) {
+      if (fx > 0 && headY > -0.5 && !this.flooded && this.climbT <= 0) {
         const ax = this.pos.x + fwd[0] * 0.75, az = this.pos.z + fwd[1] * 0.75;
         const top = ph.groundAt(ax, az, this.pos.y, 1.95, 0.15);
         if (top > this.pos.y + 0.45 && top > -0.35 && (k('Space') || top - this.pos.y < 1.75)) {

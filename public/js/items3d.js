@@ -160,6 +160,25 @@ function build(id) {
       return [P(new THREE.SphereGeometry(0.06 * k, 8, 6), c, { y: 0.06 * k, sx: 2.2, sy: 0.8 }), P(new THREE.ConeGeometry(0.05 * k, 0.07 * k, 4), c, { x: -0.16 * k, y: 0.06 * k, rz: -Math.PI / 2 })];
     }
     case 'pearl': return [P(new THREE.SphereGeometry(0.04, 12, 8), 0xf4efe6, { y: 0.04 })];
+    case 'copper_ore': case 'lithium_ore': case 'titanium_ore': {
+      const c = { copper_ore: 0x3a9a78, lithium_ore: 0xd890b0, titanium_ore: 0xc8ccd4 }[id];
+      return [P(new THREE.IcosahedronGeometry(0.09, 0), 0x5a5550, { y: 0.08 }), P(new THREE.IcosahedronGeometry(0.06, 0), c, { x: 0.05, y: 0.11, z: 0.02 }), P(new THREE.IcosahedronGeometry(0.045, 0), c, { x: -0.06, y: 0.06, z: -0.03 })];
+    }
+    case 'quartz': case 'kyanite': { const c = id === 'quartz' ? 0xf0f0ff : 0x3a6aff; return [0, 1.1, -1.0, 2.2].map((a, i) => P(new THREE.OctahedronGeometry(0.05, 0), c, { x: Math.cos(a) * 0.04, y: 0.08 + (i % 2) * 0.03, z: Math.sin(a) * 0.04, sy: 2.4, rz: Math.cos(a) * 0.4 })); }
+    case 'copper': return [P(new THREE.TorusGeometry(0.08, 0.025, 6, 14), 0xc8763a, { y: 0.05, rx: Math.PI / 2 }), P(new THREE.TorusGeometry(0.06, 0.02, 6, 14), 0xd8864a, { y: 0.09, rx: Math.PI / 2 })];
+    case 'lithium': return [P(cyl(0.05, 0.05, 0.14, 10), 0xe8e8f0, { y: 0.07 }), P(cyl(0.035, 0.035, 0.03, 10), 0xd890b0, { y: 0.15 })];
+    case 'titanium': return [P(box(0.2, 0.06, 0.08), 0xb8bcc4, { y: 0.03 }), P(box(0.16, 0.04, 0.06), 0xc8ccd4, { y: 0.08 })];
+    case 'glass': return [P(box(0.2, 0.15, 0.015), 0x9fe0f0, { y: 0.08 })];
+    case 'battery': return [P(cyl(0.05, 0.05, 0.16, 10), 0x2a2e33, { y: 0.08 }), P(cyl(0.051, 0.051, 0.05, 10), 0x3ac870, { y: 0.12 }), P(cyl(0.02, 0.02, 0.02, 8), 0xb8bcc4, { y: 0.17 })];
+    case 'power_cell': return [P(box(0.12, 0.22, 0.12), 0x2a2e33, { y: 0.11 }), P(box(0.125, 0.06, 0.125), 0x3ab8e8, { y: 0.16 }), P(box(0.04, 0.03, 0.04), 0xb8bcc4, { y: 0.235 })];
+    case 'depth_mk1': case 'depth_mk2': case 'depth_mk3': case 'thruster_module': case 'hull_module': case 'efficiency_module': {
+      const c = { depth_mk1: 0x3ab8e8, depth_mk2: 0x3a70ff, depth_mk3: 0x9a50ff, thruster_module: 0xe8a030, hull_module: 0x9aa2aa, efficiency_module: 0x3ac870 }[id];
+      return [P(box(0.18, 0.1, 0.14), 0x3a3e44, { y: 0.05 }), P(box(0.12, 0.02, 0.1), c, { y: 0.105 }), P(box(0.04, 0.04, 0.16), 0xb8bcc4, { x: 0.09, y: 0.05 })];
+    }
+    case 'minisub_kit': case 'cyclops_kit': case 'rowboat_kit': {
+      const c = { minisub_kit: 0xe8c43a, cyclops_kit: 0xd8dcd8, rowboat_kit: 0x7a5232 }[id];
+      return [P(box(0.3, 0.2, 0.22), 0x8a6a42, { y: 0.1 }), P(box(0.31, 0.04, 0.23), c, { y: 0.14 }), P(box(0.32, 0.02, 0.05), 0x2a2018, { y: 0.2 })];
+    }
     case 'cloth_pants': case 'leather_pants': case 'metal_legs': {
       const c = d.armor.color;
       if (id === 'metal_legs') return [P(rb(0.26, 0.04, 0.08, 0.01), C.leather, { y: 0.3 }), ...[-1, 0, 1].map((s) => P(rb(0.09, 0.22, 0.012, 0.004), c, { x: s * 0.085, y: 0.17, rz: s * 0.05 }))];

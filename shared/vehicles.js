@@ -69,13 +69,41 @@ export const VEHICLES = {
     seats: [[0.35, 0.02, -1.9], [-0.4, 0.02, -0.4], [0.4, 0.02, -0.4], [0, 0.02, 0.9]], color: 0xe8e8e0, style: 'motorboat',
     repair: { metal_frags: 120, engine_parts: 1, scrap: 30 },
   },
+  // ---- submarines (battery powered, 3D physics in public/js/subs.js). depths: crush depth with no / MK1 / MK2 / MK3 depth module
+  minisub: {
+    name: 'Mini Sub', sub: true, power: true, mass: 900, hp: 600, fuelCap: 100, fuelUse: 0.35, wheels: [],
+    half: [0.95, 0.85, 1.8], com: [0, 0, 0], thrust: 4300, maxSpeed: 11, turn: 1.25, vert: 0.55,
+    depths: [60, 130, 220, 320], moduleSlots: 2,
+    seats: [[0, -0.35, 0.25]], color: 0xe8c43a, style: 'minisub',
+    repair: { scrap: 40, titanium: 4, metal_frags: 150 },
+  },
+  cyclops: {
+    name: 'Leviathan Sub', sub: true, power: true, big: true, mass: 30000, hp: 4000, fuelCap: 400, fuelUse: 0.9, wheels: [],
+    half: [2.5, 2.2, 9.6], com: [0, 0, 0], thrust: 78000, maxSpeed: 7, turn: 0.34, vert: 0.4,
+    depths: [120, 200, 290, 400], moduleSlots: 4,
+    seats: [[0, -0.95, 7.55]], color: 0xd8dcd8, style: 'cyclops',
+    // walk-in hull: dry inside, hollow colliders, a rear moon-pool doorway, a buildable deck
+    interior: { hx: 2.2, y0: -1.45, y1: 1.75, hz: 9.15 },
+    boxes: [[0, -1.7, 0, 2.45, 0.3, 9.5], [0, 2.0, 0, 2.45, 0.25, 9.5], [2.35, 0.15, 0, 0.12, 1.65, 9.5], [-2.35, 0.15, 0, 0.12, 1.65, 9.5],
+      [0, 0.15, 9.38, 2.45, 1.65, 0.12], [1.6, 0.15, -9.38, 0.85, 1.65, 0.12], [-1.6, 0.15, -9.38, 0.85, 1.65, 0.12], [0, 1.4, -9.38, 0.75, 0.4, 0.12],
+      [0, -0.95, 8.75, 0.7, 0.45, 0.3]],
+    deck: { x: 0, y: -1.4, z: -0.6, cells: [-4, -2, 0, 2, 4], levels: 0 },
+    repair: { scrap: 200, titanium: 20, metal_frags: 600 },
+  },
 };
 export const VEHICLE_ENTER_RANGE = 3.8;
-export const SPAWNABLE = { atv: 'quad', jeep: 'buggy', scout: 'buggy', jeep4: 'suv', long: 'suv', pickup: 'truck', truck: 'truck', hauler: 'hauler', mobilebase: 'hauler', rowboat: 'rowboat', boat: 'motorboat', motorboat: 'motorboat', skiff: 'motorboat' };
+// a sub's crush depth and upgrades from the modules in its bay ([{id}...] stacks, item defs passed in)
+export function subStats(def, modules, ITEMS) {
+  let depth = 0, thrust = 0, hull = 0, eff = 0;
+  for (const st of modules || []) { const m = st && ITEMS[st.id]?.module; if (!m) continue; depth = Math.max(depth, m.depth || 0); thrust += m.thrust || 0; hull += m.hull || 0; eff += m.eff || 0; }
+  return { crush: def.depths ? def.depths[depth] : 0, thrust: 1 + Math.min(0.75, thrust), hull: Math.min(0.6, hull), eff: Math.min(0.6, eff) };
+}
+export const SPAWNABLE = { atv: 'quad', jeep: 'buggy', scout: 'buggy', jeep4: 'suv', long: 'suv', pickup: 'truck', truck: 'truck', hauler: 'hauler', mobilebase: 'hauler', rowboat: 'rowboat', boat: 'motorboat', sub: 'minisub', minisub: 'minisub', submarine: 'minisub', cyclops: 'cyclops', bigsub: 'cyclops', leviathan: 'cyclops', motorboat: 'motorboat', skiff: 'motorboat' };
 
 // Height of the chassis centre above the ground when resting on its wheels.
 export function restHeight(def) {
   if (def.boat) return def.float;
+  if (def.sub) return 0;
   const perWheel = (def.mass * 9.81) / def.wheels.length;
   return -def.wheels[0][1] + def.rest + def.wheelR - perWheel / def.spring;
 }

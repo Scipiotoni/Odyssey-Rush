@@ -137,7 +137,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 | Command | What it does |
 |---|---|
-| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat` | Spawns a working vehicle (boats on the nearest open water) (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
+| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat\|minisub\|cyclops` | Spawns a working vehicle (boats on the nearest open water) (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
 | `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
 | `/c message` | Clan chat |
 | `/admin password` | Unlocks the admin commands (needs `ADMIN_PASSWORD` on the server) |
@@ -218,6 +218,28 @@ they have a pickaxe and enough breath to hack their way out.
   floor, ceiling and walls are all Watertight Steel holds **air**: you walk, breathe and stay dry inside, even on the
   sea floor. Walls get portholes, and doorways need a closed **Watertight Hatch** (Workbench 2). Open the hatch and the
   room floods; close it and the air comes back.
+
+### Submarines, cave minerals and the flooded caves
+
+- **New cave minerals** (mine them with a pickaxe in the caves; each has its own colour in the rock): green **copper**,
+  pink **lithium**, silvery **titanium**, white **quartz**, and blue **kyanite**, which is found only in the flooded caves
+  under the sea. Lithium is richer down there too. The furnace turns them into Copper Wire, Lithium, Titanium Ingots and
+  Toughened Glass.
+- **Power**: Batteries (lithium + copper, Workbench 1) and Power Cells (2 batteries + titanium + glass, Workbench 2).
+  Submarines run on charge. Insert batteries with **G**, and using power cells gives more charge.
+- **Mini Sub** (kit at Workbench 2): a one-seat bubble-canopy sub. Hold the kit and click to launch it into deep enough
+  water. **W/S** thrust, **A/D** turn, **Space** rise, **Ctrl** dive. It noses down to dive and banks into turns.
+- **Leviathan Sub** (kit at Workbench 3, or `/spawn cyclops`): a big walk-in submarine. Swim in through the moon pool at
+  the stern and it's dry and breathable inside. Walk to the helm at the bow to pilot it while friends move around inside.
+  The deck is buildable: furnish it and put storage, beds, workbenches and walls in it with the Building Plan.
+- **Crush depth**: every sub has one, shown on the HUD with your depth. Below it the hull groans, shakes and takes damage.
+  Open the **module bay** with **U** and fit **Depth Modules**: Mini Sub 60 → 130 → 220 → 320 m, Leviathan 120 → 200 →
+  290 → 400 m (MK3 needs kyanite). Also **Thruster Upgrades**, **Hull Reinforcement** and **Engine Efficiency**
+  modules. Mini Sub has 2 slots, Leviathan 4.
+- **Blue holes**: black sinkholes ringed by boulders on the sea floor. Swim or steer a sub down into one to drop into
+  the **flooded cave systems** below the sea, ~170–240 m deep. You need at least an MK2 module for a sub down there.
+  The caves are full of glowing anemones, with dark blue water lit by your lamp. Swim back up the shaft to return.
+  Breathing down there is hard work: air goes four times as fast.
 
 ### Weather
 

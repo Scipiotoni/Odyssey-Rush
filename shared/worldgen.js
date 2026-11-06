@@ -9,6 +9,7 @@ export const CHUNK = 128;          // terrain chunk size (m)
 export const GRID = 4;             // LOD0 terrain quad size (m)
 export const NODE_CELL = 8;        // resource node grid cell (m)
 export const POI_CELL = 640;       // POI grid cell (m)
+export const BH_CELL = 560;        // blue hole grid cell (m)
 export const POI_FLAT = 46;        // radius of flattened POI pad
 export const POI_BLEND = 90;       // radius where blending ends
 
@@ -197,6 +198,26 @@ export class World {
     const p = this.nearestPOI(x, z);
     if (p && p.d < POI_FLAT + 5) { const t = smoothstep(POI_FLAT + 5, POI_FLAT - 15, p.d) * 0.7; r = lerp(r, 0.48, t); g = lerp(g, 0.44, t); bl = lerp(bl, 0.38, t); }
     out[0] = clamp(r + v, 0, 1); out[1] = clamp(g + v, 0, 1); out[2] = clamp(bl + v, 0, 1);
+    return out;
+  }
+
+  // ---------- Blue holes: sinkholes in the sea floor that drop into the flooded caves below ----------
+  blueHoleAt(ci, cj) {
+    const key = 'bh' + ci + '_' + cj;
+    this._bhCache = this._bhCache || new Map();
+    if (this._bhCache.has(key)) return this._bhCache.get(key);
+    let h = null;
+    if (hash3(ci, cj, 71, this.seed) < 0.45) {
+      const x = ci * BH_CELL + BH_CELL * 0.25 + hash3(ci, cj, 72, this.seed) * BH_CELL * 0.5, z = cj * BH_CELL + BH_CELL * 0.25 + hash3(ci, cj, 73, this.seed) * BH_CELL * 0.5;
+      const y = this.rawHeight(x, z), np = this.nearestPOI(x, z);
+      if (y < -26 && y > -112 && (!np || np.d > 90)) h = { id: key, x, z, y, r: 9 };
+    }
+    this._bhCache.set(key, h);
+    return h;
+  }
+  blueHolesNear(x, z, R = 1) {
+    const ci = Math.floor(x / BH_CELL), cj = Math.floor(z / BH_CELL), out = [];
+    for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) { const h = this.blueHoleAt(ci + i, cj + j); if (h) out.push(h); }
     return out;
   }
 

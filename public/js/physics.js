@@ -71,7 +71,19 @@ export class Physics {
 
   // Highest walkable surface at (x,z) not more than `maxUp` above y.
   groundAt(x, z, y, maxUp = 0.55, r = 0.0, ignore = null) {
-    if (this.caves && y < CAVE_ZONE) { this.lastSurf = null; return this.caves.floorBelow(x, y + maxUp, z, maxUp + 6) ?? -1e6; }
+    if (this.caves && y < CAVE_ZONE) {
+      // cave floor, or anything solid down there (the big sub's deck, structures you built)
+      let g = this.caves.floorBelow(x, y + maxUp, z, maxUp + 6) ?? -1e6, surf = null;
+      for (const c of this.query(x, z, r + 0.5, this._q1 || (this._q1 = []))) {
+        if (c.ghost || c.t !== 'box' || (ignore && (c.ref === ignore || (c.ref && c.ref.veh && c.ref.veh === ignore.id)))) continue;
+        const [lx, lz] = invRotY(x - c.x, z - c.z, c.yaw);
+        if (Math.abs(lx) > c.hx + r || Math.abs(lz) > c.hz + r) continue;
+        const top = c.y + c.hy;
+        if (top <= y + maxUp && top > g) { g = top; surf = c; }
+      }
+      this.lastSurf = surf;
+      return g;
+    }
     let g = this.world.ground(x, z), surf = null;
     const list = this.query(x, z, r + 0.5, this._q1 || (this._q1 = []));
     for (const c of list) {
@@ -159,6 +171,11 @@ export class Physics {
       }
       // ceiling
       if (vel.y > 0 && rock(p.x, p.y + h + 0.05, p.z) > 0) { vel.y = 0; res.ceiling = true; }
+      // colliders down here too (vehicles, structures)
+      const list = this.query(p.x, p.z, r + 2, this._q2 || (this._q2 = []));
+      for (const c of list) { if (c.ghost) continue; if (c.t === 'box') this._boxResolve(p, vel, r, h, c, stepH, res); else this._cylResolve(p, vel, r, h, c, stepH, res); }
+      const gc = this.groundAt(p.x, p.z, p.y, stepH * (vel.y <= 0 ? 1 : 0.1), r * 0.5);
+      if (this.lastSurf && p.y <= gc + 0.001 && (vel.y <= 0.01 || gc - p.y < stepH)) { p.y = gc; if (vel.y < 0) vel.y = 0; res.ground = true; continue; }
       // floor: if the feet are in rock, lift up to the surface (small ledges step up)
       if (rock(p.x, p.y, p.z) > 0) {
         let lifted = false;

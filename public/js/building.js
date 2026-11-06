@@ -85,7 +85,7 @@ export class Builder {
     let err = null;
     if (type === 'foundation') err = 'The deck is already a foundation — build walls, floors and stairs on it';
     else if (Math.abs(gx) > 1 || gz < Math.min(...d.cells) - 1 || gz > Math.max(...d.cells) + 1) err = 'Outside the deck';
-    else if (level > d.levels) err = 'Too high for the hauler';
+    else if (level > d.levels) err = `Too high for the ${view.def.name}`;
     else err = canPlaceAny(type, gx, gz, level, buildIndex([...pieces, ...d.cells.map((c) => ({ type: 'foundation', gx: 0, gz: c, level: 0 }))]), false);
     const t = pieceTransform({ x: d.x, y: d.y, z: d.z, yaw: 0 }, { type, gx, gz, level, rot: this.rot });
     const w = this.toWorld(view, t);
@@ -106,7 +106,7 @@ export class Builder {
       this.ghost.position.copy(plan.w.pos); this.ghost.quaternion.copy(plan.w.quat);
       this.ghost.visible = true;
       const cost = pieceCost(type, this.tier);
-      g.ui.prompt(`🚛 <b>${TIERS[this.tier].name} ${PIECES[type].name}</b> on the hauler deck (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> build wheel · <kbd>R</kbd> rotate</small>`);
+      g.ui.prompt(`🚛 <b>${TIERS[this.tier].name} ${PIECES[type].name}</b> on the ${dk.view.def.name} deck (${Object.entries(cost).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ')})${err ? ` — <span style="color:#ff8a7a">${err}</span>` : ''}<br><small><kbd>LMB</kbd> place · <kbd>RMB</kbd> build wheel · <kbd>R</kbd> rotate</small>`);
       return;
     }
     const b = g.structures.nearestBuilding(point.x, point.z, 9);

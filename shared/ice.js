@@ -13,7 +13,7 @@ export const ICE_REGEN = 1200;   // seconds until a hole has frozen over again
 export const ICE_HITS = 3;       // pickaxe hits to break through
 export const BREATH_MAX = 30;    // seconds of air (at the surface)
 // air use per second at a depth (m): x2 at 35 m, x4 at 105 m
-export const breathDrain = (depth) => 1 + Math.max(0, depth) / 35;
+export const breathDrain = (depth) => 1 + Math.min(105, Math.max(0, depth)) / 35; // capped at x4 (deep caves)
 
 // lakes freeze a little after the snow arrives and thaw early in spring
 export function iceFrozen(si) {

@@ -27,7 +27,30 @@ export const ITEMS = {
   scrap: { name: 'Scrap', cat: 'resource', stack: 1000, icon: '⚙️' },
   gunpowder: { name: 'Gunpowder', cat: 'resource', stack: 1000, icon: '💥' },
   fuel: { name: 'Low Grade Fuel', cat: 'resource', stack: 500, icon: '⛽' },
+  // cave minerals (pickaxe in the caves) and what the furnace makes of them
+  copper_ore: { name: 'Copper Ore', cat: 'resource', stack: 1000, icon: '🟢' },
+  lithium_ore: { name: 'Lithium Ore', cat: 'resource', stack: 1000, icon: '🩷' },
+  titanium_ore: { name: 'Titanium Ore', cat: 'resource', stack: 1000, icon: '⚪' },
+  quartz: { name: 'Quartz', cat: 'resource', stack: 500, icon: '💎' },
+  kyanite: { name: 'Kyanite', cat: 'resource', stack: 200, icon: '🔷' },
+  copper: { name: 'Copper Wire', cat: 'resource', stack: 500, icon: '🧶' },
+  lithium: { name: 'Lithium', cat: 'resource', stack: 500, icon: '🧪' },
+  titanium: { name: 'Titanium Ingot', cat: 'resource', stack: 500, icon: '🔘' },
+  glass: { name: 'Toughened Glass', cat: 'resource', stack: 200, icon: '🪟' },
   // --- components ---
+  battery: { name: 'Battery', cat: 'component', stack: 10, icon: '🔋', power: 25 },
+  power_cell: { name: 'Power Cell', cat: 'component', stack: 5, icon: '🔋', power: 120 },
+  // submarine upgrade modules (installed in a sub's module bay)
+  depth_mk1: { name: 'Depth Module MK1', cat: 'component', stack: 1, icon: '🧭', module: { depth: 1 } },
+  depth_mk2: { name: 'Depth Module MK2', cat: 'component', stack: 1, icon: '🧭', module: { depth: 2 } },
+  depth_mk3: { name: 'Depth Module MK3', cat: 'component', stack: 1, icon: '🧭', module: { depth: 3 } },
+  thruster_module: { name: 'Thruster Upgrade', cat: 'component', stack: 1, icon: '🌀', module: { thrust: 0.25 } },
+  hull_module: { name: 'Hull Reinforcement', cat: 'component', stack: 1, icon: '🛡️', module: { hull: 0.35 } },
+  efficiency_module: { name: 'Engine Efficiency Module', cat: 'component', stack: 1, icon: '♻️', module: { eff: 0.3 } },
+  // vehicles that come as kits: launch them into deep enough water
+  minisub_kit: { name: 'Mini Sub Kit', cat: 'deployable', stack: 1, icon: '🐟', launch: 'minisub' },
+  cyclops_kit: { name: 'Leviathan-class Sub Kit', cat: 'deployable', stack: 1, icon: '🐋', launch: 'cyclops' },
+  rowboat_kit: { name: 'Rowboat Kit', cat: 'deployable', stack: 1, icon: '🚣', launch: 'rowboat' },
   rope: { name: 'Rope', cat: 'component', stack: 50, icon: '➰' },
   spring: { name: 'Metal Spring', cat: 'component', stack: 20, icon: '🌀' },
   pipe: { name: 'Metal Pipe', cat: 'component', stack: 20, icon: '🧪' },
@@ -246,6 +269,22 @@ RECIPES.push({ out: 'cooked_big_fish', n: 1, time: 5, station: 'campfire', cost:
 RECIPES.push({ out: 'o2_tank', n: 1, time: 10, station: 'wb1', cost: { metal_frags: 150, pipe: 1, rope: 1 } });
 RECIPES.push({ out: 'o2_tank_large', n: 1, time: 18, station: 'wb2', cost: { metal_frags: 300, pipe: 2, hqm: 4, rope: 1 } });
 RECIPES.push({ out: 'sealed_door', n: 1, time: 14, station: 'wb2', cost: { metal_frags: 250, hqm: 8, gears: 1 } });
+// ---- cave minerals, power and submarines (appended: recipe ids are positional)
+RECIPES.push({ out: 'copper', n: 5, time: 4, station: 'furnace', cost: { copper_ore: 10, wood: 10 } });
+RECIPES.push({ out: 'lithium', n: 3, time: 5, station: 'furnace', cost: { lithium_ore: 10, wood: 15 } });
+RECIPES.push({ out: 'titanium', n: 2, time: 6, station: 'furnace', cost: { titanium_ore: 10, wood: 20 } });
+RECIPES.push({ out: 'glass', n: 2, time: 5, station: 'furnace', cost: { quartz: 3, wood: 10 } });
+RECIPES.push({ out: 'battery', n: 1, time: 6, station: 'wb1', cost: { lithium: 2, copper: 2, metal_frags: 10 } });
+RECIPES.push({ out: 'power_cell', n: 1, time: 10, station: 'wb2', cost: { battery: 2, titanium: 1, glass: 1 } });
+RECIPES.push({ out: 'minisub_kit', n: 1, time: 30, station: 'wb2', cost: { titanium: 10, glass: 6, battery: 2, metal_frags: 300, gears: 2 } });
+RECIPES.push({ out: 'cyclops_kit', n: 1, time: 90, station: 'wb3', cost: { titanium: 45, glass: 20, power_cell: 2, hqm: 40, metal_frags: 1500, gears: 8, lithium: 10 } });
+RECIPES.push({ out: 'rowboat_kit', n: 1, time: 15, station: 'wb1', cost: { wood: 400, rope: 2 } });
+RECIPES.push({ out: 'depth_mk1', n: 1, time: 12, station: 'wb2', cost: { titanium: 6, glass: 2, metal_frags: 100 } });
+RECIPES.push({ out: 'depth_mk2', n: 1, time: 20, station: 'wb2', cost: { titanium: 12, lithium: 6, glass: 4, hqm: 6 } });
+RECIPES.push({ out: 'depth_mk3', n: 1, time: 30, station: 'wb3', cost: { titanium: 20, kyanite: 6, lithium: 8, hqm: 12 } });
+RECIPES.push({ out: 'thruster_module', n: 1, time: 15, station: 'wb2', cost: { titanium: 4, copper: 6, gears: 2, battery: 1 } });
+RECIPES.push({ out: 'hull_module', n: 1, time: 15, station: 'wb2', cost: { titanium: 10, metal_frags: 200 } });
+RECIPES.push({ out: 'efficiency_module', n: 1, time: 15, station: 'wb2', cost: { copper: 8, lithium: 4, tech_trash: 1 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench' };
@@ -290,8 +329,8 @@ export const DIG = { step: 0.45, min: -6, max: 4, raiseCost: { stone: 5 }, reach
 export const LOOT = {
   barrel: [['scrap', 2, 6, 1], ['metal_frags', 10, 30, 0.4], ['fuel', 2, 6, 0.3], ['rope', 1, 1, 0.15], ['pipe', 1, 1, 0.1], ['gears', 1, 1, 0.08], ['spring', 1, 1, 0.06], ['pistol_ammo', 4, 10, 0.1], ['bandage', 1, 2, 0.15], ['cloth', 5, 15, 0.2]],
   1: [['scrap', 5, 12, 1], ['metal_frags', 20, 60, 0.6], ['fuel', 5, 15, 0.5], ['rope', 1, 2, 0.3], ['pipe', 1, 2, 0.25], ['gears', 1, 1, 0.2], ['spring', 1, 1, 0.15], ['wheel', 1, 1, 0.12], ['engine_parts', 1, 1, 0.08], ['bandage', 1, 3, 0.3], ['pistol_ammo', 8, 16, 0.2], ['cloth_shirt', 1, 1, 0.05], ['metal_hatchet', 1, 1, 0.05], ['revolver', 1, 1, 0.03], ['pistol', 1, 1, 0.02], ['crossbow', 1, 1, 0.02], ['water_bottle', 1, 1, 0.2], ['fishing_rod', 1, 1, 0.06]],
-  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1], ['o2_tank', 1, 1, 0.06], ['pearl', 1, 2, 0.05]],
-  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08], ['o2_tank_large', 1, 1, 0.05], ['pearl', 1, 3, 0.15]],
+  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1], ['o2_tank', 1, 1, 0.06], ['pearl', 1, 2, 0.05], ['battery', 1, 1, 0.08], ['copper', 3, 8, 0.12]],
+  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08], ['o2_tank_large', 1, 1, 0.05], ['pearl', 1, 3, 0.15], ['power_cell', 1, 1, 0.06], ['titanium', 2, 5, 0.15], ['depth_mk1', 1, 1, 0.04]],
 };
 
 export function rollLoot(table, rnd = Math.random) {
@@ -307,7 +346,7 @@ export function itemMaxStack(id) { return ITEMS[id]?.stack || 1; }
 const SIZES = {
   // 2x2: long guns, big tools of war, bulky gear
   rifle: [2, 2], bolt_rifle: [2, 2], lmg: [2, 2], rocket_launcher: [2, 2], shotgun: [2, 2], double_barrel: [2, 2], crossbow: [2, 2],
-  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], o2_tank: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
+  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], o2_tank: [1, 2], minisub_kit: [2, 2], cyclops_kit: [2, 2], rowboat_kit: [2, 2], power_cell: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
   // long handles: 1 wide, 2 tall
   wooden_spear: [1, 2], stone_hatchet: [1, 2], stone_pickaxe: [1, 2], metal_hatchet: [1, 2], metal_pickaxe: [1, 2], shovel: [1, 2],
   machete: [1, 2], sword: [1, 2], battle_axe: [1, 2], bow: [1, 2], torch: [1, 2], cloth_pants: [1, 2], leather_pants: [1, 2], metal_legs: [1, 2], rocket: [1, 2],

@@ -38,6 +38,8 @@ export class Caves {
   constructor(seed) {
     this.seed = seed;
     this.nA = makeNoise3(seed * 7 + 11); this.nB = makeNoise3(seed * 13 + 5); this.nC = makeNoise3(seed * 3 + 29); this.nO = makeNoise3(seed * 17 + 3);
+    this.nM = makeNoise3(seed * 19 + 7); this.nK = makeNoise3(seed * 23 + 13);
+    this.seaAbove = null; // (x, z) => true where the sea lies above: those caves are flooded
     this.mods = [];                // [x, y, z, r]
     this.modGrid = new Map();      // cell -> indices
   }
@@ -73,6 +75,17 @@ export class Caves {
   }
   // ore veins inside the rock: >0.55 metal, < -0.55 sulfur, plus rare crystal pockets
   ore(x, y, z) { return this.nO(x * 0.06, y * 0.06, z * 0.06); }
+  // the newer minerals: copper and titanium veins, lithium seams, quartz pockets; in the flooded caves under the
+  // sea lithium is richer and the quartz pockets are blue kyanite instead
+  mineral(x, y, z) {
+    const a = this.nM(x * 0.07, y * 0.07, z * 0.07), b = this.nK(x * 0.06 + 50, y * 0.06, z * 0.06), wet = this.flooded(x, z);
+    if (a > 0.58) return 'copper_ore';
+    if (a < -0.6) return 'titanium_ore';
+    if (b > (wet ? 0.5 : 0.63)) return 'lithium_ore';
+    if (b < -0.64) return wet ? 'kyanite' : 'quartz';
+    return null;
+  }
+  flooded(x, z) { return !!this.seaAbove && this.seaAbove(x, z); }
   crystal(x, y, z) { return this.nO(x * 0.15 + 100, y * 0.15, z * 0.15) > 0.62; }
   // first floor below (x, y, z): highest y' <= y where rock below and air above, or null
   floorBelow(x, y, z, maxDrop = 40) {

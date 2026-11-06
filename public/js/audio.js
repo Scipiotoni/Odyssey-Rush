@@ -115,6 +115,8 @@ export class Audio {
       o.connect(g); g.connect(this.master); o.start(at); vib.start(at); o.stop(at + dur + 0.1); vib.stop(at + dur + 0.1);
     }
   }
+  // the hull groaning under pressure
+  creak() { this._tone(70 + Math.random() * 40, 1.2, { type: 'sawtooth', gain: 0.06, slide: 0.7, attack: 0.3 }); this._noise(0.9, { freq: 300, q: 4, type: 'bandpass', gain: 0.12, attack: 0.2, sweep: 0.5 }); this._tone(1800 + Math.random() * 900, 0.15, { type: 'triangle', gain: 0.02, slide: 0.5, at: 0.4 }); }
   gasp() { this._noise(0.45, { freq: 1300, q: 0.9, type: 'bandpass', gain: 0.16, attack: 0.08, sweep: 1.6 }); this._noise(0.6, { freq: 700, q: 0.7, type: 'bandpass', gain: 0.07, attack: 0.3, sweep: 0.6 }); }
   // 0 = in air, 1 = head under water
   setUnderwater(k, deep = 0) {

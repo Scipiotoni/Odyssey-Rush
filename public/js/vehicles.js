@@ -283,7 +283,7 @@ export class VehicleView {
     this.spin = 0; this.first = true;
     const ref = { kind: 'v', id: data.id, deck: !!this.def.deck };
     // local collision boxes [cx,cy,cz,hx,hy,hz]; the hauler is a low deck + tall cab so you can stand and build on the back
-    this.boxes = this.def.deck
+    this.boxes = this.def.boxes ? this.def.boxes : this.def.deck
       ? [[0, this.def.deck.y - 0.57, -2.4, 1.52, 0.57, 4.55], [0, 0.8, 4.6, 1.5, 1.4, 2.4]]
       : [[0, 0, 0, ...this.def.half]];
     this.colliders = this.boxes.map(([, , , hx, hy, hz]) => ({ t: 'box', x: 0, y: 0, z: 0, hx, hy, hz, yaw: 0, rad: Math.hypot(hx, hz) + 0.5, ref }));
@@ -302,6 +302,7 @@ export class VehicleView {
     this.vel.set(a[13][0], a[13][1], a[13][2]);
     this.nAttached = a[15] || 0;
     this.netDecRev = a[16] || 0;
+    if (a[17]) this.subInfo = { crush: a[17][0], thrust: a[17][1], eff: a[17][2], hull: a[17][3] };
     if (!this.interp) this.interp = new Interp();
     this.interp.push(performance.now(), a[2], a[3], a[4], 0, a[5]);
     if (this.first) { this.pos.copy(this.tPos); this.q.copy(this.tQ); this.first = false; }
@@ -334,6 +335,7 @@ export class VehicleView {
     });
     // boats: spin the propeller, swing the outboard with the helm, pull the oars
     if (ud.prop) ud.prop.rotation.z += (sim ? sim.rpm : this.rpm) * dt * 60;
+    if (ud.props) for (const pr of ud.props) pr.rotation.z += (sim ? sim.rpm : this.rpm) * dt * 40;
     if (ud.outboard) ud.outboard.rotation.y = -this.steer * 0.8;
     if (ud.oars) { this.oarT = (this.oarT || 0) + dt * (0.6 + Math.min(1, (sim ? sim.speed : this.vel.length()) / 3) * 2.4) * ((sim ? Math.abs(sim.throttle) || Math.abs(this.steer) > 0.1 : this.vel.length() > 0.3) ? 1 : 0); ud.oars.forEach((o, i) => { o.rotation.y = Math.sin(this.oarT * 2) * 0.5 * (i ? -1 : 1); o.rotation.z = Math.cos(this.oarT * 2) * 0.12 * (i ? -1 : 1); }); }
     const tint = this.broken ? 0x6b4a32 : this.paint >= 0 ? PAINT_COLORS[this.paint] : ud.baseColor ?? this.def.color;

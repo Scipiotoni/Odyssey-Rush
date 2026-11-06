@@ -130,6 +130,7 @@ export class UI {
     if (!v) { $('vehiclehud').classList.add('hidden'); return; }
     $('vehiclehud').classList.remove('hidden');
     $('speedo').textContent = Math.round(Math.abs(v.speed) * 3.6);
+    if (v.power) { const warn = v.depth > v.crush * 0.9; $('vfuel').innerHTML = `🔋 ${Math.floor(v.fuel)} / ${v.fuelCap}${v.fuel <= 0 ? ' — NO POWER' : ''}${v.depth !== undefined ? `<br><span style="color:${v.depth > v.crush ? '#ff5a4a' : warn ? '#ffc04a' : '#9fe0ff'}">🌊 ${Math.round(v.depth)} m · crush depth ${v.crush} m${v.depth > v.crush ? ' — HULL CRUSHING!' : ''}</span>` : ''}`; $('vhp').textContent = `🔧 ${Math.ceil(v.hp)} / ${v.maxHp}`; return; }
     $('vfuel').textContent = v.fuelCap ? `⛽ ${Math.floor(v.fuel)} / ${v.fuelCap}${v.fuel <= 0 ? ' — OUT OF FUEL' : ''}${v.engineOk === false ? ' — ENGINE FLOODED' : ''}${v.stuck ? ' — FROZEN IN THE ICE' : ''}` : `🚣 Oars${v.stuck ? ' — FROZEN IN THE ICE (break the ice around the hull)' : ''}`;
     $('vhp').textContent = `🔧 ${Math.ceil(v.hp)} / ${v.maxHp}`;
   }

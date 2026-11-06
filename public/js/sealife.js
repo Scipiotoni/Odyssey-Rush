@@ -95,6 +95,32 @@ export class SeaLife {
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._p = new THREE.Vector3(); this._s = new THREE.Vector3(); this._c = new THREE.Color();
   }
 
+  // blue holes on the sea floor: a black pit ringed by boulders, with a faint glow rising from it
+  setBlueHoles(list) {
+    this.holes = this.holes || new Map();
+    const want = new Set(list.map((h) => h.id));
+    for (const [id, m] of this.holes) if (!want.has(id)) { this.scene.remove(m); this.holes.delete(id); }
+    for (const h of list) {
+      if (this.holes.has(h.id)) continue;
+      const g = new THREE.Group();
+      let top = -1e9;
+      for (let a = 0; a < 12; a++) top = Math.max(top, this.world.ground(h.x + Math.cos(a / 1.91) * h.r, h.z + Math.sin(a / 1.91) * h.r));
+      top = Math.max(top, this.world.ground(h.x, h.z));
+      const pit = new THREE.Mesh(new THREE.CircleGeometry(h.r, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x010407, polygonOffset: true, polygonOffsetFactor: -4 }));
+      pit.position.y = top + 0.12 - h.y; g.add(pit);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(h.r * 0.75, h.r, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x0a3a5a, transparent: true, opacity: 0.6, depthWrite: false }));
+      ring.position.y = top + 0.15 - h.y; g.add(ring);
+      const rm = new THREE.MeshLambertMaterial({ color: 0x4a5258, flatShading: true });
+      for (let k = 0; k < 14; k++) {
+        const a = (k / 14) * Math.PI * 2 + hash3(k, 1, 3) * 0.3, rr = h.r + 0.5 + hash3(k, 2, 3) * 1.5, sc = 0.8 + hash3(k, 3, 3) * 1.6;
+        const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(sc, 0), rm);
+        const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+        rock.position.set(x, this.world.ground(h.x + x, h.z + z) - h.y + sc * 0.3, z); rock.rotation.set(k, k * 2, 0); g.add(rock);
+      }
+      g.position.set(h.x, h.y, h.z);
+      this.scene.add(g); this.holes.set(h.id, g);
+    }
+  }
   seaAt(x, z) { const g = this.world.ground(x, z); return g < -1.2 && !this.ice?.inland(x, z) ? g : null; }
 
   rebuild(cam) {
@@ -156,6 +182,7 @@ export class SeaLife {
     // only near the sea: plants within a cell or two of the shore or below you
     const near = cam.y < 25 && (this.seaAt(cam.x, cam.z) !== null || this.seaAt(cam.x + 60, cam.z) !== null || this.seaAt(cam.x - 60, cam.z) !== null || this.seaAt(cam.x, cam.z + 60) !== null || this.seaAt(cam.x, cam.z - 60) !== null);
     const vis = near && cam.y > -125;
+    if (this.holes) for (const m of this.holes.values()) m.visible = cam.y > -120;
     for (const m of [this.kelp, this.grass, ...this.corals, this.fish, this.jelly]) m.visible = vis;
     if (!vis) return;
     const ci = Math.floor(cam.x / 24), cj = Math.floor(cam.z / 24);
