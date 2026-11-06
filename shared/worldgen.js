@@ -82,7 +82,19 @@ export class World {
       const carve = smoothstep(0.04, 0.008, rn) * (1 - mtn) * mask;
       if (carve > 0) h = lerp(h, Math.min(h, -2.6), carve);
     }
-    return h * mask + (mask - 1) * 45;
+    if (mask >= 1) return h;
+    return Math.max(-114, h * mask + (mask - 1) * 45 + this.seaFloor(x, z, d) * (1 - mask) * (1 - mask));
+  }
+  // Below the coastal shelf the sea floor drops away into a deep basin with canyons, trenches and
+  // seamounts that rise into reefs. Kept above the cave zone (y > -120).
+  seaFloor(x, z, d) {
+    const deep = smoothstep(0.9, 1.08, d);
+    if (deep <= 0) return 0;
+    const mount = smoothstep(0.35, 0.75, this.nMtnMask.fbm(x / 900 - 20, z / 900 + 40, 3));
+    let extra = -deep * 42 - deep * this.nHill.fbm(x / 300, z / 300, 3) * 6;
+    extra -= deep * smoothstep(0.55, 0.95, this.nRidge.ridged(x / 1700, z / 1700, 2)) * 22; // trenches
+    extra += deep * mount * 58; // seamounts / reefs
+    return Math.max(-70, extra);
   }
 
   // Height including POI flattening.
@@ -160,7 +172,14 @@ export class World {
     const v = this.nColor.noise(x / 37, z / 37) * 0.05 + this.nColor.noise(x / 300, z / 300) * 0.05;
     let r, g, bl;
     switch (b) {
-      case BIOME.OCEAN: r = 0.62; g = 0.58; bl = 0.42; break;
+      case BIOME.OCEAN: {
+        // pale sand in the shallows, sea-grass meadows, dark silt and bare rock in the deep
+        const dep = smoothstep(-4, -60, h), grass = smoothstep(0.1, 0.35, this.nColor.noise(x / 60, z / 60)) * (1 - dep) * smoothstep(-2, -6, h);
+        r = lerp(0.66, 0.3, dep); g = lerp(0.6, 0.3, dep); bl = lerp(0.44, 0.3, dep);
+        r = lerp(r, 0.26, grass); g = lerp(g, 0.42, grass); bl = lerp(bl, 0.2, grass);
+        if (slope > 0.5) { const t = smoothstep(0.5, 0.8, slope); r = lerp(r, 0.36, t); g = lerp(g, 0.35, t); bl = lerp(bl, 0.34, t); }
+        break;
+      }
       case BIOME.BEACH: r = 0.86; g = 0.79; bl = 0.56; break;
       case BIOME.GRASS: r = 0.42; g = 0.62; bl = 0.25; break;
       case BIOME.FOREST: r = 0.25; g = 0.45; bl = 0.18; break;
@@ -208,6 +227,12 @@ export class World {
         const h = hash3(ci, cj, 55, this.seed);
         if (h < 0.45) type = NEW_POIS[Math.floor((h / 0.45) * NEW_POIS.length)];
         poi = { id: `${ci}_${cj}`, ci, cj, x, z, y: y + 0.3, yaw: Math.floor(rng() * 4) * Math.PI / 2 + (rng() - 0.5) * 0.6, type };
+        poi.name = poiName(type, ci, cj, this.seed);
+      }
+      // out at sea: sunken sites on the sea floor (decided by their own hash so land POIs don't move)
+      else if (y < -14 && y > -55 && hash3(ci, cj, 63, this.seed) < 0.7) {
+        const type = SEA_POIS[Math.floor(hash3(ci, cj, 64, this.seed) * SEA_POIS.length)];
+        poi = { id: `${ci}_${cj}`, ci, cj, x, z, y: y + 0.3, yaw: hash3(ci, cj, 65, this.seed) * Math.PI * 2, type, sea: true };
         poi.name = poiName(type, ci, cj, this.seed);
       }
     }
@@ -432,6 +457,55 @@ export class World {
         lootAt(0, -2, 2, 0.4); lootAt(-1, -15, 3, 6.4); lootAt(10, 6, 2);
         break;
       }
+      // ---- under the sea
+      case 'sunken_ship': {
+        // an old three-masted ship broken in two on the sea floor, cargo spilled around it
+        const WD = 0x4a3a2a, WD2 = 0x3a2e22, MOSS = 0x3a5a3a;
+        for (let i = 0; i < 5; i++) { box(0, 2.4 - i * 0.1, -16 + i * 6.2, 7.5 - Math.abs(i - 2) * 0.8, 4.8, 6, i % 2 ? WD : WD2, 0); props[props.length - 1].roll = 0.18; }
+        box(0.5, 1.6, 15, 4, 3.2, 5, WD2, 0.35); props[props.length - 1].roll = -0.3;                               // the broken bow
+        box(0, 5.4, -14, 6, 1.2, 6, WD, 0); props[props.length - 1].roll = 0.18;                                        // sterncastle
+        for (const [mz, mh, lean] of [[-8, 13, 0.2], [2, 15, 0.45], [15, 9, 1.0]]) { box(1.2 + lean * 3, mh / 2 + 2, mz, 0.5, mh, 0.5, WD2, 0); props[props.length - 1].roll = lean; }
+        box(4, 0.4, -4, 9, 0.8, 1.6, MOSS, 0.4);
+        for (let i = 0; i < 7; i++) box(8 + (rng() - 0.5) * 10, 0.5, (rng() - 0.5) * 30, 1.2, 1, 1.2, i % 2 ? 0x6a4a2a : 0x5a5a52, rng() * 3); // barrels and chests
+        lootAt(0, -12, 3, 0.4); lootAt(1, 3, 2, 0.4); lootAt(9, 8, 2);
+        break;
+      }
+      case 'sunken_ruins': {
+        // a drowned temple: a stepped platform, rings of columns (some toppled), arches and statues
+        const MARB = 0xb8b2a2, MARBD = 0x8a8678;
+        box(0, 0.6, 0, 24, 1.2, 18, MARBD); box(0, 1.5, 0, 18, 0.6, 12, MARB);
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2, x = Math.cos(a) * 8, z = Math.sin(a) * 5;
+          if (rng() < 0.3) { box(x * 1.5, 0.6, z * 1.6, 1.1, 1.1, 6, MARB, a + 1.2); continue; } // toppled
+          cyl(x, 1.8 + 3, z, 0.55, 6, MARB);
+        }
+        box(0, 8.3, 0, 18, 1.0, 1.4, MARB); box(0, 9.2, 0, 6, 0.8, 1.2, MARBD);
+        for (const sx of [-1, 1]) { box(sx * 16, 3, 10, 1.2, 6, 1.2, MARB); box(sx * 16, 3, 14, 1.2, 6, 1.2, MARB); box(sx * 16, 6.4, 12, 1.2, 0.8, 5.2, MARB); }
+        box(0, 3, -4, 1.4, 3, 1.4, MARBD); box(0, 5, -4, 1, 1, 1, MARB);                                                 // a worn statue
+        lootAt(0, 0, 2, 1.8); lootAt(-6, 3, 1, 1.8); lootAt(16, 12, 2);
+        break;
+      }
+      case 'sunken_sub': {
+        // a war-era submarine resting at an angle: hull, conning tower, periscope, torn hatch
+        const SUB = 0x3a4448, SUBD = 0x2a3236;
+        for (let i = 0; i < 7; i++) { const r = 2.6 - Math.abs(i - 3) * 0.35; box(0, r + 0.2, -21 + i * 7, r * 2, r * 2, 7.1, i % 2 ? SUB : SUBD, 0); props[props.length - 1].roll = 0.12; box(0, r * 1.7 + 0.2, -21 + i * 7, r * 1.4, r * 0.8, 7.1, SUB, 0); }
+        box(0, 6.8, -2, 2.6, 3.6, 7, SUB); cyl(0.6, 10.5, -3, 0.15, 4, 0x6a6a6a);
+        box(0, 0.6, 26, 1.4, 1.2, 4, SUBD, 0.2);
+        for (let i = 0; i < 4; i++) box(5 + rng() * 6, 0.4, -10 + rng() * 20, 1.4, 0.8, 0.9, 0x5a5a52, rng() * 3);
+        lootAt(0, -2, 3, 5); lootAt(5, 8, 2);
+        break;
+      }
+      case 'sunken_plane': {
+        // a cargo plane that ditched at sea: fuselage, a broken wing, tail fin, scattered containers
+        const AL = 0x8a9096, ALD = 0x5a6066;
+        for (let i = 0; i < 5; i++) { box(0, 2.2, -12 + i * 5.5, 4.4, 4.2, 5.6, i % 2 ? AL : ALD, 0.04 * i); box(0, 4.5, -12 + i * 5.5, 3.2, 0.6, 5.6, AL, 0.04 * i); }
+        box(9, 1.2, -2, 14, 0.5, 4, AL, 0.1); props[props.length - 1].roll = 0.12;
+        box(-6, 0.6, 2, 7, 0.4, 3.5, ALD, -0.5); props[props.length - 1].roll = -0.3;
+        box(0, 6, -13, 0.4, 5, 3.5, AL);
+        for (let i = 0; i < 5; i++) box((rng() - 0.5) * 24, 1.3, 14 + rng() * 10, 2.6, 2.6, 6, [0x2e5d8a, 0x8a2e2e, 0xd8a030][i % 3], rng() * 3);
+        lootAt(0, -4, 2, 0.4); lootAt(0, 4, 3, 0.4); lootAt(-4, 18, 1);
+        break;
+      }
       case 'junkyard': {
         for (let i = -2; i <= 2; i++) box(i * 12, 1.5, -30, 12, 3, 0.3, 0x6e6e6e);
         for (let i = -2; i <= 2; i++) box(i * 12, 1.5, 30, 12, 3, 0.3, 0x6e6e6e);
@@ -520,9 +594,10 @@ function pickNode(b, r) {
 }
 
 const NAME_A = ['Old', 'North', 'Rusty', 'Silent', 'Broken', 'Grey', 'Lost', 'Dusty', 'Red', 'Iron', 'Cold', 'Hollow', 'Black', 'Stone', 'Wild', 'Crooked'];
+const SEA_POIS = ['sunken_ship', 'sunken_ruins', 'sunken_sub', 'sunken_plane'];
 const NEW_POIS = ['lighthouse', 'crash', 'cabin', 'mine', 'bunker', 'village', 'observatory', 'shipwreck'];
 export const POI_TYPES = ['ruins', 'gas', 'farm', 'radio', 'military', 'junkyard', ...NEW_POIS];
-const NAME_B = { lighthouse: ['Lighthouse', 'Beacon', 'Light'], crash: ['Crash Site', 'Wreck', 'Air Disaster'], cabin: ['Ranger Cabin', 'Hunting Lodge', 'Lookout'], mine: ['Mine', 'Quarry', 'Dig Site'], bunker: ['Bunker', 'Command Post', 'Silo'], village: ['Village', 'Hamlet', 'Settlement'], observatory: ['Observatory', 'Station', 'Array'], shipwreck: ['Shipwreck', 'Hulk', 'Beached Freighter'], ruins: ['Ruins', 'Township', 'Village', 'Outskirts'], gas: ['Gas Stop', 'Fuel Depot', 'Service Station'], farm: ['Farm', 'Ranch', 'Homestead'], radio: ['Radio Tower', 'Relay', 'Antenna'], military: ['Outpost', 'Checkpoint', 'Base'], junkyard: ['Junkyard', 'Scrapyard', 'Salvage'] };
+const NAME_B = { lighthouse: ['Lighthouse', 'Beacon', 'Light'], crash: ['Crash Site', 'Wreck', 'Air Disaster'], cabin: ['Ranger Cabin', 'Hunting Lodge', 'Lookout'], mine: ['Mine', 'Quarry', 'Dig Site'], bunker: ['Bunker', 'Command Post', 'Silo'], village: ['Village', 'Hamlet', 'Settlement'], observatory: ['Observatory', 'Station', 'Array'], shipwreck: ['Shipwreck', 'Hulk', 'Beached Freighter'], ruins: ['Ruins', 'Township', 'Village', 'Outskirts'], gas: ['Gas Stop', 'Fuel Depot', 'Service Station'], farm: ['Farm', 'Ranch', 'Homestead'], radio: ['Radio Tower', 'Relay', 'Antenna'], military: ['Outpost', 'Checkpoint', 'Base'], junkyard: ['Junkyard', 'Scrapyard', 'Salvage'], sunken_ship: ['Galleon Wreck', 'Sunken Ship', 'Lost Frigate'], sunken_ruins: ['Drowned Temple', 'Sunken City', 'Old Sanctum'], sunken_sub: ['Submarine Wreck', 'Lost Sub', 'U-Boat Grave'], sunken_plane: ['Ditched Cargo Plane', 'Sunken Airlifter', 'Flight 7 Wreck'] };
 function poiName(type, ci, cj, seed) {
   const a = NAME_A[Math.floor(hash3(ci, cj, 5, seed) * NAME_A.length)];
   const list = NAME_B[type];

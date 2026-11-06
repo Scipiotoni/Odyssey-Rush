@@ -69,7 +69,7 @@ export function injectSeason(sh, mode) {
       // ice crystals glinting in the snow
       float sp = fract(sin(dot(floor(vSPos * 9.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
       c += step(0.9965, sp) * (cover + uFrost * 0.3) * 0.45;
-      if (vSPos.y < -120.0) c = diffuseColor.rgb; // never underground
+      if (vSPos.y < -120.0 || vSPos.y < -0.6) c = diffuseColor.rgb; // never underground or under water
       diffuseColor.rgb = c;
     }`);
 }

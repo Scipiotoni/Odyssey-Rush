@@ -102,6 +102,19 @@ export class Audio {
       setTimeout(() => this.splash(0.5 * a), 180);
     }
   }
+  // long gliding moans and upsweeps, far away
+  whaleSong() {
+    if (!this.ok) return;
+    const t0 = this.ctx.currentTime;
+    for (let i = 0; i < 4; i++) {
+      const at = t0 + i * 2.6 + Math.random() * 0.8, f = 180 + Math.random() * 220, dur = 1.6 + Math.random() * 1.4;
+      const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, at);
+      o.frequency.exponentialRampToValueAtTime(f * (Math.random() < 0.5 ? 1.8 : 0.55), at + dur);
+      const vib = this.ctx.createOscillator(); vib.frequency.value = 5; const vg = this.ctx.createGain(); vg.gain.value = f * 0.02; vib.connect(vg); vg.connect(o.frequency);
+      const g = this.ctx.createGain(); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.05, at + dur * 0.3); g.gain.linearRampToValueAtTime(0, at + dur);
+      o.connect(g); g.connect(this.master); o.start(at); vib.start(at); o.stop(at + dur + 0.1); vib.stop(at + dur + 0.1);
+    }
+  }
   gasp() { this._noise(0.45, { freq: 1300, q: 0.9, type: 'bandpass', gain: 0.16, attack: 0.08, sweep: 1.6 }); this._noise(0.6, { freq: 700, q: 0.7, type: 'bandpass', gain: 0.07, attack: 0.3, sweep: 0.6 }); }
   // 0 = in air, 1 = head under water
   setUnderwater(k, deep = 0) {

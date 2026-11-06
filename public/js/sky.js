@@ -103,6 +103,7 @@ export class Sky {
     this.sun.color.setRGB(moon ? 0.6 : 1, moon ? 0.7 : lerp(0.7, 0.95, dayF), moon ? 1 : lerp(0.5, 0.85, dayF));
     this.hemi.intensity = lerp(0.18, 0.95, dayF);
     this.hemi.color.setRGB(lerp(0.35, 0.75, dayF), lerp(0.4, 0.85, dayF), lerp(0.6, 1.0, dayF));
+    this.hemi.groundColor.setHex(0x5a4a30);
     this.water.position.set(Math.round(camPos.x / 40) * 40, 0, Math.round(camPos.z / 40) * 40);
     this.water.material.color.setRGB(lerp(0.04, 0.16, dayF), lerp(0.1, 0.43, dayF), lerp(0.16, 0.6, dayF));
     this.dayLight = dayF;

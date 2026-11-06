@@ -40,11 +40,17 @@ export const ITEMS = {
   berries: { name: 'Berries', cat: 'food', stack: 20, icon: '🫐', food: 8, water: 6, heal: 0 },
   raw_meat: { name: 'Raw Meat', cat: 'food', stack: 20, icon: '🥩', food: 6, water: 0, heal: -3 },
   cooked_meat: { name: 'Cooked Meat', cat: 'food', stack: 20, icon: '🍖', food: 30, water: 0, heal: 6 },
+  raw_fish: { name: 'Raw Fish', cat: 'food', stack: 20, icon: '🐟', food: 5, water: 2, heal: -2 },
+  cooked_fish: { name: 'Cooked Fish', cat: 'food', stack: 20, icon: '🍣', food: 20, water: 4, heal: 5 },
+  raw_big_fish: { name: 'Big Raw Fish', cat: 'food', stack: 10, icon: '🐠', food: 8, water: 2, heal: -3 },
+  cooked_big_fish: { name: 'Grilled Big Fish', cat: 'food', stack: 10, icon: '🍱', food: 42, water: 6, heal: 10 },
+  pearl: { name: 'Pearl', cat: 'resource', stack: 50, icon: '🦪' },
   water_bottle: { name: 'Water Bottle', cat: 'food', stack: 5, icon: '💧', food: 0, water: 45, heal: 0 },
   bandage: { name: 'Bandage', cat: 'medical', stack: 10, icon: '🩹', heal: 15, useTime: 1.5 },
   medkit: { name: 'Medkit', cat: 'medical', stack: 5, icon: '💉', heal: 50, useTime: 3 },
   // --- tools ---
   rock: { name: 'Rock', cat: 'tool', stack: 1, icon: '🪨', tool: { tree: 8, ore: 8, dmg: 8, range: 2.2, rate: 1.4 } },
+  fishing_rod: { name: 'Fishing Rod', cat: 'tool', stack: 1, icon: '🎣', fishing: { luck: 1 } },
   torch: { name: 'Torch', cat: 'tool', stack: 1, icon: '🔥', tool: { tree: 2, ore: 2, dmg: 6, range: 2, rate: 1.4 }, light: true },
   stone_hatchet: { name: 'Stone Hatchet', cat: 'tool', stack: 1, icon: '🪓', tool: { tree: 18, ore: 4, dmg: 12, range: 2.4, rate: 1.4 } },
   stone_pickaxe: { name: 'Stone Pickaxe', cat: 'tool', stack: 1, icon: '⛏️', tool: { tree: 4, ore: 18, dmg: 12, range: 2.4, rate: 1.3 } },
@@ -93,6 +99,8 @@ export const ITEMS = {
   small_bag: { name: 'Small Bag', cat: 'armor', stack: 1, icon: '👝', armor: { slot: 'back', prot: 0, cold: 0, rows: 1, color: 0xb9a57a } },
   backpack: { name: 'Backpack', cat: 'armor', stack: 1, icon: '🎒', armor: { slot: 'back', prot: 0, cold: 0.05, rows: 2, color: 0x7a5233 } },
   large_backpack: { name: 'Expedition Pack', cat: 'armor', stack: 1, icon: '🧳', armor: { slot: 'back', prot: 0.02, cold: 0.1, rows: 4, color: 0x3f5a3a } },
+  o2_tank: { name: 'Diving Tank', cat: 'armor', stack: 1, icon: '🤿', armor: { slot: 'back', prot: 0, cold: 0, rows: 0, color: 0xd8a820, air: 90 } },
+  o2_tank_large: { name: 'Twin Diving Tanks', cat: 'armor', stack: 1, icon: '🤿', armor: { slot: 'back', prot: 0.02, cold: 0, rows: 0, color: 0x2a6aa0, air: 210 } },
   metal_legs: { name: 'Roadsign Kilt', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'legs', prot: 0.35, cold: 0.05, color: 0x9b8b5b } },
   // --- deployables ---
   campfire: { name: 'Camp Fire', cat: 'deployable', stack: 1, icon: '🔥', deploy: { kind: 'campfire', hp: 150 } },
@@ -120,6 +128,7 @@ export const ITEMS = {
   wood_door: { name: 'Wooden Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 200, tier: 'wood' } },
   metal_door: { name: 'Sheet Metal Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 400, tier: 'metal' } },
   armored_door: { name: 'Armored Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 900, tier: 'armored' } },
+  sealed_door: { name: 'Watertight Hatch', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 1100, tier: 'sealed' } },
 };
 
 // Station requirement strings: null | 'wb1' | 'wb2' | 'wb3' | 'campfire' | 'furnace'
@@ -230,6 +239,13 @@ const ATTACH = [
 for (const [id, name, icon, cost, time] of ATTACH) { ITEMS[id] = { name, cat: 'attachment', stack: 5, icon, attachment: true }; RECIPES.push({ out: id, n: 1, time, station: 'gunsmith', cost }); }
 RECIPES.push({ out: 'gunsmith', n: 1, time: 25, station: 'wb2', cost: { metal_frags: 300, hqm: 15, gears: 4, wood: 200 } });
 const ATTACH_LOOT = [['red_dot', 2, 0.06], ['ext_mag', 2, 0.05], ['vertical_grip', 2, 0.05], ['flashlight', 2, 0.05], ['holo', 3, 0.08], ['scope4', 3, 0.07], ['suppressor', 3, 0.05], ['muzzle_brake', 3, 0.06], ['drum_mag', 3, 0.03], ['scope8', 3, 0.02], ['long_barrel', 3, 0.04]];
+// ---- the sea: fishing, diving, watertight bases (appended: recipe ids are positional)
+RECIPES.push({ out: 'fishing_rod', n: 1, time: 4, cost: { wood: 120, rope: 1, cloth: 10 } });
+RECIPES.push({ out: 'cooked_fish', n: 1, time: 3, station: 'campfire', cost: { raw_fish: 1, wood: 8 } });
+RECIPES.push({ out: 'cooked_big_fish', n: 1, time: 5, station: 'campfire', cost: { raw_big_fish: 1, wood: 12 } });
+RECIPES.push({ out: 'o2_tank', n: 1, time: 10, station: 'wb1', cost: { metal_frags: 150, pipe: 1, rope: 1 } });
+RECIPES.push({ out: 'o2_tank_large', n: 1, time: 18, station: 'wb2', cost: { metal_frags: 300, pipe: 2, hqm: 4, rope: 1 } });
+RECIPES.push({ out: 'sealed_door', n: 1, time: 14, station: 'wb2', cost: { metal_frags: 250, hqm: 8, gears: 1 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench' };
@@ -273,9 +289,9 @@ export const DIG = { step: 0.45, min: -6, max: 4, raiseCost: { stone: 5 }, reach
 
 export const LOOT = {
   barrel: [['scrap', 2, 6, 1], ['metal_frags', 10, 30, 0.4], ['fuel', 2, 6, 0.3], ['rope', 1, 1, 0.15], ['pipe', 1, 1, 0.1], ['gears', 1, 1, 0.08], ['spring', 1, 1, 0.06], ['pistol_ammo', 4, 10, 0.1], ['bandage', 1, 2, 0.15], ['cloth', 5, 15, 0.2]],
-  1: [['scrap', 5, 12, 1], ['metal_frags', 20, 60, 0.6], ['fuel', 5, 15, 0.5], ['rope', 1, 2, 0.3], ['pipe', 1, 2, 0.25], ['gears', 1, 1, 0.2], ['spring', 1, 1, 0.15], ['wheel', 1, 1, 0.12], ['engine_parts', 1, 1, 0.08], ['bandage', 1, 3, 0.3], ['pistol_ammo', 8, 16, 0.2], ['cloth_shirt', 1, 1, 0.05], ['metal_hatchet', 1, 1, 0.05], ['revolver', 1, 1, 0.03], ['pistol', 1, 1, 0.02], ['crossbow', 1, 1, 0.02], ['water_bottle', 1, 1, 0.2]],
-  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1]],
-  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08]],
+  1: [['scrap', 5, 12, 1], ['metal_frags', 20, 60, 0.6], ['fuel', 5, 15, 0.5], ['rope', 1, 2, 0.3], ['pipe', 1, 2, 0.25], ['gears', 1, 1, 0.2], ['spring', 1, 1, 0.15], ['wheel', 1, 1, 0.12], ['engine_parts', 1, 1, 0.08], ['bandage', 1, 3, 0.3], ['pistol_ammo', 8, 16, 0.2], ['cloth_shirt', 1, 1, 0.05], ['metal_hatchet', 1, 1, 0.05], ['revolver', 1, 1, 0.03], ['pistol', 1, 1, 0.02], ['crossbow', 1, 1, 0.02], ['water_bottle', 1, 1, 0.2], ['fishing_rod', 1, 1, 0.06]],
+  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1], ['o2_tank', 1, 1, 0.06], ['pearl', 1, 2, 0.05]],
+  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08], ['o2_tank_large', 1, 1, 0.05], ['pearl', 1, 3, 0.15]],
 };
 
 export function rollLoot(table, rnd = Math.random) {
@@ -291,7 +307,7 @@ export function itemMaxStack(id) { return ITEMS[id]?.stack || 1; }
 const SIZES = {
   // 2x2: long guns, big tools of war, bulky gear
   rifle: [2, 2], bolt_rifle: [2, 2], lmg: [2, 2], rocket_launcher: [2, 2], shotgun: [2, 2], double_barrel: [2, 2], crossbow: [2, 2],
-  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2],
+  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], o2_tank: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
   // long handles: 1 wide, 2 tall
   wooden_spear: [1, 2], stone_hatchet: [1, 2], stone_pickaxe: [1, 2], metal_hatchet: [1, 2], metal_pickaxe: [1, 2], shovel: [1, 2],
   machete: [1, 2], sword: [1, 2], battle_axe: [1, 2], bow: [1, 2], torch: [1, 2], cloth_pants: [1, 2], leather_pants: [1, 2], metal_legs: [1, 2], rocket: [1, 2],
@@ -322,5 +338,6 @@ export const ANIMALS = {
   deer: { name: 'Deer', hp: 40, speed: 9, aggro: false, dmg: 0, drops: { raw_meat: 4, leather: 18, animal_fat: 4, bone: 8 }, color: 0x9b6a3c, size: 1 },
   boar: { name: 'Boar', hp: 60, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
   wolf: { name: 'Wolf', hp: 35, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
+  shark: { name: 'Shark', hp: 110, speed: 7.5, aggro: true, dmg: 24, drops: { raw_big_fish: 3, animal_fat: 8, bone: 12 }, color: 0x6c7a86, size: 1.5, swim: true },
   bear: { name: 'Bear', hp: 160, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
 };

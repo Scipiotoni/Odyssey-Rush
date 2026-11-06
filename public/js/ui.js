@@ -130,7 +130,7 @@ export class UI {
     if (!v) { $('vehiclehud').classList.add('hidden'); return; }
     $('vehiclehud').classList.remove('hidden');
     $('speedo').textContent = Math.round(Math.abs(v.speed) * 3.6);
-    $('vfuel').textContent = `⛽ ${Math.floor(v.fuel)} / ${v.fuelCap}${v.fuel <= 0 ? ' — OUT OF FUEL' : ''}${v.engineOk === false ? ' — ENGINE FLOODED' : ''}`;
+    $('vfuel').textContent = v.fuelCap ? `⛽ ${Math.floor(v.fuel)} / ${v.fuelCap}${v.fuel <= 0 ? ' — OUT OF FUEL' : ''}${v.engineOk === false ? ' — ENGINE FLOODED' : ''}${v.stuck ? ' — FROZEN IN THE ICE' : ''}` : `🚣 Oars${v.stuck ? ' — FROZEN IN THE ICE (break the ice around the hull)' : ''}`;
     $('vhp').textContent = `🔧 ${Math.ceil(v.hp)} / ${v.maxHp}`;
   }
 
@@ -477,7 +477,7 @@ export class UI {
       const on = b.tier === i;
       svg += `<path class="seg" data-t="${i}" d="${sector(36, 106, a0, a1)}" fill="${hex(t.color)}" opacity="${on ? 1 : 0.55}" stroke="${on ? '#fff' : 'rgba(0,0,0,.4)'}" stroke-width="${on ? 3 : 1}"/>`;
       const [x, y] = pt(74, am);
-      svg += `<text x="${x}" y="${y}" font-size="10.5" font-weight="700" style="paint-order:stroke;stroke:#000;stroke-width:2px">${t.name.replace('Sheet ', '')}</text>`;
+      svg += `<text x="${x}" y="${y}" font-size="10.5" font-weight="700" style="paint-order:stroke;stroke:#000;stroke-width:2px">${t.name.replace('Sheet ', '').replace(' Steel', '')}</text>`;
     });
     svg += `<circle cx="${C}" cy="${C}" r="33" fill="rgba(15,15,15,.95)" stroke="rgba(255,255,255,.2)"/>`;
     // centre info

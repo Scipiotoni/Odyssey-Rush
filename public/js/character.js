@@ -328,7 +328,20 @@ export function makeHumanoid(look = DEFAULT_LOOK, armorIds = []) {
     }
   }
 
-  if (armBack) {
+  if (armBack && armBack.startsWith('o2_tank')) {
+    // scuba cylinders on a harness, valve and hose over the shoulder
+    const c = acol(armBack), m = lam(c), steel = lam(0x9a9a90), strap = lam(0x1d1f22);
+    const two = armBack === 'o2_tank_large';
+    for (const x of two ? [-0.075, 0.075] : [0]) {
+      mk(G('o2cyl', () => new THREE.CylinderGeometry(0.07, 0.07, 0.46, 12)), m, chest, x, 0.1, 0.23);
+      mk(G('o2cap', () => new THREE.SphereGeometry(0.07, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2)), m, chest, x, 0.33, 0.23);
+      mk(G('o2valve', () => new THREE.CylinderGeometry(0.025, 0.025, 0.07, 8)), steel, chest, x, 0.41, 0.23);
+    }
+    mk(rbox(two ? 0.3 : 0.18, 0.05, 0.04, 0.01), strap, chest, 0, 0.18, 0.16);
+    mk(rbox(two ? 0.3 : 0.18, 0.05, 0.04, 0.01), strap, chest, 0, -0.04, 0.16);
+    for (const sx of [-1, 1]) mk(rbox(0.035, 0.3, 0.02, 0.008), strap, chest, sx * 0.1, 0.14, 0.1, 0.15, 0, 0);
+    mk(G('o2hose', () => new THREE.TorusGeometry(0.14, 0.012, 4, 10, Math.PI)), lam(0x222222), chest, 0.12, 0.36, 0.08, 0, Math.PI / 2, 0);
+  } else if (armBack) {
     // bag on the back (+z is behind the character): bigger bag = bigger pack
     const c = acol(armBack), m = lam(c), md = lam(shade(c, 0.7)), strap = lam(0x2a2018), buckle = lam(0x9a9a90);
     const big = armBack === 'large_backpack', small = armBack === 'small_bag';

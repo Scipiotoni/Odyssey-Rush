@@ -2,7 +2,8 @@ import { CAVE_ZONE } from '/shared/caves.js';
 // Local first-person player controller.
 import * as THREE from 'three';
 import { audio } from './audio.js';
-import { BREATH_MAX } from '/shared/ice.js';
+import { BREATH_MAX, breathDrain } from '/shared/ice.js';
+import { ITEMS } from '/shared/items.js';
 import { ICE_SURF } from './physics.js';
 
 const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2, SWIM = 3.0, SWIM_FAST = 4.8, JUMP = 6.8, GRAV = 20;
@@ -40,12 +41,14 @@ export class Player {
     const groundY = inCave ? -1e6 : w.ground(this.pos.x, this.pos.z);
     const waterDepth = inCave ? 0 : -this.pos.y; // sea level is 0 (no sea in the caves)
     const onIce = this.onGround && ph.lastSurf === ICE_SURF;
-    this.swimming = !inCave && waterDepth > 1.1 && groundY < -1.0 && !onIce;
+    // inside an air-filled watertight room you walk and breathe normally
+    this.dry = !inCave && this.pos.y < 0.5 && !!g.structures?.dryAt(this.pos.x, this.pos.y + 0.2, this.pos.z);
+    this.swimming = !inCave && !this.dry && waterDepth > 1.1 && groundY < -1.0 && !onIce;
     const headY = this.pos.y + this.eye;
     this.underwater = this.swimming && headY < -0.06;
     this.sprinting = k('ShiftLeft') && fx > 0 && !this.crouch && !this.swimming;
     let speed = this.swimming ? (k('ShiftLeft') ? SWIM_FAST : SWIM) : this.crouch ? CROUCH : this.sprinting ? SPRINT : WALK;
-    if (waterDepth > 0.4 && !this.swimming) speed *= 0.7; // wading
+    if (waterDepth > 0.4 && !this.swimming && !this.dry) speed *= 0.7; // wading
     if (g.encumbered) speed *= 0.85;
     if (this.swimming) {
       // swim where you look: pitch steers you down into the deep or back up to the light
@@ -118,7 +121,7 @@ export class Player {
       if (this.stepT <= 0) { this.stepT = this.sprinting ? 2.4 : 1.9; audio.step(inCave ? 'rock' : waterDepth > 0.1 ? 'water' : ph.lastSurf === ICE_SURF ? 'ice' : ph.lastSurf ? 'concrete' : w.surface(this.pos.x, this.pos.z).name); }
     } else if (!this.swimming) this.bob *= 0.9;
     // water sounds and breath
-    const wet = !inCave && this.pos.y < -0.25 && groundY < -0.3;
+    const wet = !inCave && !this.dry && this.pos.y < -0.25 && groundY < -0.3;
     if (wet && !this.wasWet && preVy < -3) { audio.splash?.(Math.min(1, -preVy / 14)); g.effects?.burst({ x: this.pos.x, y: 0.1, z: this.pos.z }, { count: 16, color: 0xcfe6f2, speed: 3.5, size: 0.08, life: 0.7 }); }
     this.wasWet = wet;
     if (this.swimming) {
@@ -127,11 +130,15 @@ export class Player {
       if (this.strokeT <= 0 && sp > 0.6) { this.strokeT = 1.4; audio.swimStroke?.(this.underwater); }
       this.bob += dt * 2.2;
     }
+    const tank = g.armor?.back, tmax = tank && ITEMS[tank.id]?.armor?.air;
+    if (tmax) { if (this.tankId !== tank.id) { this.tankId = tank.id; this.tank = tank.air ?? tmax; } this.tankMax = tmax; } else { this.tankMax = 0; this.tankId = null; }
     if (this.underwater) {
-      this.breath = Math.max(0, this.breath - dt);
+      const drain = breathDrain(-(this.pos.y + this.eye));
+      if (this.tankMax && this.tank > 0) this.tank = Math.max(0, this.tank - dt * drain);
+      else this.breath = Math.max(0, this.breath - dt * drain);
       this.bubbleT -= dt;
-      if (this.bubbleT <= 0) { this.bubbleT = this.breath > 5 ? 2.5 + Math.random() * 3 : 0.6; audio.bubbles?.(); g.effects?.burst({ x: this.pos.x - Math.sin(this.yaw) * 0.3, y: this.pos.y + this.eye - 0.1, z: this.pos.z - Math.cos(this.yaw) * 0.3 }, { count: 6, color: 0xd8f4ff, speed: 0.35, size: 0.035, life: 1.6, gravity: -2.5 }); }
-    } else this.breath = Math.min(BREATH_MAX, this.breath + dt * 5);
+      if (this.bubbleT <= 0) { this.bubbleT = this.tankMax && this.tank > 0 ? 1.2 + Math.random() * 0.8 : this.breath > 5 ? 2.5 + Math.random() * 3 : 0.6; audio.bubbles?.(); g.effects?.burst({ x: this.pos.x - Math.sin(this.yaw) * 0.3, y: this.pos.y + this.eye - 0.1, z: this.pos.z - Math.cos(this.yaw) * 0.3 }, { count: 6, color: 0xd8f4ff, speed: 0.35, size: 0.035, life: 1.6, gravity: -2.5 }); }
+    } else { this.breath = Math.min(BREATH_MAX, this.breath + dt * 5); if (this.tankMax) this.tank = Math.min(this.tankMax, this.tank + dt * 6); }
     this.recoil *= Math.exp(-10 * dt);
   }
 

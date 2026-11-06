@@ -1,6 +1,7 @@
 // Modern vehicle models: curved extruded body profiles with wheel arches, glass greenhouse,
 // pillars, LED lights, grilles, mirrors, interiors and detailed wheels.
 import * as THREE from 'three';
+import { makeBoat } from './boats.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { VEHICLES } from '/shared/vehicles.js';
@@ -465,6 +466,7 @@ function hauler(g, def, ud, paint) {
 
 export function makeVehicle(type, variant = 0) {
   const def = VEHICLES[type];
+  if (def.boat) return makeBoat(type);
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
   const paint = std({ color: def.color, metalness: 0.45, roughness: 0.38, flatShading: true });

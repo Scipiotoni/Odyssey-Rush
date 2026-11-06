@@ -59,6 +59,8 @@ kbd { background: #333; border: 1px solid #555; border-bottom-width: 2px; border
 .fill.hp { background: #8fb33a; } .fill.food { background: #d08a35; } .fill.water { background: #3a8fd0; }
 #cold { color: #8ad0ff; }
 .fill.breath { background: linear-gradient(90deg, #7fd8ff, #d8f6ff); }
+#tankrow .fill.tank { background: linear-gradient(90deg, #e0b030, #ffe07a); }
+#tankrow.low .fill.tank { background: #ff6a4a; animation: blink .5s infinite alternate; }
 #breathrow.low .fill.breath { background: #ff6a4a; animation: blink .5s infinite alternate; }
 @keyframes blink { from { opacity: 1 } to { opacity: .35 } }
 #underwater { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: .6;

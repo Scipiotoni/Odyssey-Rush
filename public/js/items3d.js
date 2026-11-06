@@ -149,6 +149,17 @@ function build(id) {
       if (id === 'small_bag') parts.push(P(tor(0.1, 0.008, Math.PI, 10), 0x2a2018, { y: 0.2 }));
       return parts;
     }
+    case 'o2_tank': case 'o2_tank_large': {
+      const c = d.armor.color, two = id === 'o2_tank_large';
+      const tank = (x) => [P(cyl(0.06, 0.06, 0.34, 12), c, { x, y: 0.19 }), P(new THREE.SphereGeometry(0.06, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), c, { x, y: 0.36 }), P(cyl(0.02, 0.02, 0.05, 8), 0x9a9a90, { x, y: 0.43 })];
+      return [...(two ? [...tank(-0.065), ...tank(0.065)] : tank(0)), P(box(two ? 0.2 : 0.14, 0.03, 0.03), 0x2a2018, { y: 0.26, z: 0.06 }), P(tor(0.05, 0.008, Math.PI * 2, 10), 0x222222, { y: 0.46, z: -0.04 })];
+    }
+    case 'fishing_rod': return [P(cyl(0.008, 0.016, 0.9, 6), 0x6a4a2a, { y: 0.45 }), P(cyl(0.035, 0.035, 0.03, 10), 0x777777, { y: 0.15, z: 0.03, rx: Math.PI / 2 }), P(cyl(0.02, 0.02, 0.12, 6), 0x2a2018, { y: 0.06 })];
+    case 'raw_fish': case 'cooked_fish': case 'raw_big_fish': case 'cooked_big_fish': {
+      const k = id.includes('big') ? 1.6 : 1, c = id.startsWith('raw') ? 0x8aa2b0 : 0xb0723a;
+      return [P(new THREE.SphereGeometry(0.06 * k, 8, 6), c, { y: 0.06 * k, sx: 2.2, sy: 0.8 }), P(new THREE.ConeGeometry(0.05 * k, 0.07 * k, 4), c, { x: -0.16 * k, y: 0.06 * k, rz: -Math.PI / 2 })];
+    }
+    case 'pearl': return [P(new THREE.SphereGeometry(0.04, 12, 8), 0xf4efe6, { y: 0.04 })];
     case 'cloth_pants': case 'leather_pants': case 'metal_legs': {
       const c = d.armor.color;
       if (id === 'metal_legs') return [P(rb(0.26, 0.04, 0.08, 0.01), C.leather, { y: 0.3 }), ...[-1, 0, 1].map((s) => P(rb(0.09, 0.22, 0.012, 0.004), c, { x: s * 0.085, y: 0.17, rz: s * 0.05 }))];
@@ -156,7 +167,7 @@ function build(id) {
     }
   }
   if (d?.deploy) return null;
-  if (d?.door) return [P(rb(0.2, 0.36, 0.02, 0.005), { wood: 0x7a5232, metal: 0x6f7880, armored: 0x3c444c }[d.door.tier], { y: 0.18 }), P(box(0.02, 0.02, 0.04), C.black, { x: 0.07, y: 0.17 })];
+  if (d?.door) return [P(rb(0.2, 0.36, 0.02, 0.005), { wood: 0x7a5232, metal: 0x6f7880, armored: 0x3c444c, sealed: 0x35606c }[d.door.tier], { y: 0.18 }), P(box(0.02, 0.02, 0.04), C.black, { x: 0.07, y: 0.17 })];
   return [P(box(0.12, 0.12, 0.12), 0x888888)];
 }
 

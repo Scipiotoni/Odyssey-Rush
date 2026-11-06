@@ -137,7 +137,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 | Command | What it does |
 |---|---|
-| `/spawn atv\|jeep\|jeep4\|pickup\|hauler` | Spawns a working vehicle (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
+| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat` | Spawns a working vehicle (boats on the nearest open water) (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
 | `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
 | `/c message` | Clan chat |
 | `/admin password` | Unlocks the admin commands (needs `ADMIN_PASSWORD` on the server) |
@@ -194,6 +194,30 @@ ice, but it's slippery for feet and tyres. A **pickaxe breaks a hole** through i
 does an explosion. Fall through and you're in freezing water; swim away from the hole and the ice is a ceiling above you.
 Holes **freeze over again after 20 minutes**, and anyone still swimming under them is then **trapped under the ice**, unless
 they have a pickaxe and enough breath to hack their way out.
+
+### The sea: diving, sea life, wrecks, fishing, boats and underwater bases
+
+- **Deeper oceans**: past the coastal shelf the sea floor drops away to ~100 m, with trenches, canyons and seamounts
+  whose tops form reefs. The shallows have pale sand and sea-grass meadows; the deep is dark silt and rock.
+- **Breath goes faster the deeper you are** (×2 at 35 m, ×4 at 100 m). **Diving Tanks** (Workbench 1) and **Twin Diving
+  Tanks** (Workbench 2) go in the back slot instead of a bag and give 90 s / 210 s of air at the surface rate. They're
+  used before your own breath, show on a 🤿 gauge with your depth, and refill when you're back in the air.
+- **Sea life**: kelp forests that sway up toward the light, sea grass, coral reefs (branching, fans, brain coral,
+  sponges), schools of fish that scatter when you swim at them, glowing jellyfish in the deep, and now and then a whale
+  passing below with its song. **Sharks** patrol the open sea, circle swimmers and attack. They leave big fish, fat and bone.
+- **Sunken sites** to explore, marked on the map: galleon wrecks, drowned temples, a submarine and a ditched cargo plane,
+  with supply and elite crates (diving tanks and pearls among the loot).
+- **Fishing Rod** (no workbench): aim at open water and cast, wait for the float to be pulled under, then click to
+  strike. Different fish live in lakes, rivers and the sea, and big ones are more common in deep water. In winter, fish
+  through a hole in the ice, where they bite faster. Cook fish at a camp fire. Sometimes you reel in an old boot, or an
+  oyster with a pearl.
+- **Boats**: wooden **rowboats** (oars, no fuel) on lakes and **skiff motorboats** (fuel) on the coast are moored along the
+  shores, or use `/spawn rowboat|motorboat` beside water. They ride the waves, bank into turns and run aground on
+  beaches. In winter a boat on a lake is **frozen into the ice** until you break the ice around it.
+- **Underwater bases**: the new **Watertight Steel** building tier can be built in water of any depth. A room whose
+  floor, ceiling and walls are all Watertight Steel holds **air**: you walk, breathe and stay dry inside, even on the
+  sea floor. Walls get portholes, and doorways need a closed **Watertight Hatch** (Workbench 2). Open the hatch and the
+  room floods; close it and the air comes back.
 
 ### Weather
 

@@ -14,6 +14,8 @@ export const TIERS = [
   { name: 'Stone', hp: 1400, cost: { stone: 300 }, color: 0x9c9a94 },
   { name: 'Sheet Metal', hp: 2800, cost: { metal_frags: 200 }, color: 0x7d858c },
   { name: 'Armored', hp: 5500, cost: { hqm: 25 }, color: 0x4d5560 },
+  // watertight: welded steel with rubber seals and portholes; sealed rooms of it hold air underwater
+  { name: 'Watertight Steel', hp: 4200, cost: { metal_frags: 150, hqm: 8 }, color: 0x3d6874, sealed: true },
 ];
 
 // Reinforcement (hammer + R): bolted braces / plating on top of the material. Each level adds +50% max HP.

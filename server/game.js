@@ -3,13 +3,14 @@
 import crypto from 'crypto';
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
 import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
-import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
+import { slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
 import { seasonInfo, SEASON_DAYS, SEASONS, SEASON_NAMES, FOOTPRINT_LIFE } from '../shared/season.js';
 import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP } from '../shared/caves.js';
-import { IceField, iceFrozen, ICE_TOP, ICE_HOLE_R, ICE_REGEN, BREATH_MAX } from '../shared/ice.js';
+import { dryCells, cellAt } from '../shared/sealed.js';
+import { IceField, iceFrozen, ICE_TOP, ICE_HOLE_R, ICE_REGEN, BREATH_MAX, breathDrain } from '../shared/ice.js';
 import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
 import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
 import { PAINT_COLORS, DECALS, DECAL_SIZES, MAX_DECALS, SPRAY_RANGE } from '../shared/paint.js';
@@ -19,9 +20,9 @@ const VIEW_REGIONS = 2;           // regions (128m) around the player that are s
 const SNAP_RANGE = 420;           // dynamic entity visibility (m)
 const DAY_LENGTH = 40 * 60;       // seconds per full day
 const TICK = 1 / 10;
-const MELEE_MUL = [1, 0.2, 0.04, 0.015, 0.006];
-const BULLET_MUL = [0.5, 0.04, 0.005, 0, 0];
-const DOOR_TIER = { wood: 1, metal: 3, armored: 4 };
+const MELEE_MUL = [1, 0.2, 0.04, 0.015, 0.006, 0.009];
+const BULLET_MUL = [0.5, 0.04, 0.005, 0, 0, 0];
+const DOOR_TIER = { wood: 1, metal: 3, armored: 4, sealed: 5 };
 const CRATE_RESPAWN = 12 * 60;
 const BAG_LIFETIME = 25 * 60;
 const CORPSE_LIFETIME = 6 * 60;
@@ -115,7 +116,7 @@ export class Game {
   }
   // Serializable snapshot of the whole persistent world.
   serialize() {
-    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, sw, ...rest } = p; return rest; };
+    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, sw, fish, dry, ...rest } = p; return rest; };
     const d = {
       seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day, year: this.year,
       players: [...this.players.values()].map(strip),
@@ -270,6 +271,8 @@ export class Game {
       case 'cave_exit': return this.onCaveExit(p, m);
       case 'cavedig': return this.onCaveDig(p, m);
       case 'icebreak': return this.onIceBreak(p, m);
+      case 'fishcast': return this.onFishCast(p, m);
+      case 'fishreel': return this.onFishReel(p, m);
       case 'throwrock': return this.onThrowRock(p, m);
       case 'rockland': return this.onRockLand(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
@@ -289,7 +292,7 @@ export class Game {
     if (l1 > l0) { this.toast(p, `⭐ Level ${l1}! Max health +2, gather rate +4%`); this.sendStats(p); }
   }
   sendStats(p) {
-    this.send(p, { t: 'stats', hp: r2(p.hp), food: r2(p.food), water: r2(p.water), xp: p.xp | 0, lvl: this.level(p), maxhp: this.maxHp(p), cold: p.cold || 0, br: r2(p.breath ?? BREATH_MAX), kills: p.kills, deaths: p.deaths });
+    this.send(p, { t: 'stats', hp: r2(p.hp), food: r2(p.food), water: r2(p.water), xp: p.xp | 0, lvl: this.level(p), maxhp: this.maxHp(p), cold: p.cold || 0, br: r2(p.breath ?? BREATH_MAX), o2: p.armor?.back?.air !== undefined ? r2(p.armor.back.air) : undefined, kills: p.kills, deaths: p.deaths });
   }
   sendQueue(p) {
     const t = now();
@@ -373,6 +376,27 @@ export class Game {
       });
       lay.vehicles.forEach((v, i) => this.spawnWreck(`veh_${poi.id}_${poi.type}_${i}`, v.type === 'truck' && hash3(poi.x | 0, poi.z | 0, i, 77) < 0.35 ? 'hauler' : v.type, v.x, v.z, v.yaw));
     }
+    const bk = `b_${cx}_${cz}`;
+    if (!this.spawned.has(bk)) {
+      this.spawned.add(bk);
+      // a boat moored at the water's edge now and then (rowboats on lakes, skiffs on the coast)
+      if (hash3(cx, cz, 93, this.seed) < 0.06) {
+        const rng = mulberry32(Math.floor(hash3(cx, cz, 94, this.seed) * 1e9));
+        for (let k = 0; k < 14; k++) {
+          const bx = cx * CHUNK + 10 + rng() * 108, bz = cz * CHUNK + 10 + rng() * 108, g = this.world.ground(bx, bz);
+          if (g > -1.4 || g < -5) continue;
+          let shore = false;
+          for (let a = 0; a < 8 && !shore; a++) if (this.world.ground(bx + Math.cos(a * 0.785) * 12, bz + Math.sin(a * 0.785) * 12) > 0.5) shore = true;
+          if (!shore) continue;
+          const type = this.ice.inland(bx, bz) || rng() < 0.4 ? 'rowboat' : 'motorboat', def = VEHICLES[type];
+          const spot = this.findWaterSpot(type, bx, bz, rng() * 6.28);
+          if (!spot) continue;
+          const id = `boat_${bk}`;
+          if (!this.vehicles.has(id)) this.vehicles.set(id, { id, type, x: spot.x, y: spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * 0.3), steer: 0, rpm: 0, var: Math.floor(rng() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set() });
+          break;
+        }
+      }
+    }
     const wk = `w_${cx}_${cz}`;
     if (!this.spawned.has(wk)) {
       this.spawned.add(wk);
@@ -403,6 +427,19 @@ export class Game {
     const v = { id, type, x: spot.x, y: spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: 0, broken: true, needs, fuel: 0, steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set() };
     this.vehicles.set(id, v);
     return v;
+  }
+  // Open water deep enough for a boat's hull near (x,z), clear of other vehicles
+  findWaterSpot(type, x, z, yaw, ignoreVeh = null) {
+    const def = VEHICLES[type], [hx, , hz] = def.half;
+    for (const dist of [0, 5, 9, 14, 20, 28, 38, 50]) for (let a = 0; a < (dist ? 12 : 1); a++) {
+      const ang = yaw + a * Math.PI / 6, cx = x + Math.sin(ang) * dist, cz = z + Math.cos(ang) * dist;
+      let ok = this.world.ground(cx, cz) < -1.2;
+      for (const [lx, lz] of [[0, hz], [0, -hz], [hx, 0], [-hx, 0]]) { if (!ok) break; const [dx, dz] = rotY(lx, lz, yaw); if (this.world.ground(cx + dx, cz + dz) > -0.5) ok = false; }
+      if (!ok) continue;
+      if ([...this.vehicles.values()].some((v) => v.id !== ignoreVeh && Math.hypot(v.x - cx, v.z - cz) < hz + Math.hypot(...VEHICLES[v.type].half) + 1)) continue;
+      return { x: cx, y: def.float, z: cz, yaw };
+    }
+    return null;
   }
   // Find a flat, open spot for a vehicle near (x,z): no water, trees, rocks, buildings, props or other vehicles.
   findClearSpot(type, x, z, yaw, dists = [0, 6, 10, 15, 20, 28], ignoreVeh = null) {
@@ -505,6 +542,7 @@ export class Game {
   }
 
   addStruct(s) {
+    this.structRev = (this.structRev || 0) + 1;
     this.structs.set(s.id, s);
     if (s.veh) {
       const v = this.vehicles.get(s.veh);
@@ -516,7 +554,7 @@ export class Game {
     this.region(k).s.add(s.id);
     this.toRegion(k, { t: 'sadd', s: this.sStruct(s) });
   }
-  updStruct(s) { if (s.veh) this.toNear(s.x, s.z, SNAP_RANGE, { t: 'supd', s: this.sStruct(s) }); else this.toRegion(rkey(s.x, s.z), { t: 'supd', s: this.sStruct(s) }); }
+  updStruct(s) { this.structRev = (this.structRev || 0) + 1; if (s.veh) this.toNear(s.x, s.z, SNAP_RANGE, { t: 'supd', s: this.sStruct(s) }); else this.toRegion(rkey(s.x, s.z), { t: 'supd', s: this.sStruct(s) }); }
   addLoot(l) {
     this.loot.set(l.id, l);
     const k = rkey(l.x, l.z);
@@ -876,7 +914,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------ building
-  checkFoundationGround(b, gx, gz) {
+  checkFoundationGround(b, gx, gz, tier = 0) {
     const t = pieceTransform(b, { type: 'foundation', gx, gz, level: 0 });
     for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 0]]) {
       const [dx, dz] = rotY(cx, cz, t.yaw);
@@ -885,7 +923,7 @@ export class Game {
       if (g < b.y - 2.9) return 'Too steep: foundation would float';
     }
     if (this.inPOI(t.x, t.z)) return "Can't build in monuments";
-    if (this.world.ground(t.x, t.z) < -2) return 'Water is too deep';
+    if (this.world.ground(t.x, t.z) < -2 && !TIERS[tier]?.sealed) return 'Water is too deep — build underwater with Watertight Steel';
     return null;
   }
   piecesOf(bid) { const out = []; for (const s of this.structs.values()) if (s.bid === bid && s.kind === 'piece') out.push(s); return out; }
@@ -917,7 +955,7 @@ export class Game {
     const pieces = isNew ? [] : this.piecesOf(b.id);
     const err = canPlaceAny(type, gx, gz, level, buildIndex(pieces), isNew);
     if (err) return this.toast(p, err);
-    if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz); if (ge) return this.toast(p, ge); }
+    if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz, tier); if (ge) return this.toast(p, ge); }
     if (isNew) this.buildings.set(b.id, b);
     Inv.removeAll(p.inv, cost);
     const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
@@ -1077,6 +1115,7 @@ export class Game {
   }
 
   destroyStruct(s, effects) {
+    this.structRev = (this.structRev || 0) + 1;
     if (!this.structs.has(s.id)) return;
     this.structs.delete(s.id);
     if (s.veh) { this.vehicles.get(s.veh)?.attached.delete(s.id); this.toNear(s.x, s.z, SNAP_RANGE, { t: 'sdel', id: s.id, fx: effects ? 1 : 0 }); }
@@ -1536,6 +1575,36 @@ export class Game {
     if (!e) return this.toast(p, 'Find a ladder to climb up');
     this.teleport(p, e.x + 1.6, this.world.ground(e.x + 1.6, e.z + 0.8) + 0.4, e.z + 0.8);
   }
+  // ------------------------------------------------------------ watertight rooms
+  dryOf(bid) {
+    const rev = this.structRev || 0;
+    this.dryCache = this.dryCache || new Map();
+    const c = this.dryCache.get(bid);
+    if (c && c.rev === rev) return c.dry;
+    const pieces = [], doors = new Map();
+    for (const st of this.structs.values()) {
+      if (st.kind === 'piece' && st.bid === bid) pieces.push(st);
+    }
+    for (const st of this.structs.values()) {
+      if (st.kind !== 'door') continue;
+      const dw = this.structs.get(st.parent);
+      if (dw && dw.bid === bid) doors.set(slotKey(dw.gx, dw.gz, dw.level, 'edge'), { sealed: st.doorTier === 'sealed', open: !!st.open });
+    }
+    const dry = pieces.some((p) => TIERS[p.tier]?.sealed) ? dryCells(pieces, doors) : new Set();
+    this.dryCache.set(bid, { rev, dry });
+    return dry;
+  }
+  inDryRoom(x, y, z) {
+    const bids = new Set();
+    for (const st of this.structsNear(x, z, 0)) if (st.kind === 'piece' && TIERS[st.tier]?.sealed && !st.veh) bids.add(st.bid);
+    for (const bid of bids) {
+      const b = this.buildings.get(bid);
+      if (!b) continue;
+      const k = cellAt(b, x, y, z);
+      if (k && this.dryOf(bid).has(k)) return true;
+    }
+    return false;
+  }
   // ------------------------------------------------------------ frozen lakes
   iceMsg() { const t = now(); return { f: this.ice.frozen ? 1 : 0, h: this.ice.holes.map((h) => [h.id, r2(h.x), r2(h.z), h.r, Math.floor(t - h.born)]) }; }
   sendIce() { this.toAll({ t: 'ice', ...this.iceMsg() }); }
@@ -1567,6 +1636,40 @@ export class Game {
     const x = num(m.x), z = num(m.z);
     if (Math.hypot(x - p.x, z - p.z) > 5 || Math.abs(p.y - ICE_TOP) > 3.5 || !this.ice.solid(x, z)) return;
     this.breakIce(x, z, ICE_HOLE_R, p);
+  }
+  // ------------------------------------------------------------ fishing
+  onFishCast(p, m) {
+    if (!p.alive || p.vehicle) return;
+    const st = p.inv[num(m.sel) | 0];
+    if (!st || !ITEMS[st.id]?.fishing) return;
+    const x = num(m.x), z = num(m.z), g = this.world.ground(x, z);
+    if (Math.hypot(x - p.x, z - p.z) > 28 || g > -0.4 || (this.ice.frozen && this.ice.solid(x, z))) return;
+    const t = now(), sea = !this.ice.inland(x, z), hole = this.ice.frozen && this.ice.lakeAt(x, z);
+    // fish bite sooner through a quiet ice hole and in deep water, slower in the shallows
+    const wait = (hole ? 3 : 4) + Math.random() * (hole ? 7 : 10) + (g > -1.5 ? 4 : 0);
+    if (p.fish?.timer) clearTimeout(p.fish.timer);
+    p.fish = { id: num(m.id), x, z, depth: -g, sea, hole, bite: t + wait, until: t + wait + 1.6 };
+    p.fish.timer = setTimeout(() => { if (p.fish && p.fish.id === num(m.id)) this.send(p, { t: 'fishbite', id: p.fish.id }); }, wait * 1000);
+  }
+  onFishReel(p, m) {
+    const f = p.fish;
+    if (!f) return;
+    clearTimeout(f.timer); p.fish = null;
+    if (m.cancel) return;
+    const t = now();
+    if (t < f.bite) return this.send(p, { t: 'fishres', id: f.id, ok: 0 });
+    if (t > f.until) { this.send(p, { t: 'fishres', id: f.id, ok: 0 }); return this.toast(p, 'It got away…'); }
+    const r = Math.random(), big = r < (f.sea ? 0.18 + Math.min(0.2, f.depth / 150) : 0.14 + (f.hole ? 0.08 : 0));
+    const pick = (l) => l[Math.floor(Math.random() * l.length)];
+    let id = 'raw_fish', n = 1, name;
+    if (f.sea && Math.random() < 0.05) { id = 'pearl'; name = 'an oyster with a pearl inside'; }
+    else if (!f.sea && Math.random() < 0.05) { id = 'leather'; n = 3; name = 'an old boot (3 leather)'; }
+    else if (big) { id = 'raw_big_fish'; const kg = (3 + Math.random() * (f.sea ? 18 : 9)).toFixed(1); name = `a ${kg} kg ${pick(f.sea ? ['Cod', 'Tuna', 'Sea Bass', 'Halibut'] : f.hole ? ['Pike', 'Lake Trout', 'Burbot'] : ['Pike', 'Carp', 'Salmon'])}`; }
+    else { const kg = (0.3 + Math.random() * 1.4).toFixed(1); name = `a ${kg} kg ${pick(f.sea ? ['Mackerel', 'Herring', 'Sardine', 'Sea Bream'] : f.hole ? ['Perch', 'Arctic Char', 'Whitefish'] : ['Perch', 'Trout', 'Roach', 'Bream'])}`; }
+    this.give(p, id, n);
+    this.addXp(p, big ? 4 : 2);
+    this.send(p, { t: 'fishres', id: f.id, ok: 1 });
+    this.toast(p, `🎣 You caught ${name}!`);
   }
   onCaveDig(p, m) {
     if (!p.alive || p.y > CAVE_ZONE) return;
@@ -1796,11 +1899,11 @@ export class Game {
     if (!p.alive) return;
     if (cmd === 'spawn') {
       const type = SPAWNABLE[String(a || '').toLowerCase()];
-      if (!type) return this.toast(p, 'Usage: /spawn atv | jeep | jeep4 | pickup | hauler');
+      if (!type) return this.toast(p, 'Usage: /spawn atv | jeep | jeep4 | pickup | hauler | rowboat | motorboat');
       const t = now();
       if (!process.env.DEV && t - (p.lastSpawn || 0) < 30) return this.toast(p, `Wait ${Math.ceil(30 - (t - p.lastSpawn))}s before spawning another vehicle`);
-      const spot = this.findClearSpot(type, p.x, p.z, p.yaw + Math.PI, [6, 9, 13, 18, 25, 33, 42, 55].map((d) => d + VEHICLES[type].half[2]));
-      if (!spot) return this.toast(p, 'No clear, flat spot nearby — try an open area');
+      const spot = VEHICLES[type].boat ? this.findWaterSpot(type, p.x, p.z, p.yaw + Math.PI) : this.findClearSpot(type, p.x, p.z, p.yaw + Math.PI, [6, 9, 13, 18, 25, 33, 42, 55].map((d) => d + VEHICLES[type].half[2]));
+      if (!spot) return this.toast(p, VEHICLES[type].boat ? 'No open water nearby — stand by a lake, river or the sea' : 'No clear, flat spot nearby — try an open area');
       // each player keeps at most 2 spawned vehicles (oldest empty one is removed)
       p.spawnedVeh = (p.spawnedVeh || []).filter((id) => this.vehicles.has(id));
       if (p.spawnedVeh.length >= 2 && !process.env.DEV) {
@@ -1819,7 +1922,7 @@ export class Game {
       if (!v) { let bd = 12; for (const o of this.vehicles.values()) { const d = dist3(o, p); if (d < bd) { bd = d; v = o; } } }
       if (!v) return this.toast(p, 'No vehicle nearby');
       const yaw = quatYaw(v.q);
-      const spot = this.findClearSpot(v.type, v.x, v.z, yaw, [0, 4, 8, 12, 18], v.id);
+      const spot = VEHICLES[v.type].boat ? this.findWaterSpot(v.type, v.x, v.z, yaw, v.id) : this.findClearSpot(v.type, v.x, v.z, yaw, [0, 4, 8, 12, 18], v.id);
       if (!spot) return this.toast(p, "Couldn't find a clear spot near the vehicle");
       v.x = spot.x; v.y = spot.y; v.z = spot.z; v.q = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)]; v.vel = [0, 0, 0];
       this.refreshAttached(v);
@@ -2067,8 +2170,21 @@ export class Game {
         this.animals.set(id, { id, type, x, y: g, z, yaw: Math.random() * 6.28, hp: ANIMALS[type].hp, st: 0, tx: x, tz: z, until: 0, lastAtk: 0 });
       }
     }
+    // sharks patrol the open sea around swimmers and boats
+    for (const p of online) {
+      if (p.y > 0.6 || p.y < CAVE_ZONE || this.ice.inland(p.x, p.z) || this.world.ground(p.x, p.z) > -6) continue;
+      let near = 0;
+      for (const a of this.animals.values()) if (a.type === 'shark' && dist2(a, p) < 160 * 160) near++;
+      if (near >= 2 || Math.random() > 0.04) continue;
+      const ang = Math.random() * Math.PI * 2, r = 60 + Math.random() * 40, x = p.x + Math.cos(ang) * r, z = p.z + Math.sin(ang) * r;
+      const g = this.world.ground(x, z);
+      if (g > -8 || this.ice.inland(x, z)) continue;
+      const id = this.id('A');
+      this.animals.set(id, { id, type: 'shark', x, y: Math.max(g + 2, -4 - Math.random() * 10), z, yaw: Math.random() * 6.28, hp: ANIMALS.shark.hp, st: 0, tx: x, tz: z, until: 0, lastAtk: 0 });
+    }
     for (const a of [...this.animals.values()]) {
       const def = ANIMALS[a.type];
+      if (def.swim) { this.tickSwimmer(a, def, online, t, dt); continue; }
       let nearest = null, nd = Infinity;
       for (const p of online) { if (p.vehicle || Math.abs(p.y - a.y) > 40) continue; const d = Math.sqrt(dist2(a, p)); if (d < nd) { nd = d; nearest = p; } }
       let anyNear = false;
@@ -2109,6 +2225,43 @@ export class Game {
         else { a.x = nx; a.z = nz; a.y = g; }
       }
     }
+  }
+  // sea creatures: swim in 3D, circle, then charge anyone in the water (not boats, not dry rooms)
+  tickSwimmer(a, def, online, t, dt) {
+    let nearest = null, nd = Infinity, anyNear = false;
+    for (const p of online) {
+      const d2 = dist2(a, p);
+      if (d2 < 320 * 320) anyNear = true;
+      if (p.vehicle || p.y > -0.4 || p.dry) continue;
+      const d = Math.hypot(Math.sqrt(d2), p.y + 1 - a.y);
+      if (d < nd) { nd = d; nearest = p; }
+    }
+    if (!anyNear) { this.animals.delete(a.id); return; }
+    const hurt = t - (a.hurtT || 0) < 10;
+    let tx = a.tx, tz = a.tz, ty = a.ty ?? a.y, speed;
+    if (nearest && (nd < 35 || hurt)) {
+      // circle in, then strike
+      a.st = 1; speed = def.speed * (nd < 10 ? 1.3 : 0.85);
+      const circ = nd > 9 ? 0.9 : 0;
+      const ang = Math.atan2(a.x - nearest.x, a.z - nearest.z) + circ;
+      tx = nearest.x + Math.sin(ang) * Math.min(nd, 8) * (circ ? 1 : 0); tz = nearest.z + Math.cos(ang) * Math.min(nd, 8) * (circ ? 1 : 0); ty = nearest.y + 0.9;
+      if (nd < 2.4 + def.size * 0.5) {
+        a.st = 2;
+        if (t - a.lastAtk > 1.6) { a.lastAtk = t; this.damagePlayer(nearest, def.dmg, `a ${def.name.toLowerCase()}`); this.toNear(a.x, a.z, 60, { t: 'fx', k: 'bite', id: a.id }); }
+      }
+    } else {
+      a.st = 0; speed = def.speed * 0.35;
+      if (t > a.until || Math.hypot(a.tx - a.x, a.tz - a.z) < 2) { a.tx = a.x + (Math.random() - 0.5) * 60; a.tz = a.z + (Math.random() - 0.5) * 60; a.ty = -2 - Math.random() * 12; a.until = t + 6 + Math.random() * 8; }
+      tx = a.tx; tz = a.tz; ty = a.ty;
+    }
+    const dx = tx - a.x, dz = tz - a.z;
+    let dy = Math.atan2(dx, dz) - a.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
+    a.yaw += Math.max(-2.2 * dt, Math.min(2.2 * dt, dy));
+    const nx = a.x + Math.sin(a.yaw) * speed * dt, nz = a.z + Math.cos(a.yaw) * speed * dt;
+    const g = this.world.ground(nx, nz);
+    if (g > -2.5 || this.ice.inland(nx, nz)) { a.tx = a.x - dx; a.tz = a.z - dz; a.until = t + 4; a.yaw += Math.PI * 0.5; return; } // keep to deep water
+    a.x = nx; a.z = nz;
+    a.y += Math.max(-2 * dt, Math.min(2 * dt, Math.max(g + 1.2, Math.min(-1.3, ty)) - a.y));
   }
   blockedAt(x, y, z) {
     for (const s of this.structsNear(x, z, 0)) {
@@ -2166,9 +2319,16 @@ export class Game {
       if (p.cold > 0.5) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }
       // breath: holding it underwater, drowning when it runs out
       const head = p.y + (p.cr ? 1.05 : 1.55);
-      const under = !p.vehicle && p.y > CAVE_ZONE && head < -0.1 && this.world.ground(p.x, p.z) < head;
+      p.dry = head < 0 && this.inDryRoom(p.x, p.y + 0.2, p.z);
+      const under = !p.vehicle && !p.dry && p.y > CAVE_ZONE && head < -0.1 && this.world.ground(p.x, p.z) < head;
       if (p.breath === undefined) p.breath = BREATH_MAX;
-      p.breath = under ? Math.max(0, p.breath - dt) : Math.min(BREATH_MAX, p.breath + dt * 5);
+      // the deeper you are, the faster a breath (or a tank) runs out
+      const drain = breathDrain(-head);
+      const tank = p.armor.back, tmax = tank && ITEMS[tank.id]?.armor?.air;
+      if (tmax && tank.air === undefined) tank.air = tmax;
+      if (under && tmax && tank.air > 0) tank.air = Math.max(0, tank.air - dt * drain);
+      else if (under) p.breath = Math.max(0, p.breath - dt * drain);
+      else { p.breath = Math.min(BREATH_MAX, p.breath + dt * 5); if (tmax) tank.air = Math.min(tmax, tank.air + dt * 6); } // tanks top up from the air
       if (under && p.breath <= 0) { p.hp -= 9 * dt; if (p.hp <= 0) { p.breath = BREATH_MAX; this.killPlayer(p, 'drowning'); continue; } }
       this.sendStats(p);
     }

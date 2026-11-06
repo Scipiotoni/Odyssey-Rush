@@ -332,6 +332,10 @@ export class VehicleView {
       if (sim) w.spin.rotation.x = sim.wheels[i].spin;
       else { const fwd = _d.set(0, 0, 1).applyQuaternion(this.q); w.spin.rotation.x += (this.vel.dot(fwd) / this.def.wheelR) * dt; }
     });
+    // boats: spin the propeller, swing the outboard with the helm, pull the oars
+    if (ud.prop) ud.prop.rotation.z += (sim ? sim.rpm : this.rpm) * dt * 60;
+    if (ud.outboard) ud.outboard.rotation.y = -this.steer * 0.8;
+    if (ud.oars) { this.oarT = (this.oarT || 0) + dt * (0.6 + Math.min(1, (sim ? sim.speed : this.vel.length()) / 3) * 2.4) * ((sim ? Math.abs(sim.throttle) || Math.abs(this.steer) > 0.1 : this.vel.length() > 0.3) ? 1 : 0); ud.oars.forEach((o, i) => { o.rotation.y = Math.sin(this.oarT * 2) * 0.5 * (i ? -1 : 1); o.rotation.z = Math.cos(this.oarT * 2) * 0.12 * (i ? -1 : 1); }); }
     const tint = this.broken ? 0x6b4a32 : this.paint >= 0 ? PAINT_COLORS[this.paint] : ud.baseColor ?? this.def.color;
     if (ud._tint !== tint) { ud.paintMat.color.set(tint); ud.paintMat.roughness = this.broken ? 0.85 : 0.3; ud.paintMat.metalness = this.broken ? 0.15 : 0.55; ud._tint = tint; }
     const drivenNow = sim || this.driver;

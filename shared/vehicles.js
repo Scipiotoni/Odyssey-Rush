@@ -56,12 +56,26 @@ export const VEHICLES = {
     deck: { x: 0, y: 0.12, z: -2.4, cells: [-2, 0, 2], levels: 2 },
     repair: { wheel: 6, engine_parts: 3, scrap: 200, hqm: 25, gears: 4 },
   }),
+  // ---- boats (no wheels: floating hull physics in public/js/boats.js). y of the centre floats at `float`.
+  rowboat: {
+    name: 'Rowboat', boat: true, mass: 260, hp: 350, fuelCap: 0, fuelUse: 0, wheels: [],
+    half: [0.75, 0.35, 2.1], com: [0, -0.15, 0], float: 0.12, thrust: 900, maxSpeed: 4.2, turn: 0.9, drag: 1.4,
+    seats: [[0, -0.05, -0.15], [0, -0.05, -1.35]], color: 0x7a5232, style: 'rowboat',
+    repair: { wood: 200, rope: 1 },
+  },
+  motorboat: {
+    name: 'Skiff Motorboat', boat: true, mass: 620, hp: 700, fuelCap: 60, fuelUse: 0.06, wheels: [],
+    half: [1.0, 0.45, 2.9], com: [0, -0.2, -0.3], float: 0.18, thrust: 5200, maxSpeed: 15, turn: 1.1, drag: 1.1,
+    seats: [[0.35, 0.02, -1.9], [-0.4, 0.02, -0.4], [0.4, 0.02, -0.4], [0, 0.02, 0.9]], color: 0xe8e8e0, style: 'motorboat',
+    repair: { metal_frags: 120, engine_parts: 1, scrap: 30 },
+  },
 };
 export const VEHICLE_ENTER_RANGE = 3.8;
-export const SPAWNABLE = { atv: 'quad', jeep: 'buggy', scout: 'buggy', jeep4: 'suv', long: 'suv', pickup: 'truck', truck: 'truck', hauler: 'hauler', mobilebase: 'hauler' };
+export const SPAWNABLE = { atv: 'quad', jeep: 'buggy', scout: 'buggy', jeep4: 'suv', long: 'suv', pickup: 'truck', truck: 'truck', hauler: 'hauler', mobilebase: 'hauler', rowboat: 'rowboat', boat: 'motorboat', motorboat: 'motorboat', skiff: 'motorboat' };
 
 // Height of the chassis centre above the ground when resting on its wheels.
 export function restHeight(def) {
+  if (def.boat) return def.float;
   const perWheel = (def.mass * 9.81) / def.wheels.length;
   return -def.wheels[0][1] + def.rest + def.wheelR - perWheel / def.spring;
 }

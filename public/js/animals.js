@@ -29,6 +29,7 @@ const SPEC = {
 };
 
 export function makeAnimal(type, color, size = 1) {
+  if (type === 'shark') return makeShark(color, size);
   const sp = SPEC[type] || SPEC.deer, s = size;
   const C = new THREE.Color(color);
   const main = C.getHex(), dark = C.clone().multiplyScalar(0.62).getHex(), darker = C.clone().multiplyScalar(0.42).getHex();
@@ -113,6 +114,7 @@ export function makeAnimal(type, color, size = 1) {
 
 // Procedural animation: speed (m/s), state (0 idle/wander, 1 flee/chase, 2 attack), t seconds.
 export function animateAnimal(ud, e, speed, dt) {
+  if (ud.type === 'shark') return animateShark(ud, e, speed, dt);
   const t = performance.now() / 1000;
   const running = speed > 3.5;
   e.walk = (e.walk || 0) + speed * dt * (running ? 1.35 : 2.6) / (ud.type === 'bear' ? 1.2 : 1);
@@ -152,4 +154,39 @@ export function animateAnimal(ud, e, speed, dt) {
   const wag = ud.type === 'wolf' ? (idle ? Math.sin(t * 3) * 0.25 : Math.sin(t * 9) * 0.3) : ud.type === 'deer' ? (Math.sin(t * 0.5 + ud.seed) > 0.8 ? Math.sin(t * 20) * 0.5 : 0) : Math.sin(t * 6) * 0.2;
   ud.tail.rotation.y = wag;
   ud.tail.rotation.x = ud.type === 'wolf' ? (running ? -0.2 : 0.35) : ud.type === 'deer' && running ? -0.9 : 0;
+}
+
+// ---- shark: torpedo body (grey back, white belly), dorsal + pectoral fins, a tail that sweeps side to side
+function makeShark(color, s) {
+  const g = new THREE.Group();
+  const top = color, belly = 0xe8e6e0, dark = new THREE.Color(color).multiplyScalar(0.7).getHex();
+  const body = joint(g, 0, 0.6 * s, 0);
+  const torso = [];
+  const seg = (z, r, sy = 0.85) => { const b = blob(r, z * 7, 0.06); b.scale(0.9, sy, 1.55); return b; };
+  torso.push(part(seg(0, 0.42 * s), top, { z: 0.1 * s }), part(seg(1, 0.36 * s), top, { z: 0.75 * s }), part(seg(2, 0.3 * s), top, { z: -0.55 * s }));
+  torso.push(part(seg(3, 0.36 * s, 0.5), belly, { y: -0.17 * s, z: 0.25 * s }), part(seg(4, 0.28 * s, 0.45), belly, { y: -0.13 * s, z: 0.85 * s }));
+  // snout, eyes, gills, mouth
+  torso.push(part(cone(0.24 * s, 0.55 * s, 6), top, { z: 1.25 * s, rx: Math.PI / 2, sy: 1, sx: 0.85 }));
+  for (const x of [-1, 1]) {
+    torso.push(part(ico(0.035 * s, 0), 0x0a0a0a, { x: x * 0.2 * s, y: 0.06 * s, z: 1.02 * s }));
+    for (let k = 0; k < 4; k++) torso.push(part(new THREE.BoxGeometry(0.01 * s, 0.17 * s, 0.025 * s), dark, { x: x * 0.31 * s, y: -0.02 * s, z: (0.62 - k * 0.07) * s }));
+    torso.push(part(cone(0.2 * s, 0.6 * s, 3), dark, { x: x * 0.42 * s, y: -0.18 * s, z: 0.45 * s, rz: x * 1.25, rx: 0.5, sx: 0.25 })); // pectoral fins
+  }
+  torso.push(part(new THREE.BoxGeometry(0.32 * s, 0.03 * s, 0.12 * s), 0x3a1414, { y: -0.14 * s, z: 1.05 * s }));
+  torso.push(part(cone(0.24 * s, 0.6 * s, 3), dark, { y: 0.52 * s, z: 0.25 * s, rx: -0.35, sz: 0.2 })); // dorsal fin
+  mesh(body, torso);
+  const tail = joint(body, 0, 0, -0.85 * s);
+  mesh(tail, [part(cone(0.2 * s, 0.75 * s, 6), top, { z: -0.3 * s, rx: -Math.PI / 2, sx: 0.7 }),
+    part(cone(0.16 * s, 0.6 * s, 3), dark, { y: 0.28 * s, z: -0.72 * s, rx: -0.75, sz: 0.2 }), part(cone(0.12 * s, 0.4 * s, 3), dark, { y: -0.2 * s, z: -0.68 * s, rx: Math.PI + 0.85, sz: 0.2 })]);
+  g.userData = { type: 'shark', body, tail, bodyY: 0.6 * s, seed: Math.random() * 10 };
+  return g;
+}
+function animateShark(ud, e, speed, dt) {
+  const t = performance.now() / 1000;
+  e.walk = (e.walk || 0) + dt * (1.6 + speed * 0.7);
+  ud.tail.rotation.y = Math.sin(e.walk * 2) * (0.35 + Math.min(0.3, speed * 0.04));
+  ud.body.rotation.y = -Math.sin(e.walk * 2) * 0.06;
+  ud.body.rotation.z = Math.sin(t * 0.7 + ud.seed) * 0.05;
+  ud.body.position.y = ud.bodyY + Math.sin(t * 0.9 + ud.seed) * 0.08;
+  ud.body.rotation.x = e.st === 2 ? Math.sin(t * 12) * 0.15 : 0;
 }

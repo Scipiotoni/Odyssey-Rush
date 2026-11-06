@@ -267,6 +267,13 @@ export function pieceGeometry(type, tier = 1) {
         if (tier === 1) { for (let t = -V / 2 + 0.3; t < V / 2 - 0.1; t += 0.3) strip(0, t, U - 0.02, 0.025, dk); strip(-U / 2 + 0.08, 0, 0.06, V - 0.04, dk, 0.02); strip(U / 2 - 0.08, 0, 0.06, V - 0.04, dk, 0.02); }
         else if (tier === 2) { let row = 0; for (let t = -V / 2 + 0.5; t < V / 2 - 0.1; t += 0.5, row++) strip(0, t, U - 0.02, 0.03, dk); row = 0; for (let t = -V / 2; t < V / 2 - 0.05; t += 0.5, row++) { const off = row % 2 ? 0.45 : 0; for (let q = -U / 2 + 0.9 + off; q < U / 2 - 0.1; q += 0.9) strip(q, t + 0.25, 0.03, 0.47, dk); } }
         else if (tier === 3) { for (let q = -U / 2 + 1; q < U / 2 - 0.1; q += 1) strip(q, 0, 0.04, V - 0.02, dk); strip(0, 0, U - 0.02, 0.1, dk, 0.018); for (let q = -U / 2 + 0.2; q < U / 2; q += 0.5) strip(q, 0, 0.05, 0.05, lt, 0.026); }
+        else if (tier === 5) {
+          // welded panels with bolted seams and rubber gaskets; walls get a round porthole
+          for (const f of [-1 / 3, 1 / 3]) strip(f * U, 0, 0.05, V - 0.02, dk, 0.02);
+          strip(0, V / 2 - 0.05, U - 0.02, 0.07, 0x1a1d1f, 0.02); strip(0, -V / 2 + 0.05, U - 0.02, 0.07, 0x1a1d1f, 0.02);
+          for (let q = -U / 2 + 0.15; q < U / 2; q += 0.3) { strip(q, V / 2 - 0.15, 0.04, 0.04, lt, 0.028); strip(q, -V / 2 + 0.15, 0.04, 0.04, lt, 0.028); }
+          if (ax !== 1 && type === 'wall' && U > 2.5) { strip(0, 0.15, 0.62, 0.62, 0xb08a3a, 0.03); strip(0, 0.15, 0.48, 0.48, 0x9fd8e8, 0.04); }
+        }
         else { strip(0, 0, U - 0.02, 0.06, dk, 0.02); strip(0, 0, 0.06, V - 0.02, dk, 0.02); for (const a of [-1, 1]) for (const b of [-1, 1]) { strip(a * U / 4, b * V / 4, U / 2 - 0.12, V / 2 - 0.12, lt, 0.03); strip(a * (U / 2 - 0.12), b * (V / 2 - 0.12), 0.07, 0.07, dk, 0.04); } }
       }
     }
@@ -312,13 +319,20 @@ export function reinforceGeometry(type, level) {
   });
 }
 
-export const DOOR_MATS = { wood: new THREE.MeshLambertMaterial({ color: 0x7a5232, flatShading: true }), metal: new THREE.MeshLambertMaterial({ color: 0x6f7880, flatShading: true }), armored: new THREE.MeshLambertMaterial({ color: 0x3c444c, flatShading: true }) };
+export const DOOR_MATS = { wood: new THREE.MeshLambertMaterial({ color: 0x7a5232, flatShading: true }), metal: new THREE.MeshLambertMaterial({ color: 0x6f7880, flatShading: true }), armored: new THREE.MeshLambertMaterial({ color: 0x3c444c, flatShading: true }), sealed: new THREE.MeshLambertMaterial({ color: 0x35606c, flatShading: true }) };
 export function makeDoor(tier) {
   const g = new THREE.Group();
   const pivot = new THREE.Group(); pivot.position.set(-0.6, 0, 0); g.add(pivot);
   const slab = new THREE.Mesh(box(1.2, 2.2, 0.1), DOOR_MATS[tier] || DOOR_MATS.wood); slab.position.set(0.6, 1.1, 0); slab.castShadow = true; pivot.add(slab);
   const handle = new THREE.Mesh(box(0.06, 0.06, 0.25), new THREE.MeshLambertMaterial({ color: 0x222222 })); handle.position.set(1.05, 1.0, 0); pivot.add(handle);
   if (tier !== 'wood') { const band = new THREE.Mesh(box(1.22, 0.1, 0.12), new THREE.MeshLambertMaterial({ color: 0x333333 })); band.position.set(0.6, 0.5, 0); pivot.add(band); const b2 = band.clone(); b2.position.y = 1.7; pivot.add(b2); }
+  if (tier === 'sealed') {
+    const rub = new THREE.MeshLambertMaterial({ color: 0x1a1d1f }), brass = new THREE.MeshLambertMaterial({ color: 0xb08a3a });
+    const gasket = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.035, 4, 16), rub); gasket.scale.set(1, 1.9, 1); gasket.position.set(0.6, 1.1, 0.06); pivot.add(gasket);
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 4, 10), brass); wheel.position.set(0.6, 1.15, 0.1); pivot.add(wheel);
+    for (let k = 0; k < 3; k++) { const sp = new THREE.Mesh(box(0.34, 0.025, 0.025), brass); sp.position.set(0.6, 1.15, 0.1); sp.rotation.z = k * Math.PI / 3; pivot.add(sp); }
+    const port = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), new THREE.MeshPhongMaterial({ color: 0x9fd8e8, shininess: 120, emissive: 0x0a2a30 })); port.position.set(0.6, 1.7, 0.056); pivot.add(port);
+  }
   g.userData.pivot = pivot;
   return g;
 }

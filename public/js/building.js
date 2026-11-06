@@ -46,7 +46,7 @@ export class Builder {
     }
     const np = w.nearestPOI(t.x, t.z);
     if (np && np.d < POI_FLAT + 12) return "Can't build in monuments";
-    if (w.ground(t.x, t.z) < -2) return 'Water is too deep';
+    if (w.ground(t.x, t.z) < -2 && !TIERS[this.tier]?.sealed) return 'Water is too deep — build underwater with Watertight Steel';
     return null;
   }
 

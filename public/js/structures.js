@@ -1,7 +1,8 @@
 // Client mirror of server structures: meshes, colliders and building indexes.
 import * as THREE from 'three';
 const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _up = new THREE.Vector3(0, 1, 0);
-import { worldBoxes, buildIndex } from '/shared/building.js';
+import { worldBoxes, buildIndex, slotKey, TIERS } from '/shared/building.js';
+import { dryCells, cellAt } from '/shared/sealed.js';
 import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT, DOOR_MATS } from './models.js';
 import { paintGeometry, paintedMaterial, applyDecals } from './paint.js';
 import { WORLD_MAT } from './season.js';
@@ -14,10 +15,35 @@ export class Structures {
     this.fires = [];
     this.attached = new Map(); // vehicle id -> Set of struct ids riding on it (hauler deck)
   }
+  // air-filled watertight rooms (shared/sealed.js); cached per building until anything changes
+  dryOf(b) {
+    if (b._dryRev === this.rev) return b._dry;
+    b._dryRev = this.rev;
+    const pieces = [...b.pieces.values()];
+    if (!pieces.some((p) => TIERS[p.tier]?.sealed)) return (b._dry = null);
+    const doors = new Map();
+    for (const e of this.map.values()) {
+      if (e.s.k !== 'door') continue;
+      const dw = b.pieces.get(e.s.parent);
+      if (dw) doors.set(slotKey(dw.gx, dw.gz, dw.level, 'edge'), { sealed: e.s.dt === 'sealed', open: !!e.s.open });
+    }
+    return (b._dry = dryCells(pieces, doors));
+  }
+  dryAt(x, y, z) {
+    for (const b of this.buildings.values()) {
+      if (Math.abs(b.x - x) > 60 || Math.abs(b.z - z) > 60) continue;
+      const dry = this.dryOf(b);
+      if (!dry || !dry.size) continue;
+      const k = cellAt(b, x, y, z);
+      if (k && dry.has(k)) return true;
+    }
+    return false;
+  }
   countVehicle(vid) { return this.attached.get(vid)?.size || 0; }
   removeVehicle(vid) { for (const id of [...(this.attached.get(vid) || [])]) this.remove(id); this.attached.delete(vid); }
 
   upsert(s) {
+    this.rev = (this.rev || 0) + 1;
     const old = this.map.get(s.id);
     if (old) {
       // tier change or door open/close -> rebuild visuals; hp only -> just store
@@ -88,6 +114,7 @@ export class Structures {
   }
 
   remove(id, fx = false) {
+    this.rev = (this.rev || 0) + 1;
     const e = this.map.get(id);
     if (!e) return;
     this.scene.remove(e.obj);
