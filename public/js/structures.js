@@ -1,8 +1,8 @@
 // Client mirror of server structures: meshes, colliders and building indexes.
 import * as THREE from 'three';
 const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _up = new THREE.Vector3(0, 1, 0);
-import { worldBoxes, buildIndex, slotKey, TIERS } from '/shared/building.js';
-import { dryCells, cellAt } from '/shared/sealed.js';
+import { worldBoxes, buildIndex, slotKey, TIERS, LEVEL_H } from '/shared/building.js';
+import { sealedRooms, cellAt, roomOfCell } from '/shared/sealed.js';
 import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT, DOOR_MATS } from './models.js';
 import { paintGeometry, paintedMaterial, applyDecals } from './paint.js';
 import { WORLD_MAT } from './season.js';
@@ -15,30 +15,34 @@ export class Structures {
     this.fires = [];
     this.attached = new Map(); // vehicle id -> Set of struct ids riding on it (hauler deck)
   }
-  // air-filled watertight rooms (shared/sealed.js); cached per building until anything changes
-  dryOf(b) {
-    if (b._dryRev === this.rev) return b._dry;
-    b._dryRev = this.rev;
+  // air-filled watertight rooms (shared/sealed.js); cached per building until anything changes. Water levels in them
+  // come from the server ('flood' messages): this.flood bid -> {roomKey: metres}
+  roomsOf(b) {
+    if (b._roomRev === this.rev) return b._rooms;
+    b._roomRev = this.rev;
     const pieces = [...b.pieces.values()];
-    if (!pieces.some((p) => TIERS[p.tier]?.sealed)) return (b._dry = null);
+    if (!pieces.some((p) => TIERS[p.tier]?.sealed)) return (b._rooms = []);
     const doors = new Map();
     for (const e of this.map.values()) {
       if (e.s.k !== 'door') continue;
       const dw = b.pieces.get(e.s.parent);
       if (dw) doors.set(slotKey(dw.gx, dw.gz, dw.level, 'edge'), { sealed: e.s.dt === 'sealed', open: !!e.s.open });
     }
-    return (b._dry = dryCells(pieces, doors));
+    return (b._rooms = sealedRooms(pieces, doors));
   }
-  dryAt(x, y, z) {
+  dryOf(b) { const d = new Set(); for (const r of this.roomsOf(b)) for (const k of r.cells) d.add(k); return d; }
+  roomAt(x, y, z) {
     for (const b of this.buildings.values()) {
       if (Math.abs(b.x - x) > 60 || Math.abs(b.z - z) > 60) continue;
-      const dry = this.dryOf(b);
-      if (!dry || !dry.size) continue;
-      const k = cellAt(b, x, y, z);
-      if (k && dry.has(k)) return true;
+      const rooms = this.roomsOf(b);
+      if (!rooms.length) continue;
+      const k = cellAt(b, x, y, z), room = k && roomOfCell(rooms, k);
+      if (room) return { b, room, floorY: b.y + room.L * LEVEL_H, level: this.flood?.get(b.id)?.[room.key] || 0 };
     }
-    return false;
+    return null;
   }
+  // in a room's air (not under its water)
+  dryAt(x, y, z) { const r = this.roomAt(x, y, z); return !!r && y > r.floorY + r.level; }
   countVehicle(vid) { return this.attached.get(vid)?.size || 0; }
   removeVehicle(vid) { for (const id of [...(this.attached.get(vid) || [])]) this.remove(id); this.attached.delete(vid); }
 

@@ -161,35 +161,90 @@ export function makeSub(type) {
     body.add(mesh(new THREE.BoxGeometry(0.5, 0.35, 0.5), std({ color: 0x1c1d20, roughness: 0.85 }), 0, -0.55, 0.25)); // seat
     body.add(mesh(new THREE.BoxGeometry(0.6, 0.25, 0.2), dark, 0, -0.15, 1.0, -0.6)); // console
   } else {
-    // the Leviathan: a long white hull with a huge bow window, a rear moon-pool doorway, fins and a big screw
-    const sec = [[-hz - 0.6, 0.6, 0.6, 0.2], [-hz, hx * 0.95, hy * 0.95, 0], [-hz * 0.6, hx * 1.06, hy * 1.02, 0], [hz * 0.5, hx * 1.06, hy * 1.02, 0], [hz * 0.85, hx * 0.98, hy * 0.92, 0]];
-    body.add(mesh(loft(sec, 14), paint));
-    // bow: a faceted glass dome over the helm
-    body.add(mesh(new THREE.SphereGeometry(2.45, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), glass, 0, 0.05, hz * 0.85, Math.PI / 2, 0, 0));
-    body.add(mesh(new THREE.TorusGeometry(2.4, 0.09, 6, 24), dark, 0, 0.05, hz * 0.85));
-    // stripes and deck details outside
+    // ---- the Pacific: outside, a long white hull with an orange band, a big faceted bow dome, a dorsal tower,
+    // stern planes, a five-bladed screw, a docking cradle and a floor hatch underneath
+    const D = def, I = D.interior, orange = std({ color: 0xe07a20, roughness: 0.4 }), grey = std({ color: 0x8a9096, roughness: 0.5, metalness: 0.4 });
+    const sec = [[-hz - 0.8, 0.7, 0.7, 0.3], [-hz, hx * 0.92, hy * 0.92, 0], [-hz * 0.55, hx * 1.04, hy * 1.02, 0], [hz * 0.55, hx * 1.04, hy * 1.02, 0], [hz * 0.9, hx * 0.96, hy * 0.92, 0]];
+    body.add(mesh(loft(sec, 16), paint));
+    body.add(mesh(new THREE.SphereGeometry(2.95, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), glass, 0, 0.15, hz * 0.9, Math.PI / 2));
+    for (let k = -2; k <= 2; k++) body.add(mesh(new THREE.TorusGeometry(2.9, 0.05, 4, 20, Math.PI), dark, 0, 0.15, hz * 0.9 + 0.02, 0, k * 0.45 + Math.PI / 2, Math.PI / 2)); // window ribs
+    body.add(mesh(new THREE.TorusGeometry(2.92, 0.1, 6, 28), dark, 0, 0.15, hz * 0.9));
     for (const sx of [-1, 1]) {
-      body.add(mesh(new THREE.BoxGeometry(0.06, 0.25, hz * 1.5), std({ color: 0xe07a20, roughness: 0.4 }), sx * hx * 1.07, 0.5, -0.4));
-      body.add(mesh(new THREE.BoxGeometry(1.6, 0.12, 3.2), paint, sx * (hx + 0.8), -0.6, -hz * 0.8, 0, 0, sx * 0.1)); // stern planes
-      for (const z of [hz * 0.7, -hz * 0.2]) body.add(mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.2, 10), lampMat, sx * hx * 0.9, -hy * 0.75, z, Math.PI / 2));
+      body.add(mesh(new THREE.BoxGeometry(0.06, 0.32, hz * 1.55), orange, sx * hx * 1.05, 0.6, -0.6));
+      body.add(mesh(new THREE.BoxGeometry(2.0, 0.14, 3.6), paint, sx * (hx + 0.9), -0.4, -hz * 0.82, 0, 0, sx * 0.08)); // stern planes
+      for (const z of [hz * 0.72, hz * 0.25, -hz * 0.3]) body.add(mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.22, 10), lampMat, sx * hx * 0.88, -hy * 0.72, z, Math.PI / 2));
     }
-    body.add(mesh(new THREE.BoxGeometry(0.12, 2.4, 3.4), paint, 0, hy + 0.7, -hz * 0.78, 0.25)); // tail fin
-    body.add(mesh(new THREE.BoxGeometry(2.2, 0.9, 5), paint, 0, hy + 0.2, -1.5)); // conning hump
-    const pr = new THREE.Group(); pr.position.set(0, 0.2, -hz - 0.7); body.add(pr); props.push(pr);
-    pr.add(mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.6, 10), dark, 0, 0, 0, Math.PI / 2));
-    for (let k = 0; k < 5; k++) pr.add(mesh(new THREE.BoxGeometry(0.12, 1.9, 0.08), metal, 0, 0, -0.1, 0, 0.3, k * 1.257));
-    // ---- interior: deck plating, walls panels, helm, lights, the moon-pool doorway frame
-    const floor = std({ color: 0x5a6068, roughness: 0.7, metalness: 0.4 }), panel = std({ color: 0xcfd4d6, roughness: 0.6, side: THREE.DoubleSide });
-    body.add(mesh(new THREE.BoxGeometry(hx * 1.9, 0.1, hz * 1.9), floor, 0, -1.45, 0));
-    for (let z = -hz + 1; z < hz - 0.5; z += 2) body.add(mesh(new THREE.BoxGeometry(hx * 1.9, 0.02, 0.04), dark, 0, -1.39, z));
-    for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.06, 3.1, hz * 1.9), panel, sx * 2.22, 0.15, 0));
-    body.add(mesh(new THREE.BoxGeometry(hx * 1.9, 0.06, hz * 1.9), panel, 0, 1.76, 0));
-    body.add(mesh(new THREE.BoxGeometry(1.4, 0.9, 0.6), dark, 0, -0.95, 8.75));       // helm console
-    body.add(mesh(new THREE.BoxGeometry(1.2, 0.5, 0.05), std({ color: 0x1a6a8a, emissive: 0x0a5a7a, emissiveIntensity: 1.2 }), 0, -0.35, 8.5, -0.5)); // screens
-    body.add(mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), std({ color: 0x1c1d20, roughness: 0.85 }), 0, -1.15, 7.55)); // pilot seat
-    for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.15, 2.5, 0.25), metal, sx * 0.78, -0.2, -9.3));
-    body.add(mesh(new THREE.BoxGeometry(1.7, 0.15, 0.25), metal, 0, 1.05, -9.3));
-    for (const z of [-5, 0, 5]) { const L = new THREE.PointLight(0xf4f0e0, 1.6, 9, 1.4); L.position.set(0, 1.4, z); body.add(L); body.add(mesh(new THREE.BoxGeometry(0.8, 0.05, 0.3), lampMat, 0, 1.72, z)); }
+    body.add(mesh(new THREE.BoxGeometry(0.14, 2.6, 3.8), paint, 0, hy + 0.8, -hz * 0.8, 0.25)); // tail fin
+    body.add(mesh(new THREE.BoxGeometry(2.4, 1.1, 6), paint, 0, hy + 0.25, 1.5)); // dorsal tower
+    body.add(mesh(new THREE.BoxGeometry(1.6, 0.25, 0.08), glass, 0, hy + 0.4, 4.52));
+    const pr = new THREE.Group(); pr.position.set(0, 0.3, -hz - 0.9); body.add(pr); props.push(pr);
+    pr.add(mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.7, 10), dark, 0, 0, 0, Math.PI / 2));
+    for (let k = 0; k < 5; k++) pr.add(mesh(new THREE.BoxGeometry(0.14, 2.2, 0.08), metal, 0, 0, -0.1, 0, 0.3, k * 1.257));
+    // docking cradle under the hull (the Mini Sub hangs here) and the hatch with its ladder
+    const dk = D.dock;
+    body.add(mesh(new THREE.BoxGeometry(2.4, 0.3, 4.2), dark, 0, -hy - 0.05, dk.z));
+    for (const sx of [-1, 1]) { body.add(mesh(new THREE.BoxGeometry(0.2, 1.1, 0.3), grey, sx * 1.05, -hy - 0.6, dk.z + 1.2)); body.add(mesh(new THREE.BoxGeometry(0.2, 1.1, 0.3), grey, sx * 1.05, -hy - 0.6, dk.z - 1.2)); }
+    const hx2 = D.hatch.x, hz2 = D.hatch.z;
+    body.add(mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.62, 16, 1, true), dark, hx2, -hy + 0.25, hz2));
+    for (let y = -hy - 0.2; y > -hy - 1.8; y -= 0.35) body.add(mesh(new THREE.BoxGeometry(0.6, 0.04, 0.05), metal, hx2, y, hz2 - 0.35));
+    for (const sx of [-0.28, 0.28]) body.add(mesh(new THREE.BoxGeometry(0.05, 1.8, 0.05), metal, hx2 + sx, -hy - 0.95, hz2 - 0.35));
+    // ---- inside: a long white-panelled corridor with ribs and pipes, the bridge at the bow, the engine room astern
+    const y0 = I.y0, y1 = I.y1, W2 = I.hx, Z = I.hz;
+    const floorM = std({ color: 0x5c6269, roughness: 0.75, metalness: 0.45 }), panel = std({ color: 0xd8dcdc, roughness: 0.6, side: THREE.DoubleSide });
+    const rib = std({ color: 0x6a7078, roughness: 0.5, metalness: 0.5 }), pipeM = std({ color: 0x9aa0a6, roughness: 0.35, metalness: 0.8 }), hazard = std({ color: 0xe8b020, roughness: 0.5 });
+    const screenM = (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.3, flatShading: true });
+    body.add(mesh(new THREE.BoxGeometry(W2 * 2, 0.08, Z * 2), floorM, 0, y0 - 0.04, 0));
+    body.add(mesh(new THREE.BoxGeometry(1.4, 0.02, Z * 1.9), std({ color: 0x3e4349, roughness: 0.9 }), 0, y0 + 0.01, 0)); // walkway
+    for (let z = -Z + 0.6; z < Z; z += 0.6) body.add(mesh(new THREE.BoxGeometry(W2 * 2, 0.012, 0.03), rib, 0, y0 + 0.02, z)); // grating lines
+    for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.05, y1 - y0, Z * 2), panel, sx * (W2 + 0.05), (y0 + y1) / 2, 0));
+    body.add(mesh(new THREE.BoxGeometry(W2 * 2, 0.06, Z * 2), panel, 0, y1 + 0.03, 0));
+    for (let z = -Z + 1.2; z < Z - 0.5; z += 1.5) {
+      for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.12, y1 - y0, 0.14), rib, sx * (W2 - 0.02), (y0 + y1) / 2, z)); // frames
+      body.add(mesh(new THREE.BoxGeometry(W2 * 2, 0.12, 0.14), rib, 0, y1 - 0.04, z));
+    }
+    for (const sx of [-1, 1]) for (const y of [y1 - 0.25, y1 - 0.45]) body.add(mesh(new THREE.CylinderGeometry(0.06, 0.06, Z * 1.9, 8), pipeM, sx * (W2 - 0.2), y, 0, Math.PI / 2)); // pipe runs
+    body.add(mesh(new THREE.BoxGeometry(0.5, 0.08, Z * 1.8), rib, 0, y1 - 0.1, 0)); // cable tray
+    for (const z of [-6, -1, 4]) body.add(mesh(new THREE.BoxGeometry(0.9, 0.04, 0.35), lampMat, 0, y1 - 0.02, z));
+    // bulkheads with hazard-striped door frames
+    for (const bz of [8.6, -8.4]) {
+      for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(2.05, y1 - y0, 0.16), panel, sx * 1.75, (y0 + y1) / 2, bz));
+      body.add(mesh(new THREE.BoxGeometry(1.4, y1 - 1.2, 0.16), panel, 0, (1.2 + y1) / 2, bz));
+      for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.1, 2.9, 0.22), hazard, sx * 0.72, y0 + 1.45, bz));
+      body.add(mesh(new THREE.BoxGeometry(1.54, 0.1, 0.22), hazard, 0, 1.22, bz));
+    }
+    // bridge: helm console with the wheel and screens, captain's chair, side stations
+    body.add(mesh(new THREE.BoxGeometry(1.9, 0.9, 0.7), dark, 0, y0 + 0.45, 11.0));
+    body.add(mesh(new THREE.BoxGeometry(1.7, 0.55, 0.06), screenM(0x1a7aa0), 0, y0 + 1.15, 10.7, -0.55));
+    body.add(mesh(new THREE.TorusGeometry(0.32, 0.035, 6, 18), metal, 0, y0 + 1.0, 10.55, -0.45));
+    for (let k = 0; k < 3; k++) body.add(mesh(new THREE.BoxGeometry(0.62, 0.03, 0.03), metal, 0, y0 + 1.0, 10.55, -0.45, 0, k * 1.047));
+    body.add(mesh(new THREE.BoxGeometry(0.7, 0.12, 0.7), std({ color: 0x1c1d20, roughness: 0.85 }), 0, y0 + 0.45, 10.15)); // chair seat
+    body.add(mesh(new THREE.BoxGeometry(0.7, 0.8, 0.12), std({ color: 0x1c1d20, roughness: 0.85 }), 0, y0 + 0.9, 9.8, 0.12));
+    body.add(mesh(new THREE.CylinderGeometry(0.06, 0.1, 0.4, 8), metal, 0, y0 + 0.2, 10.15));
+    for (const sx of [-1, 1]) {
+      body.add(mesh(new THREE.BoxGeometry(0.6, 1.0, 1.6), dark, sx * 2.35, y0 + 0.5, 10.0));
+      body.add(mesh(new THREE.BoxGeometry(0.05, 0.5, 1.3), screenM(sx < 0 ? 0x30c870 : 0xd88a30), sx * 2.04, y0 + 1.25, 10.0, 0, 0, sx * 0.35));
+    }
+    body.add(mesh(new THREE.CircleGeometry(0.22, 20), screenM(0x40e090), -2.03, y0 + 1.3, 10.6, 0, Math.PI / 2)); // sonar sweep
+    // docking bay console and the bay hatch in the floor
+    body.add(mesh(new THREE.BoxGeometry(0.6, 1.4, 1.2), dark, -2.45, y0 + 0.7, dk.z));
+    body.add(mesh(new THREE.BoxGeometry(0.05, 0.6, 0.9), screenM(0x3ab8e8), -2.13, y0 + 1.2, dk.z));
+    body.add(mesh(new THREE.TorusGeometry(0.8, 0.08, 6, 20), hazard, 0, y0 + 0.03, dk.z, Math.PI / 2));
+    body.add(mesh(new THREE.CircleGeometry(0.75, 20), grey, 0, y0 + 0.02, dk.z, -Math.PI / 2));
+    // the entrance hatch: a ring in the floor
+    body.add(mesh(new THREE.TorusGeometry(0.58, 0.07, 6, 20), hazard, hx2, y0 + 0.03, hz2, Math.PI / 2));
+    body.add(mesh(new THREE.CircleGeometry(0.55, 20), std({ color: 0x2a6070, roughness: 0.3, metalness: 0.4 }), hx2, y0 + 0.02, hz2, -Math.PI / 2));
+    // corridor screens
+    for (const z of [3.5, -2.5]) body.add(mesh(new THREE.BoxGeometry(0.05, 0.5, 0.8), screenM(0x1a6a8a), 2.68, y0 + 1.6, z));
+    // engine room: a big drive with glowing rings, the upgrade console, power cell rack
+    body.add(mesh(new THREE.CylinderGeometry(0.95, 0.95, 2.0, 16), grey, 0, -0.4, -10.7, Math.PI / 2));
+    for (const z of [-11.4, -10.7, -10.0]) body.add(mesh(new THREE.TorusGeometry(0.97, 0.06, 6, 20), screenM(0x40e0ff), 0, -0.4, z));
+    body.add(mesh(new THREE.BoxGeometry(2.0, 0.4, 2.2), dark, 0, y0 + 0.2, -10.7));
+    body.add(mesh(new THREE.BoxGeometry(0.55, 1.4, 1.0), dark, 2.45, y0 + 0.7, -9.6));
+    body.add(mesh(new THREE.BoxGeometry(0.05, 0.7, 0.8), screenM(0xe8a030), 2.15, y0 + 1.2, -9.6));
+    for (let k = 0; k < 6; k++) body.add(mesh(new THREE.BoxGeometry(0.12, 0.3, 0.12), screenM(0x40ff90), -2.6, y0 + 1.0 + (k % 2) * 0.45, -10.4 + Math.floor(k / 2) * 0.35));
+    body.add(mesh(new THREE.BoxGeometry(0.3, 1.3, 1.4), dark, -2.62, y0 + 1.2, -10.05));
+    // interior lights: cool blue on the bridge, white in the corridor, teal in the engine room
+    for (const [z, c, i] of [[10.3, 0x9ad8ff, 1.3], [0, 0xf4f0e8, 2.0], [-10.3, 0x80f0ff, 1.4]]) { const L = new THREE.PointLight(c, i, 14, 1.3); L.position.set(0, y1 - 0.5, z); body.add(L); }
   }
   ud.props = props;
   const headlight = new THREE.SpotLight(0xfff0d0, 0, type === 'cyclops' ? 70 : 45, 0.6, 0.5, 1.1);

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { World, BIOME_NAMES, chunkKey, CHUNK } from '/shared/worldgen.js';
 import { ITEMS, NODES, ANIMALS, INV_SIZE } from '/shared/items.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE } from '/shared/vehicles.js';
-import { PIECES, TIERS } from '/shared/building.js';
+import { PIECES, TIERS, rotY } from '/shared/building.js';
 import { Physics } from './physics.js';
 import { Terrain } from './terrain.js';
 import { Sky } from './sky.js';
@@ -25,6 +25,7 @@ import { Footprints } from './footprints.js';
 import { IceView } from './ice.js';
 import { SeaLife } from './sealife.js';
 import { Fishing } from './fishing.js';
+import { FloodView } from './flood.js';
 import { IceField, BREATH_MAX, ICE_TOP } from '/shared/ice.js';
 import { SEASON } from './season.js';
 import { seasonInfo, SEASON_NAMES, SEASON_ICONS } from '/shared/season.js';
@@ -113,6 +114,7 @@ class Game {
     this.iceField = new IceField(this.world); this.physics.ice = this.iceField;
     this.iceView = new IceView(this.scene, this.iceField, this.world);
     this.seaLife = new SeaLife(this.scene, this.world); this.seaLife.ice = this.iceField;
+    this.floodView = new FloodView(this.scene); this.structures.flood = new Map(); this.hullHI = new Map();
     if (this.pendingIce) this.applyIce(this.pendingIce);
     this.weather = new Weather(this); this.weather.setDetail(this.settings.detail ?? 2);
     if (this.pendingWeather) this.weather.setState(this.pendingWeather);
@@ -300,6 +302,7 @@ class Game {
     n.on('snap', (m) => this.onSnap(m));
     n.on('terr', (m) => { this.terrain.applyMods(m.m); this.iceField?.cache.clear(); });
     n.on('ice', (m) => this.applyIce(m));
+    n.on('flood', (m) => { this.structures.flood.set(m.bid, m.f || {}); this.hullHI.set(m.bid, m.hi); });
     n.on('fishbite', (m) => this.fishing?.onBite(m));
     n.on('fishres', (m) => this.fishing?.onResult(m));
     n.on('fx', (m) => this.onFx(m));
@@ -398,6 +401,8 @@ class Game {
 
   onFx(m) {
     const cam = this.camera.position;
+    if (m.k === 'leak') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 50) { audio.creak?.(); audio.leak?.(); } return; }
+    if (m.k === 'weld') { const pos = new THREE.Vector3(...m.p); this.effects.burst(pos, { count: 14, color: 0xfff0a0, speed: 4, size: 0.03, life: 0.3, glow: true }); audio.mine(); return; }
     if (m.k === 'creak') { audio.creak?.(); this.effects.shake = Math.min(1, this.effects.shake + 0.25); return; }
     if (m.k === 'icebreak') {
       const pos = new THREE.Vector3(...m.p), d = cam.distanceTo(pos);
@@ -646,10 +651,10 @@ class Game {
         const s = this.structures.map.get(hit.id)?.s;
         if (s) {
           if (s.k === 'door') { text = `<kbd>E</kbd> ${s.open ? 'Close' : 'Open'} door`; if (E) this.net.send({ t: 'use', id: s.id }); }
-          else if (ITEMS[s.type]?.deploy?.slots && !['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith'].includes(s.type)) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
+          else if (ITEMS[s.type]?.deploy?.slots && !['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith', 'fabricator'].includes(s.type)) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.type === 'tool_cupboard') { const authed = s.auth?.includes(this.pid); text = `<kbd>E</kbd> ${authed ? 'Deauthorize' : 'Authorize'} at Tool Cupboard <small>(${s.auth?.length || 0} authorized)</small>`; if (E) this.net.send({ t: 'use', id: s.id }); }
           else if (s.type === 'sleeping_bag' || s.type === 'bed') { const nm = s.type === 'bed' ? 'bed' : 'sleeping bag'; text = s.o === this.pid ? `Your ${nm} (respawn point)` : `<kbd>E</kbd> Claim ${nm}`; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
-          else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
+          else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith', 'fabricator'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name}`; }
           else if (s.k === 'piece') target = `${TIERS[s.tier].name} ${PIECES[s.type].name}<div class="tbar"><div style="width:${(s.hp / s.mhp) * 100}%"></div></div>`;
         }
@@ -661,9 +666,17 @@ class Game {
             const needs = v.needs ? Object.entries(v.needs).map(([k, n]) => `${n}× ${ITEMS[k].name} (have ${countItem(this.inv, k)})`).join(', ') : '';
             text = `<b>Broken ${def.name}</b><br>Needs: ${needs}<br><kbd>E</kbd> Install parts`;
             if (E) this.net.send({ t: 'v_repair', id: v.id });
-          } else if (def.interior && hit.col !== v.colliders[v.colliders.length - 1]) {
-            target = `${def.name}${this.inSubInterior(this.player.pos) ? ' — walk to the helm at the bow to pilot it · build and furnish the deck with the Building Plan' : ' — swim in through the moon pool at the stern'}`;
+          } else if (def.interior && hit.col.role === 'dock') {
+            const kid = [...this.vehicleViews.values()].find((o) => o.dockedIn === v.id);
+            text = kid ? `<b>Docking bay</b> — Mini Sub 🔋 ${kid.fuel}/${VEHICLES.minisub.fuelCap} · 🔧 ${kid.hp}/${VEHICLES.minisub.hp}<br><kbd>E</kbd> Climb in and launch it` : '<b>Docking bay</b> — empty. Drive a Mini Sub up under the hull here to dock it.';
+            if (kid && E) this.net.send({ t: 'undock', id: v.id });
+          } else if (def.interior && hit.col.role === 'engine') {
+            text = `<b>${def.name} engine room</b> 🔋 ${v.fuel}/${def.fuelCap} · crush depth ${v.subInfo?.crush ?? def.depths[0]} m<br><kbd>U</kbd> Upgrade console (modules) · <kbd>G</kbd> Swap in power cells/batteries (${countItem(this.inv, 'power_cell')} cells, ${countItem(this.inv, 'battery')} 🔋)`;
             if (active && this.input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
+            if (active && this.input.hit('KeyG')) this.net.send({ t: 'v_fuel', id: v.id });
+          } else if (def.interior && hit.col.role !== 'helm') {
+            const inside = this.inSubInterior(this.player.pos);
+            target = `${def.name}${inside ? (v.leaks?.length ? ` — ⚠️ ${v.leaks.length} hull leak${v.leaks.length > 1 ? 's' : ''}! Seal them with a Repair Tool` : ' — helm at the bow, docking bay amidships, engine room at the stern') : ' — swim under it to the hatch to climb in'}`;
           } else if (def.deck && !def.interior && hit.col !== v.colliders[1]) {
             target = `${def.name} deck${v.nAttached ? '' : ' — build on it with the Building Plan'}`;
           } else {
@@ -682,6 +695,25 @@ class Game {
       }
     }
     const pp = this.player.pos;
+    if (!text && !this.vehicle && this.alive) {
+      // the Pacific's floor hatch: climb in from below, drop out from inside
+      for (const v of this.vehicleViews.values()) {
+        const def = VEHICLES[v.type];
+        if (!def.hatch || v.pos.distanceTo(pp) > 25) continue;
+        const l = pp.clone().sub(v.pos).applyQuaternion(_rq.copy(v.q).invert()), I = def.interior, h = def.hatch;
+        const near = Math.hypot(l.x - h.x, l.z - h.z);
+        if (Math.abs(l.x) < I.hx && Math.abs(l.z) < I.hz && l.y > I.y0 - 0.3 && l.y < I.y1 && near < 0.9) {
+          text = '<kbd>E</kbd> Exit through the hatch';
+          if (E) { this.player.pos.copy(new THREE.Vector3(h.x, -def.half[1] - 1.9, h.z).applyQuaternion(v.q).add(v.pos)); this.player.vel.set(0, -1, 0); this.ride = null; audio.door(); audio.splash(0.4); }
+          break;
+        }
+        if (l.y < -def.half[1] + 0.2 && l.y > -def.half[1] - 4.5 && near < 2.4) {
+          text = '<kbd>E</kbd> Climb up through the hatch';
+          if (E) { this.player.pos.copy(new THREE.Vector3(h.x - 1.5, I.y0 + 0.05, h.z).applyQuaternion(v.q).add(v.pos)); this.player.vel.set(0, 0, 0); audio.door(); }
+          break;
+        }
+      }
+    }
     if (!text && !this.vehicle && this.alive) {
       if (pp.y < CAVE_ZONE) { if (this.caveWorld.nearLadder(pp)) { text = '<kbd>E</kbd> Climb up the ladder'; if (E) this.net.send({ t: 'cave_exit' }); } }
       else { const ce = this.caveEntrances(pp.x, pp.z).find((e) => Math.hypot(e.x - pp.x, e.z - pp.z) < 5.5); if (ce) { text = '<kbd>E</kbd> Climb down into the caves'; if (E) this.net.send({ t: 'cave_enter' }); } }
@@ -710,6 +742,55 @@ class Game {
   }
 
   // ------------------------------------------------------------------ main loop
+  // the water line at a position: {top, inside} (top = -Infinity: no water, Infinity: flooded cave)
+  waterAt(pos) {
+    const sub = this.inSubInterior(pos);
+    if (sub) { const I = VEHICLES[sub.type].interior, fl = sub.broken ? 99 : sub.flood || 0; return { inside: true, sub, top: fl > 0.02 ? sub.pos.y + I.y0 + fl : -Infinity }; }
+    if (pos.y < 1 && pos.y > CAVE_ZONE) { const r = this.structures.roomAt(pos.x, pos.y + 0.2, pos.z); if (r) return { inside: true, room: r, top: r.level > 0.02 ? r.floorY + r.level : -Infinity }; }
+    if (pos.y < CAVE_ZONE) return { inside: false, top: this.caves.flooded(pos.x, pos.z) ? Infinity : -Infinity };
+    return { inside: false, top: 0 };
+  }
+  // hull readout while you're inside a sealed space
+  hullHud(Wc) {
+    let txt = '';
+    if (Wc.room) {
+      const hi = this.hullHI.get(Wc.room.b.id), lvl = Wc.room.level;
+      if (hi !== undefined) txt = `<span style="color:${hi < 0 ? '#ff6a4a' : hi < 3 ? '#ffc04a' : '#9fe0ff'}">🛡️ Hull integrity ${hi.toFixed(1)}</span>`;
+      const leaks = Wc.room.room.shell.reduce((n, q) => n + (q.lk?.length || 0), 0);
+      if (leaks) txt += ` · <span style="color:#ff6a4a">💦 ${leaks} leak${leaks > 1 ? 's' : ''}</span>`;
+      if (lvl > 0.02) txt += ` · 🌊 ${Math.round((lvl / 3) * 100)}% flooded`;
+    } else if (Wc.sub) {
+      const v = Wc.sub;
+      txt = `🛳️ ${VEHICLES[v.type].name} · 🔋 ${v.fuel} · 🔧 ${v.hp}/${VEHICLES[v.type].hp}`;
+      if (v.leaks?.length) txt += ` · <span style="color:#ff6a4a">💦 ${v.leaks.length} leak${v.leaks.length > 1 ? 's' : ''}</span>`;
+      if ((v.flood || 0) > 0.02) txt += ` · 🌊 ${Math.round((v.flood / 3.8) * 100)}% flooded`;
+    }
+    if (txt !== this._hullTxt) { this._hullTxt = txt; $('hullhud').innerHTML = txt; $('hullhud').classList.toggle('hidden', !txt); }
+  }
+  // clip volumes for the sea surface: sub hulls and air-filled rooms near the camera
+  updateClips() {
+    const cam = this.camera.position, list = [];
+    for (const v of this.vehicleViews.values()) {
+      const def = VEHICLES[v.type];
+      if (!def.sub || v.pos.distanceTo(cam) > 150) continue;
+      const I = def.interior, half = I ? [I.hx, (I.y1 - I.y0) / 2 + 0.1, I.hz] : [def.half[0] * 0.85, def.half[1] * 0.85, def.half[2] * 0.85];
+      const c = I ? new THREE.Vector3(0, (I.y0 + I.y1) / 2, 0).applyQuaternion(v.q).add(v.pos) : v.pos.clone();
+      list.push({ pos: c, quat: v.q, half, d: c.distanceTo(cam) });
+    }
+    for (const b of this.structures.buildings.values()) {
+      if (Math.abs(b.x - cam.x) > 60 || Math.abs(b.z - cam.z) > 60 || b.y > 3) continue;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.yaw);
+      for (const r of this.structures.roomsOf(b)) for (const k of r.cells) {
+        const [gx, gz, L] = k.split(',').map(Number), [dx, dz] = rotY(gx * 1.5, gz * 1.5, b.yaw);
+        const c = new THREE.Vector3(b.x + dx, b.y + L * 3 + 1.5, b.z + dz);
+        if (c.y - 1.5 > 0.5) continue;
+        list.push({ pos: c, quat: q, half: [1.5, 1.5, 1.5], d: c.distanceTo(cam) });
+      }
+    }
+    list.sort((a, b) => a.d - b.d);
+    this.clipBoxes = list.slice(0, 8);
+    this.sky.setWaterClips(this.clipBoxes);
+  }
   // inside the big sub's hull (dry, breathable)
   inSubInterior(pos) {
     for (const v of this.vehicleViews.values()) {
@@ -729,10 +810,14 @@ class Game {
   // surface seen from below, muffled sound, a breath bar
   underwaterView(dt) {
     const cam = this.camera.position, p = this.player;
-    const caveWet = cam.y < CAVE_ZONE && this.caves.flooded(cam.x, cam.z);
-    const below = caveWet || (cam.y < -0.04 && cam.y > CAVE_ZONE && this.world.ground(cam.x, cam.z) < cam.y);
-    const dryRoom = below && (p.dry || !!this.vehicle || !!this.inSubInterior(cam.clone().setY(cam.y - 1)) || this.structures.dryAt(cam.x, cam.y - 1.5, cam.z));
-    const inWater = below && !dryRoom;
+    // where is the camera: in the sea, in a flooded cave, or inside a sealed space (a room, the Pacific, a sub's cockpit)
+    const cockpit = this.vehicle && VEHICLES[this.vehicle.view.type].sub;
+    const Wc = cockpit ? { inside: true, top: -Infinity } : this.waterAt(cam.clone().setY(cam.y - 1.0));
+    const caveWet = !Wc.inside && Wc.top === Infinity;
+    const seaOutside = cam.y < CAVE_ZONE ? this.caves.flooded(cam.x, cam.z) : cam.y < -0.04 && this.world.ground(cam.x, cam.z) < cam.y;
+    const inWater = Wc.inside ? cam.y < Wc.top : caveWet || seaOutside;
+    const below = inWater || seaOutside;
+    const dryRoom = Wc.inside && !inWater;
     const water = this.sky.water.material;
     if (below) {
       const depth = Math.min(1, -cam.y / 28), lit = 0.25 + this.sky.dayLight * 0.75;
@@ -741,10 +826,12 @@ class Game {
       const c = this.uwColor || (this.uwColor = new THREE.Color());
       c.setRGB(0.05 * k, 0.24 * k + 0.01, 0.27 * k + 0.02);
       if (caveWet) { c.setRGB(0.02, 0.07, 0.1); this.caveWorld.ambient.intensity = 0.75; this.caveWorld.ambient.color.setRGB(0.4, 0.75, 1); this.caveWorld.lantern.intensity = 2.6; } // the blue-black of a flooded cave, lit by your lamp and the glowing life
-      this.scene.fog.color.copy(c); this.scene.fog.near = dryRoom ? 6 : 0.5; this.scene.fog.far = caveWet ? 30 : (22 + 18 * lit * iced - depth * 10) * (dryRoom ? 1.6 : 1);
+      if (Wc.inside && inWater) c.multiplyScalar(0.8).add(new THREE.Color(0.02, 0.05, 0.05)); // murky water that has leaked in
+      // inside a dry hull the air is clear; the sea only starts beyond the windows
+      this.scene.fog.color.copy(c); this.scene.fog.near = dryRoom ? 16 : 0.5; this.scene.fog.far = dryRoom ? 70 : Wc.inside ? 14 : caveWet ? 30 : 22 + 18 * lit * iced - depth * 10;
       this.scene.background = c;
       this.sky.sun.intensity *= 0.55 * (1 - depth * 0.6); this.sky.hemi.intensity *= 0.7;
-      if (dryRoom) { this.sky.hemi.intensity = 0.95; this.sky.hemi.color.setRGB(0.85, 0.92, 1); this.sky.hemi.groundColor.setRGB(0.45, 0.5, 0.52); } // the habitat's own lights
+      if (Wc.inside) { this.sky.hemi.intensity = inWater ? 0.6 : 1.0; this.sky.hemi.color.setRGB(0.9, 0.94, 1); this.sky.hemi.groundColor.setRGB(0.5, 0.52, 0.55); } // the habitat's own lights
       if (water.side !== THREE.DoubleSide) { water.side = THREE.DoubleSide; water.needsUpdate = true; }
       // the surface seen from below glows with the daylight coming through it
       water.emissive.setRGB(0.1 * lit, 0.42 * lit, 0.45 * lit).multiplyScalar(iced < 1 ? 0.3 : 1);
@@ -760,7 +847,8 @@ class Game {
       $('underwater').classList.toggle('hidden', !inWater);
       if (!inWater && this.wasUnderwater && p.breath < BREATH_MAX * 0.5) audio.gasp?.();
     }
-    this.wasUnderwater = inWater; this.wasBelow = below;
+    this.wasUnderwater = inWater; this.wasBelow = below; this.wasIndoors = Wc.inside;
+    this.hullHud(Wc);
     audio.setUnderwater(inWater ? 1 : 0, inWater ? Math.min(1, -cam.y / 20) : 0);
     if (inWater) $('underwater').style.opacity = String(0.55 + Math.min(0.4, -cam.y / 40));
     // breath bar: shows while you're holding your breath or catching it back
@@ -816,7 +904,20 @@ class Game {
     }
     // vehicles
     const night = this.sky.dayLight < 0.35;
-    for (const v of this.vehicleViews.values()) v.update(dt, this.vehicle?.id === v.id ? this.vehicle.sim : null, this.effects, night);
+    for (const v of this.vehicleViews.values()) v.dockParent = v.dockedIn ? this.vehicleViews.get(v.dockedIn) : null;
+    for (const v of this.vehicleViews.values()) if (!v.dockParent) v.update(dt, this.vehicle?.id === v.id ? this.vehicle.sim : null, this.effects, night);
+    for (const v of this.vehicleViews.values()) if (v.dockParent) v.update(dt, null, this.effects, night);
+    if (this.vehicle && this.vehicle.seat === 0 && this.vehicle.view.type === 'minisub' && this.vehicle.sim) {
+      const s = this.vehicle.sim;
+      for (const v of this.vehicleViews.values()) {
+        const d = VEHICLES[v.type].dock;
+        if (!d || v.broken || [...this.vehicleViews.values()].some((o) => o.dockedIn === v.id)) continue;
+        const dp = new THREE.Vector3(d.x, d.y, d.z).applyQuaternion(v.q).add(v.pos);
+        const dd = dp.distanceTo(s.pos);
+        if (dd > 7) this.vehicle.dockArmed = true; // only after you've backed out of the bay once
+        if (this.vehicle.dockArmed && dd < 3.2 && performance.now() - (this.lastDock || 0) > 3000) { this.lastDock = performance.now(); this.net.send({ t: 'dock' }); }
+      }
+    }
     this.structures.updateAttached(this.vehicleViews);
     // camera
     this.updateAvatar();
@@ -869,7 +970,10 @@ class Game {
     this.footprints.update(dt, this.camera.position);
     this.iceView.light.value = 0.15 + this.sky.dayLight * 0.85;
     this.iceView.update(dt, this.camera.position, now / 1000);
+    this.updateClips();
+    this.seaLife.clips = this.clipBoxes; this.seaLife.indoors = !!this.wasIndoors;
     this.seaLife.update(dt, this.camera.position, !!this.wasUnderwater);
+    this.floodView.update(dt, this);
     if (this.fishing.state !== 'idle' && (!ITEMS[this.inv[this.sel]?.id]?.fishing || this.vehicle || !this.alive)) this.fishing.cancel();
     if (this.camera.position.y < CAVE_ZONE) {
       // deep underground: no sun, black fog, your lantern does the work

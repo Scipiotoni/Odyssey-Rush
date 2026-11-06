@@ -92,7 +92,7 @@ export class SeaLife {
     this.jelly.count = 0; this.jelly.frustumCulled = false; scene.add(this.jelly);
     this.jellies = [];
     this.whale = null; this.whaleT = 20;
-    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._p = new THREE.Vector3(); this._s = new THREE.Vector3(); this._c = new THREE.Color();
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._p = new THREE.Vector3(); this._s = new THREE.Vector3(); this._c = new THREE.Color(); this._c2 = new THREE.Vector3(); this.clipInv = [];
   }
 
   // blue holes on the sea floor: a black pit ringed by boulders, with a faint glow rising from it
@@ -184,6 +184,8 @@ export class SeaLife {
     const vis = near && cam.y > -125;
     if (this.holes) for (const m of this.holes.values()) m.visible = cam.y > -120;
     for (const m of [this.kelp, this.grass, ...this.corals, this.fish, this.jelly]) m.visible = vis;
+    if (this.indoors) for (const m of [this.kelp, this.grass, ...this.corals]) m.visible = false; // nothing grows through a hull
+    this.clipInv = (this.clips || []).map((b) => new THREE.Matrix4().compose(b.pos, b.quat, new THREE.Vector3(...b.half)).invert());
     if (!vis) return;
     const ci = Math.floor(cam.x / 24), cj = Math.floor(cam.z / 24);
     if (ci !== this.cx || cj !== this.cz) { this.cx = ci; this.cz = cj; this.rebuild(cam); }
@@ -214,6 +216,7 @@ export class SeaLife {
         if (n >= this.fish.count && n >= SCHOOLS * PER_SCHOOL) break;
         const w = sc.t * (0.8 + f[3] * 0.05) + f[3];
         p.set(sc.x + (f[0] + Math.sin(w) * 0.25) * spr * 2, sc.y + (f[1] + Math.sin(w * 1.3) * 0.15) * spr, sc.z + (f[2] + Math.cos(w) * 0.25) * spr * 2);
+        if (this.clipInv.some((M) => { const l = this._c2.copy(p).applyMatrix4(M); return Math.abs(l.x) < 1.1 && Math.abs(l.y) < 1.1 && Math.abs(l.z) < 1.1; })) continue; // not inside a hull
         m.compose(p, q.setFromEuler(e.set(Math.sin(w * 0.7) * 0.15, sc.yaw + Math.sin(w) * 0.3, 0)), s.set(sc.size, sc.size, sc.size));
         this.fish.setMatrixAt(n, m); this.fish.setColorAt(n, c.setHex(sc.col));
         n++;

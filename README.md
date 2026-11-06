@@ -137,7 +137,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 | Command | What it does |
 |---|---|
-| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat\|minisub\|cyclops` | Spawns a working vehicle (boats on the nearest open water) (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
+| `/spawn atv\|jeep\|jeep4\|pickup\|hauler\|rowboat\|motorboat\|minisub\|pacific` | Spawns a working vehicle (boats on the nearest open water) (half a tank) on a clear, flat spot in front of you — never inside trees, rocks, buildings or other cars. 30 s cooldown, max 2 per player |
 | `/unstuck` | Puts the vehicle you're in (or the nearest one) back on its wheels in a clear spot nearby |
 | `/c message` | Clan chat |
 | `/admin password` | Unlocks the admin commands (needs `ADMIN_PASSWORD` on the server) |
@@ -216,8 +216,7 @@ they have a pickaxe and enough breath to hack their way out.
   beaches. In winter a boat on a lake is **frozen into the ice** until you break the ice around it.
 - **Underwater bases**: the new **Watertight Steel** building tier can be built in water of any depth. A room whose
   floor, ceiling and walls are all Watertight Steel holds **air**: you walk, breathe and stay dry inside, even on the
-  sea floor. Walls get portholes, and doorways need a closed **Watertight Hatch** (Workbench 2). Open the hatch and the
-  room floods; close it and the air comes back.
+  sea floor. Walls get portholes, and doorways need a **Watertight Hatch** (Workbench 2). See *Base flooding* below for what happens under pressure.
 
 ### Submarines, cave minerals and the flooded caves
 
@@ -229,13 +228,28 @@ they have a pickaxe and enough breath to hack their way out.
   Submarines run on charge. Insert batteries with **G**, and using power cells gives more charge.
 - **Mini Sub** (kit at Workbench 2): a one-seat bubble-canopy sub. Hold the kit and click to launch it into deep enough
   water. **W/S** thrust, **A/D** turn, **Space** rise, **Ctrl** dive. It noses down to dive and banks into turns.
-- **Leviathan Sub** (kit at Workbench 3, or `/spawn cyclops`): a big walk-in submarine. Swim in through the moon pool at
-  the stern and it's dry and breathable inside. Walk to the helm at the bow to pilot it while friends move around inside.
-  The deck is buildable: furnish it and put storage, beds, workbenches and walls in it with the Building Plan.
+- **Pacific** (kit at Workbench 3, or `/spawn pacific`): a big walk-in submarine. Swim underneath and climb in through
+  the **floor hatch** with **E**. Inside it's dry and breathable, with no sea water in the hull even far below the surface.
+  - **Bridge** (bow): the helm and captain's chair under a big glass dome, with side stations and a sonar screen.
+  - **Corridor**: panelled, with pipes overhead, a built-in **Fabricator** (crafts everything a Workbench 2 can) and two
+    **wall lockers**. The rest of the deck is buildable and furnishable with the Building Plan.
+  - **Docking bay** (amidships): a **Mini Sub** comes docked under the hull. At the bay console press **E** to drop into
+    it and launch. To dock again, drive the Mini Sub up under the bay and you climb back into the Pacific. A docked Mini
+    Sub recharges from the Pacific's power.
+  - **Engine room** (stern): the drive, the **upgrade console** (**U**, modules) and the power cell rack (**G**).
+  - **Flooding**: below its crush depth the Pacific springs **leaks** that fill it with water. Seal them with a Repair
+    Tool and the water drains away. A wrecked Pacific floods completely.
 - **Crush depth**: every sub has one, shown on the HUD with your depth. Below it the hull groans, shakes and takes damage.
-  Open the **module bay** with **U** and fit **Depth Modules**: Mini Sub 60 → 130 → 220 → 320 m, Leviathan 120 → 200 →
+  Open the **module bay** with **U** and fit **Depth Modules**: Mini Sub 60 → 130 → 220 → 320 m, Pacific 120 → 200 →
   290 → 400 m (MK3 needs kyanite). Also **Thruster Upgrades**, **Hull Reinforcement** and **Engine Efficiency**
-  modules. Mini Sub has 2 slots, Leviathan 4.
+  modules. Mini Sub has 2 slots, Pacific 4.
+- **Base flooding**: underwater bases have a **hull integrity**, shown on your HUD inside. It starts at 10.
+  Foundations (+1.2) and **Hull Reinforcement Frames** (+6 each, Workbench 2) add strength. Walls, floors and roofs take
+  some away, doorways more, and portholes the most (−1.5). Those losses grow with depth. Below 0 the hull
+  **springs leaks** at random spots, sooner the weaker it is. Each leak sprays water in and the room's water **rises**
+  until it's full, and you have to swim to keep breathing. Weld leaks shut with the **Repair Tool** (hold LMB, Workbench 1).
+  Once a room has no leaks the water slowly drains. Watertight Hatches keep the sea out open or shut. A missing or
+  non-watertight piece leaves the room open to the sea.
 - **Blue holes**: black sinkholes ringed by boulders on the sea floor. Swim or steer a sub down into one to drop into
   the **flooded cave systems** below the sea, ~170–240 m deep. You need at least an MK2 module for a sub down there.
   The caves are full of glowing anemones, with dark blue water lit by your lamp. Swim back up the shaft to return.

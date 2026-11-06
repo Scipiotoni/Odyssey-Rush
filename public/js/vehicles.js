@@ -287,6 +287,7 @@ export class VehicleView {
       ? [[0, this.def.deck.y - 0.57, -2.4, 1.52, 0.57, 4.55], [0, 0.8, 4.6, 1.5, 1.4, 2.4]]
       : [[0, 0, 0, ...this.def.half]];
     this.colliders = this.boxes.map(([, , , hx, hy, hz]) => ({ t: 'box', x: 0, y: 0, z: 0, hx, hy, hz, yaw: 0, rad: Math.hypot(hx, hz) + 0.5, ref }));
+    this.colliders.forEach((c, i) => (c.role = this.boxes[i][6] || null));
     this.collider = this.colliders[0];
     this.smokeT = 0;
     this.paint = -1; this.decRev = 0; this.netDecRev = 0;
@@ -303,6 +304,8 @@ export class VehicleView {
     this.nAttached = a[15] || 0;
     this.netDecRev = a[16] || 0;
     if (a[17]) this.subInfo = { crush: a[17][0], thrust: a[17][1], eff: a[17][2], hull: a[17][3] };
+    this.dockedIn = a[18] || null;
+    if (a[19]) { this.flood = a[19][0]; this.leaks = a[19][1]; }
     if (!this.interp) this.interp = new Interp();
     this.interp.push(performance.now(), a[2], a[3], a[4], 0, a[5]);
     if (this.first) { this.pos.copy(this.tPos); this.q.copy(this.tQ); this.first = false; }
@@ -311,7 +314,12 @@ export class VehicleView {
   update(dt, sim, effects, night) {
     const g = this.group, ud = g.userData;
     if (sim) { this.pos.copy(sim.pos); this.q.copy(sim.q); this.steer = sim.steer; }
-    else {
+    for (const c of this.colliders) c.ghost = !!this.dockParent; // a docked sub is part of its carrier
+    if (sim) {} else if (this.dockParent) {
+      // slung under the Pacific in its docking bay
+      const P = this.dockParent, d = P.def.dock;
+      this.pos.set(d.x, d.y, d.z).applyQuaternion(P.q).add(P.pos); this.q.copy(P.q);
+    } else {
       if (this.interp && this.interp.sample(performance.now() - INTERP_DELAY, _io, this.q)) this.pos.set(_io.x, _io.y, _io.z);
       else { this.pos.copy(this.tPos); this.q.copy(this.tQ); }
     }

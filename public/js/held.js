@@ -222,6 +222,30 @@ export class Held {
     g.builder.hide();
     if (d.spray) { g.painter.update(input); return; }
     if (d.fishing) { g.fishing.update(dt, input); return; }
+    if (d.repair) {
+      // Repair Tool: hold LMB on a hull breach to weld it shut
+      const hit = this.ray(4.5);
+      let target = null;
+      if (hit && hit.kind === 's') {
+        const e = g.structures.map.get(hit.id);
+        if (e?.s.lk?.length) target = { id: hit.id };
+      } else if (hit && hit.kind === 'v') {
+        const v = g.vehicleViews.get(hit.id);
+        if (v?.leaks?.length) {
+          let bd = 2.2; for (const l of v.leaks) { const w = new THREE.Vector3(...l).applyQuaternion(v.q).add(v.pos); bd = Math.min(bd, w.distanceTo(hit.point)); }
+          if (bd < 2.2) target = { vid: hit.id };
+        }
+      }
+      if (!target) { this.weldT = 0; g.ui.progress(null); g.ui.prompt('<small>Aim at a hull breach (spraying water) and hold <kbd>LMB</kbd> to weld it</small>'); return; }
+      g.ui.prompt('<kbd>LMB</kbd> hold to weld the leak shut');
+      if (L) {
+        this.weldT = (this.weldT || 0) + dt;
+        g.ui.progress(Math.min(1, this.weldT / 1.6), 'Welding');
+        if (Math.random() < dt * 20) g.effects.burst(hit.point, { count: 2, color: 0xfff0a0, speed: 3, size: 0.03, life: 0.25, glow: true });
+        if (this.weldT >= 1.6) { this.weldT = 0; g.ui.progress(null); g.net.send({ t: 'repair_leak', ...target, pt: [hit.point.x, hit.point.y, hit.point.z] }); }
+      } else if (this.weldT) { this.weldT = 0; g.ui.progress(null); }
+      return;
+    }
     if (d.tool?.hammer) { g.builder.updateHammer(input); return; }
     if (d.gun) {
       if (input.hit('KeyR')) this.startReload(st, d);

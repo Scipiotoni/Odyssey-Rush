@@ -49,7 +49,7 @@ export const ITEMS = {
   efficiency_module: { name: 'Engine Efficiency Module', cat: 'component', stack: 1, icon: '♻️', module: { eff: 0.3 } },
   // vehicles that come as kits: launch them into deep enough water
   minisub_kit: { name: 'Mini Sub Kit', cat: 'deployable', stack: 1, icon: '🐟', launch: 'minisub' },
-  cyclops_kit: { name: 'Leviathan-class Sub Kit', cat: 'deployable', stack: 1, icon: '🐋', launch: 'cyclops' },
+  cyclops_kit: { name: 'Pacific-class Sub Kit', cat: 'deployable', stack: 1, icon: '🐋', launch: 'cyclops' },
   rowboat_kit: { name: 'Rowboat Kit', cat: 'deployable', stack: 1, icon: '🚣', launch: 'rowboat' },
   rope: { name: 'Rope', cat: 'component', stack: 50, icon: '➰' },
   spring: { name: 'Metal Spring', cat: 'component', stack: 20, icon: '🌀' },
@@ -151,6 +151,10 @@ export const ITEMS = {
   wood_door: { name: 'Wooden Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 200, tier: 'wood' } },
   metal_door: { name: 'Sheet Metal Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 400, tier: 'metal' } },
   armored_door: { name: 'Armored Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 900, tier: 'armored' } },
+  fabricator: { name: 'Fabricator', cat: 'deployable', stack: 1, icon: '🖨️', deploy: { kind: 'fabricator', hp: 900 } },
+  wall_locker: { name: 'Wall Locker', cat: 'deployable', stack: 1, icon: '🗄️', deploy: { kind: 'wall_locker', hp: 500, slots: 24 } },
+  hull_reinforcement: { name: 'Hull Reinforcement Frame', cat: 'deployable', stack: 4, icon: '🧱', deploy: { kind: 'hull_reinforcement', hp: 800, hull: 6 } },
+  repair_tool: { name: 'Repair Tool', cat: 'tool', stack: 1, icon: '🔧', repair: true },
   sealed_door: { name: 'Watertight Hatch', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 1100, tier: 'sealed' } },
 };
 
@@ -285,20 +289,25 @@ RECIPES.push({ out: 'depth_mk3', n: 1, time: 30, station: 'wb3', cost: { titaniu
 RECIPES.push({ out: 'thruster_module', n: 1, time: 15, station: 'wb2', cost: { titanium: 4, copper: 6, gears: 2, battery: 1 } });
 RECIPES.push({ out: 'hull_module', n: 1, time: 15, station: 'wb2', cost: { titanium: 10, metal_frags: 200 } });
 RECIPES.push({ out: 'efficiency_module', n: 1, time: 15, station: 'wb2', cost: { copper: 8, lithium: 4, tech_trash: 1 } });
+// ---- flooding and the Pacific (appended: recipe ids are positional)
+RECIPES.push({ out: 'repair_tool', n: 1, time: 8, station: 'wb1', cost: { titanium: 2, copper: 3, battery: 1, metal_frags: 40 } });
+RECIPES.push({ out: 'hull_reinforcement', n: 1, time: 12, station: 'wb2', cost: { titanium: 6, metal_frags: 150, lithium: 1 } });
+RECIPES.push({ out: 'fabricator', n: 1, time: 30, station: 'wb2', cost: { titanium: 8, copper: 6, glass: 2, battery: 2, metal_frags: 300 } });
+RECIPES.push({ out: 'wall_locker', n: 1, time: 8, station: 'wb1', cost: { titanium: 2, metal_frags: 120 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
-export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench' };
+export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench', fabricator: 'Fabricator' };
 // Which deployable kinds satisfy which station requirement
 export const STATION_PROVIDERS = {
-  wb1: ['workbench1', 'workbench2', 'workbench3'],
-  wb2: ['workbench2', 'workbench3'],
+  wb1: ['workbench1', 'workbench2', 'workbench3', 'fabricator'],
+  wb2: ['workbench2', 'workbench3', 'fabricator'],
   wb3: ['workbench3'],
   campfire: ['campfire'],
   furnace: ['furnace'],
   gunsmith: ['gunsmith'],
 };
 export const STATION_RANGE = 4.5;
-export const STATION_KINDS = ['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith'];
+export const STATION_KINDS = ['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith', 'fabricator'];
 export const STATION_OUTPUT_SLOTS = 12;
 // Recipes a given station (deployable kind) can make. Hand recipes (no station) are made from the inventory.
 export function stationRecipes(kind) { return RECIPES.filter((r) => r.station && STATION_PROVIDERS[r.station].includes(kind)); }

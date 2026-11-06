@@ -391,6 +391,23 @@ export function deployGeometry(kind) {
         return merge(parts);
       }
       case 'small_box': return merge([part(box(0.9, 0.6, 0.6), 0x8a6238, { y: 0.3 }, 0.08), part(box(0.92, 0.06, 0.62), 0x5a3e22, { y: 0.45 })]);
+      case 'fabricator': {
+        // a wall-mounted fabricator: white housing, a glowing print bay with nozzle arms, a screen
+        const W = 0xe4e6e4, D = 0x3a3e44;
+        return merge([part(box(1.0, 1.7, 0.55), W, { y: 0.85 }), part(box(0.8, 0.7, 0.05), D, { y: 0.95, z: 0.26 }), part(box(0.7, 0.05, 0.4), 0x40e0ff, { y: 0.65, z: 0.05 }),
+          part(box(0.06, 0.06, 0.4), 0x9aa2aa, { x: -0.25, y: 1.2, z: 0.05 }), part(box(0.06, 0.06, 0.4), 0x9aa2aa, { x: 0.25, y: 1.2, z: 0.05 }), part(box(0.4, 0.22, 0.04), 0x1a6a8a, { y: 1.5, z: 0.28 }), part(box(1.04, 0.08, 0.6), 0xe07a20, { y: 0.06 })]);
+      }
+      case 'wall_locker': {
+        const W = 0xd8dcd8, D = 0x4a4e54;
+        return merge([part(box(0.9, 1.9, 0.5), W, { y: 0.95 }), part(box(0.02, 1.8, 0.02), D, { y: 0.95, z: 0.26 }), part(box(0.06, 0.25, 0.04), 0x9aa2aa, { x: 0.12, y: 1.0, z: 0.27 }), part(box(0.06, 0.25, 0.04), 0x9aa2aa, { x: -0.12, y: 1.0, z: 0.27 }),
+          ...[0.35, 0.75, 1.15, 1.55].map((y) => part(box(0.7, 0.02, 0.02), D, { y, z: 0.26 }))]);
+      }
+      case 'hull_reinforcement': {
+        // a welded steel rib frame braced against the wall
+        const S = 0x6a7480;
+        return merge([part(box(0.25, 2.9, 0.25), S, { x: -1.2, y: 1.45 }), part(box(0.25, 2.9, 0.25), S, { x: 1.2, y: 1.45 }), part(box(2.6, 0.25, 0.25), S, { y: 2.8 }), part(box(2.6, 0.25, 0.25), S, { y: 0.12 }),
+          part(box(0.18, 3.3, 0.18), 0x8a929a, { y: 1.45, rz: 0.72 }), part(box(0.18, 3.3, 0.18), 0x8a929a, { y: 1.45, rz: -0.72 })]);
+      }
       case 'large_box': return merge([part(box(1.5, 0.8, 0.9), 0x7a5532, { y: 0.4 }, 0.08), part(box(1.52, 0.06, 0.92), 0x4a3420, { y: 0.6 }), part(box(0.1, 0.82, 0.92), 0x4a3420, { y: 0.4 })]);
       case 'sleeping_bag': return merge([part(box(0.8, 0.15, 2), 0x4a6a8a, { y: 0.075 }, 0.05), part(box(0.7, 0.18, 0.4), 0xd8d0c0, { y: 0.1, z: -0.75 })]);
       case 'tool_cupboard': return merge([part(box(0.9, 1.8, 0.6), 0x6a5a40, { y: 0.9 }, 0.05), part(box(0.8, 0.05, 0.62), 0x3a3020, { y: 1.2 }), part(box(0.8, 0.05, 0.62), 0x3a3020, { y: 0.6 }), part(box(0.1, 0.1, 0.05), 0xd0b030, { x: 0.3, y: 1.0, z: 0.31 })]);

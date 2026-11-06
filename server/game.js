@@ -3,13 +3,13 @@
 import crypto from 'crypto';
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
 import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
-import { slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
+import { G, LEVEL_H, slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw, subStats } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
 import { seasonInfo, SEASON_DAYS, SEASONS, SEASON_NAMES, FOOTPRINT_LIFE } from '../shared/season.js';
 import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP } from '../shared/caves.js';
-import { dryCells, cellAt } from '../shared/sealed.js';
+import { dryCells, cellAt, sealedRooms, hullIntegrity, roomOfCell, HULL_BASE } from '../shared/sealed.js';
 import { IceField, iceFrozen, ICE_TOP, ICE_HOLE_R, ICE_REGEN, BREATH_MAX, breathDrain } from '../shared/ice.js';
 import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
 import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
@@ -274,6 +274,9 @@ export class Game {
       case 'cave_exit': return this.onCaveExit(p, m);
       case 'cavedig': return this.onCaveDig(p, m);
       case 'icebreak': return this.onIceBreak(p, m);
+      case 'repair_leak': return this.onRepairLeak(p, m);
+      case 'undock': return this.onUndock(p, m);
+      case 'dock': return this.onDock(p, m);
       case 'fishcast': return this.onFishCast(p, m);
       case 'fishreel': return this.onFishReel(p, m);
       case 'throwrock': return this.onThrowRock(p, m);
@@ -530,6 +533,7 @@ export class Game {
   sStruct(s) {
     if (!s) return null;
     const o = { id: s.id, k: s.kind, type: s.type, hp: Math.ceil(s.hp), mhp: s.mhp, x: r2(s.x), y: r2(s.y), z: r2(s.z), yaw: s.yaw, o: s.owner };
+    if (s.leaks?.length) o.lk = s.leaks;
     if (s.kind === 'piece') { o.tier = s.tier; o.rf = s.reinf || 0; o.bid = s.bid; o.gx = s.gx; o.gz = s.gz; o.level = s.level; o.rot = s.rot || 0; const b = this.buildings.get(s.bid); if (b) o.b = [b.x, b.y, b.z, b.yaw]; }
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
@@ -1616,6 +1620,7 @@ export class Game {
       // people walking around inside a big sub come along
       for (const o of this.players.values()) if (o !== p && o.alive && !o.vehicle && this.inSubInterior(v, o)) this.teleport(o, o.x + dx, o.y + dy, o.z + dz);
       v.x = h.x; v.y = ny; v.z = h.z; v.vel = [0, 0, 0];
+      if (v.docked) this.refreshDocked(v);
       for (const pid of v.seats) { const o = this.byPid.get(pid); if (o) { o.x = v.x; o.y = v.y; o.z = v.z; o.lastHole = t; } }
       this.refreshAttached(v);
       this.send(p, { t: 'v_reset', id: v.id, p: [v.x, v.y, v.z], q: v.q });
@@ -1623,25 +1628,113 @@ export class Game {
     this.toast(p, down ? '🌀 You sink down the blue hole into a flooded cave system. Swim back up the shaft to return.' : '🌊 Back out on the sea floor');
   }
   // ------------------------------------------------------------ watertight rooms
-  dryOf(bid) {
+  roomsOf(bid) {
     const rev = this.structRev || 0;
-    this.dryCache = this.dryCache || new Map();
-    const c = this.dryCache.get(bid);
-    if (c && c.rev === rev) return c.dry;
+    this.roomCache = this.roomCache || new Map();
+    const c = this.roomCache.get(bid);
+    if (c && c.rev === rev) return c;
     const pieces = [], doors = new Map();
-    for (const st of this.structs.values()) {
-      if (st.kind === 'piece' && st.bid === bid) pieces.push(st);
-    }
+    for (const st of this.structs.values()) if (st.kind === 'piece' && st.bid === bid) pieces.push(st);
     for (const st of this.structs.values()) {
       if (st.kind !== 'door') continue;
       const dw = this.structs.get(st.parent);
       if (dw && dw.bid === bid) doors.set(slotKey(dw.gx, dw.gz, dw.level, 'edge'), { sealed: st.doorTier === 'sealed', open: !!st.open });
     }
-    const dry = pieces.some((p) => TIERS[p.tier]?.sealed) ? dryCells(pieces, doors) : new Set();
-    this.dryCache.set(bid, { rev, dry });
-    return dry;
+    const rooms = pieces.some((p) => TIERS[p.tier]?.sealed) ? sealedRooms(pieces, doors) : [];
+    const out = { rev, rooms, pieces };
+    this.roomCache.set(bid, out);
+    return out;
   }
-  inDryRoom(x, y, z) {
+  dryOf(bid) { const d = new Set(); for (const r of this.roomsOf(bid).rooms) for (const k of r.cells) d.add(k); return d; }
+  // the sealed room a point is in: {b, room, floorY, level (water depth in it)}
+  roomAt(x, y, z) {
+    const bids = new Set();
+    for (const st of this.structsNear(x, z, 0)) if (st.kind === 'piece' && TIERS[st.tier]?.sealed && !st.veh) bids.add(st.bid);
+    for (const bid of bids) {
+      const b = this.buildings.get(bid);
+      if (!b) continue;
+      const k = cellAt(b, x, y, z), room = k && roomOfCell(this.roomsOf(bid).rooms, k);
+      if (room) return { b, room, floorY: b.y + room.L * LEVEL_H, level: b.flood?.[room.key] || 0 };
+    }
+    return null;
+  }
+  // ---- flooding: hull integrity, leaks springing below zero, rooms filling up and draining once the leaks are fixed
+  tickFlood(dt) {
+    const bids = new Set();
+    for (const st of this.structs.values()) if (st.kind === 'piece' && !st.veh && TIERS[st.tier]?.sealed && st.y < 0) bids.add(st.bid);
+    for (const bid of bids) {
+      const b = this.buildings.get(bid);
+      if (!b) continue;
+      const { rooms, pieces } = this.roomsOf(bid);
+      if (!rooms.length) { if (b.flood) delete b.flood; continue; }
+      let anyone = false;
+      for (const p of this.players.values()) if (p.online && Math.abs(p.x - b.x) < 120 && Math.abs(p.z - b.z) < 120) { anyone = true; break; }
+      const depth = -(b.y + 1.5);
+      let reinf = 0;
+      for (const st of this.structsNear(b.x, b.z, 0)) if (st.type === 'hull_reinforcement' && Math.hypot(st.x - b.x, st.z - b.z) < 40 && Math.abs(st.y - b.y) < 12) reinf++;
+      const hi = depth > 0 ? hullIntegrity(pieces, depth, reinf) : HULL_BASE;
+      b.hi = hi;
+      // leaks: the weaker the hull, the more often (only while someone is around to notice)
+      if (hi < 0 && anyone) {
+        b.leakT = (b.leakT || 0) + dt;
+        if (b.leakT > 45 / (1 + -hi * 0.35)) {
+          b.leakT = 0;
+          const room = rooms[Math.floor(Math.random() * rooms.length)];
+          const total = rooms.reduce((n, r2_) => n + r2_.shell.reduce((m2, q) => m2 + (q.leaks?.length || 0), 0), 0);
+          const cand = total >= 8 ? [] : room.shell.filter((q) => q.type !== 'foundation' && (q.leaks?.length || 0) < 3);
+          const q = cand[Math.floor(Math.random() * cand.length)];
+          if (q) {
+            q.leaks = q.leaks || [];
+            const edge = PIECES[q.type].slot === 'edge';
+            q.leaks.push(edge ? [r2((Math.random() - 0.5) * 2.4), r2(0.4 + Math.random() * 2.2), Math.random() < 0.5 ? -0.13 : 0.13] : [r2((Math.random() - 0.5) * 2.4), -0.22, r2((Math.random() - 0.5) * 2.4)]);
+            this.updStruct(q);
+            this.toNear(q.x, q.z, 60, { t: 'fx', k: 'leak', p: [q.x, q.y + 1.5, q.z] });
+            for (const p of this.players.values()) if (p.online && Math.hypot(p.x - b.x, p.z - b.z) < 40) this.toast(p, `⚠️ Hull breach! Hull integrity ${hi.toFixed(1)} — fix leaks with a Repair Tool, add Hull Reinforcement Frames`);
+          }
+        }
+      } else b.leakT = 0;
+      // water level per room
+      const flood = b.flood || (b.flood = {});
+      let changed = false;
+      const keys = new Set();
+      for (const room of rooms) {
+        keys.add(room.key);
+        let n = 0;
+        for (const q of room.shell) n += q.leaks?.length || 0;
+        const was = flood[room.key] || 0;
+        const lvl = n ? Math.min(LEVEL_H, was + n * 0.02 * dt) : Math.max(0, was - 0.03 * dt);
+        if (Math.abs(lvl - was) > 1e-4) { changed = true; if (lvl > 0) flood[room.key] = lvl; else delete flood[room.key]; }
+      }
+      for (const k of Object.keys(flood)) if (!keys.has(k)) { delete flood[k]; changed = true; }
+      if (anyone && (changed || (this.floodT = (this.floodT || 0) + 1) % 5 === 0)) this.toNear(b.x, b.z, 120, { t: 'flood', bid, f: Object.fromEntries(Object.entries(flood).map(([k, v]) => [k, r2(v)])), hi: r2(hi) });
+    }
+  }
+  onRepairLeak(p, m) {
+    if (!p.alive) return;
+    const st = p.inv[p.sel];
+    if (!st || !ITEMS[st.id]?.repair) return;
+    const pt = Array.isArray(m.pt) ? m.pt.map((v) => num(v)) : null;
+    if (!pt || Math.hypot(pt[0] - p.x, pt[1] - p.y - 1.4, pt[2] - p.z) > 5) return;
+    const near = (list, toWorld) => { let bi = -1, bd = 2.2; list.forEach((l, i) => { const w = toWorld(l), d = Math.hypot(w[0] - pt[0], w[1] - pt[1], w[2] - pt[2]); if (d < bd) { bd = d; bi = i; } }); return bi; };
+    if (m.vid) {
+      const v = this.vehicles.get(String(m.vid));
+      if (!v?.leaks?.length) return;
+      const i = near(v.leaks, (l) => { const w = quatRotate(v.q, l); return [v.x + w[0], v.y + w[1], v.z + w[2]]; });
+      if (i < 0) return;
+      v.leaks.splice(i, 1); v.hp = Math.min(VEHICLES[v.type].hp, v.hp + 60);
+      return this.toast(p, v.leaks.length ? `🔧 Leak sealed — ${v.leaks.length} left` : '🔧 All leaks sealed');
+    }
+    const s2 = this.structs.get(String(m.id));
+    if (!s2?.leaks?.length) return;
+    const i = near(s2.leaks, (l) => { const [dx, dz] = rotY(l[0], l[2], s2.yaw); return [s2.x + dx, s2.y + l[1], s2.z + dz]; });
+    if (i < 0) return;
+    s2.leaks.splice(i, 1);
+    if (!s2.leaks.length) delete s2.leaks;
+    this.updStruct(s2);
+    this.toNear(s2.x, s2.z, 40, { t: 'fx', k: 'weld', p: pt });
+  }
+  inDryRoom(x, y, z) { const r = this.roomAt(x, y, z); return !!r && y > r.floorY + r.level; }
+  inDryRoomOld(x, y, z) {
     const bids = new Set();
     for (const st of this.structsNear(x, z, 0)) if (st.kind === 'piece' && TIERS[st.tier]?.sealed && !st.veh) bids.add(st.bid);
     for (const bid of bids) {
@@ -1963,6 +2056,7 @@ export class Game {
       const def = VEHICLES[type], id = this.id('V');
       const v = { id, type, x: spot.x, y: spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * 0.5), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), spawnedBy: p.pid };
       this.vehicles.set(id, v);
+      if (def.outfit) this.outfitPacific(v);
       p.spawnedVeh.push(id); p.lastSpawn = t;
       return this.toast(p, `🚙 ${def.name} spawned ${Math.round(Math.hypot(spot.x - p.x, spot.z - p.z))}m away (half a tank of fuel)`);
     }
@@ -2005,6 +2099,15 @@ export class Game {
       this.toAll({ t: 'time', day: this.day, year: this.year, jump: 1 });
       this.tickIce();
       this.toast(p, `${['🌸', '☀️', '🍂', '❄️'][i]} It is now ${SEASON_NAMES[i]}`);
+    } else if (cmd === 'leak') {
+      // spring a leak in the sealed room (or the Pacific) you're standing in
+      const sub = this.subAround(p);
+      if (sub) { const I = VEHICLES[sub.type].interior; (sub.leaks = sub.leaks || []).push([r2(I.hx - 0.05), r2(I.y0 + 1.2), r2((Math.random() - 0.5) * 10)]); return this.toast(p, '💦 Leak sprung in the Pacific'); }
+      const r = this.roomAt(p.x, p.y + 0.2, p.z);
+      const q = r && r.room.shell.find((x) => PIECES[x.type].slot === 'edge');
+      if (!q) return this.toast(p, 'Stand inside a sealed room');
+      (q.leaks = q.leaks || []).push([0, 1.2, 0.13]); this.updStruct(q);
+      return this.toast(p, '💦 Leak sprung');
     } else if (cmd === 'weather') {
       if (!WEATHER_TARGETS[a]) return this.toast(p, 'Usage: /weather clear | overcast | rain | storm');
       this.setWeather(a, b === 'now');
@@ -2104,6 +2207,7 @@ export class Game {
     if (!v || !p.alive || p.vehicle) return;
     if (dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 + Math.max(0, VEHICLES[v.type].half[2] - 2)) return;
     if (v.broken) return this.toast(p, 'This vehicle is broken — repair it first');
+    if (v.dockedIn) return this.toast(p, 'Docked — release it from the docking console inside the Pacific');
     let seat = v.seats.indexOf(0);
     if (m.seat !== undefined && v.seats[num(m.seat) | 0] === 0) seat = num(m.seat) | 0;
     if (seat < 0) return this.toast(p, 'No free seats');
@@ -2118,7 +2222,7 @@ export class Game {
     p.vehicle = null;
     if (Array.isArray(pos) && v) {
       const x = num(pos[0], p.x), y = num(pos[1], p.y), z = num(pos[2], p.z);
-      if (Math.hypot(x - v.x, z - v.z) < 8) { p.x = x; p.y = y; p.z = z; }
+      if (Math.hypot(x - v.x, z - v.z) < Math.max(8, VEHICLES[v.type].half[2] + 3)) { p.x = x; p.y = y; p.z = z; }
     }
     this.send(p, { t: 'v_seat', id: null });
   }
@@ -2139,6 +2243,7 @@ export class Game {
     else if (Math.abs(v.thr) > 0.05) { v.fuel = Math.max(0, v.fuel - vd.fuelUse * dt * Math.abs(v.thr)); }
     for (const pid of v.seats) { const o = this.byPid.get(pid); if (o) { o.x = v.x; o.y = v.y; o.z = v.z; this.updateRegions(o); } }
     this.refreshAttached(v);
+    if (v.docked) this.refreshDocked(v);
     this.tyreTracks(v);
   }
   onVehicleFuel(p, m) {
@@ -2218,20 +2323,82 @@ export class Game {
     const [qx, qy, qz, qw] = v.q, l = quatRotate([-qx, -qy, -qz, qw], [o.x - v.x, o.y - v.y, o.z - v.z]);
     return Math.abs(l[0]) < I.hx && Math.abs(l[2]) < I.hz && l[1] > I.y0 - 0.3 && l[1] < I.y1;
   }
-  subAround(o) { for (const v of this.vehicles.values()) if (VEHICLES[v.type].interior && Math.abs(v.x - o.x) < 12 && Math.abs(v.z - o.z) < 12 && this.inSubInterior(v, o)) return v; return null; }
+  subAround(o) { for (const v of this.vehicles.values()) if (VEHICLES[v.type].interior && Math.abs(v.x - o.x) < 16 && Math.abs(v.z - o.z) < 16 && this.inSubInterior(v, o)) return v; return null; }
   // pressure on the hull below crush depth, a second at a time
   tickSubs(dt) {
     for (const v of this.vehicles.values()) {
       const def = VEHICLES[v.type];
-      if (!def.sub || v.broken) continue;
+      // the Pacific's interior: leaks let water in, it drains once they're sealed; a wrecked hull fills right up
+      if (def.interior) {
+        const H = def.interior.y1 - def.interior.y0, n = v.leaks?.length || 0, was = v.flood || 0;
+        v.flood = v.broken ? Math.min(H, was + 0.25 * dt) : n ? Math.min(H, was + n * 0.03 * dt) : Math.max(0, was - 0.06 * dt);
+        if (v.docked) { const c = this.vehicles.get(v.docked); if (c && c.fuel < VEHICLES.minisub.fuelCap && v.fuel > 1) { const q = Math.min(2 * dt, VEHICLES.minisub.fuelCap - c.fuel); c.fuel += q; v.fuel -= q * 0.8; } }
+      }
+      if (!def.sub || v.broken || v.dockedIn) continue;
       const st = subStats(def, v.modules, ITEMS), depth = -v.y;
       if (depth <= st.crush) { v.crushWarn = 0; continue; }
       const dmg = (6 + (depth - st.crush) * 1.2) * dt * (1 - st.hull);
       this.damageVehicle(v, dmg);
+      // the pressure pops leaks in the Pacific's hull
+      if (def.interior && (v.leaks?.length || 0) < 6 && Math.random() < 0.12 * dt) {
+        const I = def.interior, side = Math.random() < 0.5 ? -1 : 1;
+        (v.leaks = v.leaks || []).push([r2(side * (I.hx - 0.05)), r2(I.y0 + 0.4 + Math.random() * 2.6), r2((Math.random() - 0.5) * 2 * (I.hz - 1.5))]);
+      }
       const driver = this.byPid.get(v.seats[0]);
       if (driver && now() - (v.crushWarn || 0) > 6) { v.crushWarn = now(); this.toast(driver, `⚠️ HULL CRUSHING — ${Math.round(depth)} m is below your crush depth of ${st.crush} m. Climb, or fit a better depth module!`); }
       if (!driver) continue;
       this.send(driver, { t: 'fx', k: 'creak', id: v.id });
+    }
+  }
+  // the Pacific comes fitted out: a fabricator and lockers inside, and a Mini Sub in its docking bay
+  outfitPacific(v) {
+    const def = VEHICLES[v.type];
+    for (const [kind, lx, lz, yaw] of def.outfit) {
+      const d = ITEMS[kind].deploy;
+      const s2 = { id: this.id('S'), kind: 'deploy', type: kind, hp: d.hp, mhp: d.hp, owner: v.owner || 0, veh: v.id, local: { x: lx, y: def.interior.y0, z: lz, yaw }, x: 0, y: 0, z: 0, yaw: 0, created: now() };
+      if (d.slots) s2.slots = Inv.emptySlots(d.slots);
+      this.addStruct(s2);
+    }
+    const md = VEHICLES.minisub, id = this.id('V');
+    const m = { id, type: 'minisub', x: v.x, y: v.y, z: v.z, q: v.q.slice(), vel: [0, 0, 0], hp: md.hp, broken: false, needs: {}, fuel: md.fuelCap, steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(md.seats.length).fill(0), attached: new Set(), owner: v.owner, dockedIn: v.id };
+    this.vehicles.set(id, m); v.docked = id;
+    this.refreshDocked(v);
+  }
+  dockPose(v) { const d = VEHICLES[v.type].dock, w = quatRotate(v.q, [d.x, d.y, d.z]); return { x: v.x + w[0], y: v.y + w[1], z: v.z + w[2] }; }
+  refreshDocked(v) {
+    const c = v.docked && this.vehicles.get(v.docked);
+    if (!c) { v.docked = null; return; }
+    Object.assign(c, this.dockPose(v)); c.q = v.q.slice(); c.vel = v.vel ? v.vel.slice() : [0, 0, 0];
+  }
+  // from the docking console inside: drop into the Mini Sub and release it
+  onUndock(p, m) {
+    const v = this.vehicles.get(String(m.id));
+    if (!v || !p.alive || p.vehicle || !this.inSubInterior(v, p)) return;
+    const c = v.docked && this.vehicles.get(v.docked);
+    if (!c) return this.toast(p, 'The docking bay is empty — drive a Mini Sub up into it to dock');
+    if (c.broken) return this.toast(p, 'The docked Mini Sub is wrecked — repair it first');
+    if (v.y > -VEHICLES[v.type].half[1] * 0.3) return this.toast(p, 'Dive first — the bay opens under water');
+    v.docked = null; c.dockedIn = null;
+    const pose = this.dockPose(v); c.x = pose.x; c.y = pose.y - 0.8; c.z = pose.z;
+    c.seats[0] = p.pid; p.vehicle = { id: c.id, seat: 0 }; p.x = c.x; p.y = c.y; p.z = c.z;
+    this.send(p, { t: 'v_seat', id: c.id, seat: 0, v: this.sVehicleFull(c) });
+    this.toast(p, '🔓 Mini Sub released from the docking bay');
+  }
+  // drive the Mini Sub up under a Pacific's bay to dock: you climb up into the Pacific and the sub recharges
+  onDock(p) {
+    const c = p.vehicle && this.vehicles.get(p.vehicle.id);
+    if (!c || p.vehicle.seat !== 0 || c.type !== 'minisub') return;
+    for (const v of this.vehicles.values()) {
+      if (!VEHICLES[v.type].dock || v.docked || v.broken) continue;
+      const d = this.dockPose(v);
+      if (Math.hypot(d.x - c.x, d.y - c.y, d.z - c.z) > 4) continue;
+      v.docked = c.id; c.dockedIn = v.id; c.vel = [0, 0, 0];
+      this.refreshDocked(v);
+      c.seats[0] = 0; p.vehicle = null;
+      const I = VEHICLES[v.type].interior, w = quatRotate(v.q, [-1.2, I.y0 + 0.05, VEHICLES[v.type].dock.z]);
+      this.send(p, { t: 'v_seat', id: null });
+      this.teleport(p, v.x + w[0], v.y + w[1], v.z + w[2]);
+      return this.toast(p, '🔒 Docked — you climb up into the Pacific. The Mini Sub recharges from its power.');
     }
   }
   // launch a vehicle kit into the water in front of you
@@ -2245,7 +2412,9 @@ export class Game {
     Inv.remove(p.inv, st.id, 1); this.sendInv(p);
     const id = this.id('V');
     const y = def.sub ? -def.half[1] * 0.45 : spot.y;
-    this.vehicles.set(id, { id, type, x: spot.x, y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * (def.sub ? 0.5 : 0.3)), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), owner: p.pid });
+    const nv = { id, type, x: spot.x, y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * (def.sub ? 0.5 : 0.3)), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), owner: p.pid };
+    this.vehicles.set(id, nv);
+    if (def.outfit) this.outfitPacific(nv);
     this.toast(p, `${def.sub ? '🌊' : '🚣'} ${def.name} launched${def.sub ? ' — charge it with batteries (G), fit modules at its module bay (U)' : ''}`);
   }
 
@@ -2386,7 +2555,7 @@ export class Game {
     this.tickAnimals(dt);
     this.tickWeather(dt);
     this.acc.stats += dt; this.acc.save += dt; this.acc.slow += dt;
-    if (this.acc.stats >= 1) { this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.acc.stats = 0; }
+    if (this.acc.stats >= 1) { this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }
     if (this.acc.save >= 60 && this.onSave) { this.acc.save = 0; this.onSave(); }
     this.flushPrints();
@@ -2418,8 +2587,11 @@ export class Game {
       if (p.cold > 0.5) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }
       // breath: holding it underwater, drowning when it runs out
       const head = p.y + (p.cr ? 1.05 : 1.55);
-      p.dry = head < 0 && (this.inDryRoom(p.x, p.y + 0.2, p.z) || !!this.subAround(p));
-      const under = !p.vehicle && !p.dry && (p.y > CAVE_ZONE ? head < -0.1 && this.world.ground(p.x, p.z) < head : this.caves.flooded(p.x, p.z));
+      // inside a sealed room or the Pacific the water line is whatever has leaked in (none if it's dry)
+      const sub = this.subAround(p), room = sub ? null : head < 1 ? this.roomAt(p.x, p.y + 0.2, p.z) : null;
+      const wl = sub ? sub.y + VEHICLES[sub.type].interior.y0 + (sub.broken ? 99 : sub.flood || 0) : room ? room.floorY + room.level : null;
+      p.dry = wl !== null && head > wl;
+      const under = !p.vehicle && (wl !== null ? head < wl - 0.05 : p.y > CAVE_ZONE ? head < -0.1 && this.world.ground(p.x, p.z) < head : this.caves.flooded(p.x, p.z));
       if (p.breath === undefined) p.breath = BREATH_MAX;
       // the deeper you are, the faster a breath (or a tank) runs out
       const drain = breathDrain(-head);
@@ -2472,7 +2644,7 @@ export class Game {
       }
       for (const v of this.vehicles.values()) {
         if (dist2(v, p) > R2) continue;
-        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0, v.decRev || 0, VEHICLES[v.type].sub ? this.subInfo(v) : 0]);
+        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0, v.decRev || 0, VEHICLES[v.type].sub ? this.subInfo(v) : 0, v.dockedIn || 0, VEHICLES[v.type].interior ? [r2(v.flood || 0), v.leaks || []] : 0]);
       }
       for (const a of this.animals.values()) {
         if (dist2(a, p) > R2) continue;

@@ -154,6 +154,7 @@ function build(id) {
       const tank = (x) => [P(cyl(0.06, 0.06, 0.34, 12), c, { x, y: 0.19 }), P(new THREE.SphereGeometry(0.06, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), c, { x, y: 0.36 }), P(cyl(0.02, 0.02, 0.05, 8), 0x9a9a90, { x, y: 0.43 })];
       return [...(two ? [...tank(-0.065), ...tank(0.065)] : tank(0)), P(box(two ? 0.2 : 0.14, 0.03, 0.03), 0x2a2018, { y: 0.26, z: 0.06 }), P(tor(0.05, 0.008, Math.PI * 2, 10), 0x222222, { y: 0.46, z: -0.04 })];
     }
+    case 'repair_tool': return [P(box(0.06, 0.14, 0.05), 0xe8a030, { y: 0.07 }), P(cyl(0.025, 0.03, 0.2, 8), 0x4a4e54, { y: 0.1, z: 0.12, rx: Math.PI / 2 }), P(cyl(0.012, 0.012, 0.06, 6), 0x9aa2aa, { y: 0.1, z: 0.25, rx: Math.PI / 2 }), P(box(0.05, 0.05, 0.08), 0x2a2e33, { y: 0.17, z: 0.02 })];
     case 'fishing_rod': return [P(cyl(0.008, 0.016, 0.9, 6), 0x6a4a2a, { y: 0.45 }), P(cyl(0.035, 0.035, 0.03, 10), 0x777777, { y: 0.15, z: 0.03, rx: Math.PI / 2 }), P(cyl(0.02, 0.02, 0.12, 6), 0x2a2018, { y: 0.06 })];
     case 'raw_fish': case 'cooked_fish': case 'raw_big_fish': case 'cooked_big_fish': {
       const k = id.includes('big') ? 1.6 : 1, c = id.startsWith('raw') ? 0x8aa2b0 : 0xb0723a;

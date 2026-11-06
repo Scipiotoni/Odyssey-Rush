@@ -59,11 +59,14 @@ export class Sky {
     // water
     const wg = new THREE.PlaneGeometry(3200, 3200, 80, 80);
     wg.rotateX(-Math.PI / 2);
-    this.waterUniforms = { uTime: { value: 0 } };
+    // clip volumes (world -> unit box): the sea surface isn't drawn inside sub hulls and air-filled rooms
+    this.waterUniforms = { uTime: { value: 0 }, uClip: { value: Array.from({ length: 8 }, () => new THREE.Matrix4()) }, uClipN: { value: 0 } };
     const wm = new THREE.MeshPhongMaterial({ color: 0x2a6f9a, transparent: true, opacity: 0.82, flatShading: true, shininess: 80, specular: 0x557788 });
     wm.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = this.waterUniforms.uTime;
-      sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      sh.uniforms.uTime = this.waterUniforms.uTime; sh.uniforms.uClip = this.waterUniforms.uClip; sh.uniforms.uClipN = this.waterUniforms.uClipN;
+      sh.fragmentShader = 'uniform mat4 uClip[8];\nuniform int uClipN;\nvarying vec3 vWW;\n' + sh.fragmentShader.replace('void main() {', `void main() {
+        for (int i = 0; i < 8; i++) { if (i >= uClipN) break; vec3 l = (uClip[i] * vec4(vWW, 1.0)).xyz; if (abs(l.x) < 1.0 && abs(l.y) < 1.0 && abs(l.z) < 1.0) discard; }`);
+      sh.vertexShader = 'uniform float uTime;\nvarying vec3 vWW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvWW = (modelMatrix * vec4(transformed, 1.0)).xyz;').replace('#include <begin_vertex>', `#include <begin_vertex>
         vec4 wp = modelMatrix * vec4(position, 1.0);
         float dd = length(position.xz);
         float amp = 0.35 * (1.0 - smoothstep(300.0, 1400.0, dd));
@@ -76,6 +79,13 @@ export class Sky {
     this.dayLight = 1;
   }
 
+  // boxes: [{pos, quat, half:[x,y,z]}] -> uniform matrices
+  setWaterClips(boxes) {
+    const u = this.waterUniforms, m = new THREE.Matrix4(), sc = new THREE.Vector3();
+    let n = 0;
+    for (const b of boxes) { if (n >= 8) break; m.compose(b.pos, b.quat, sc.set(b.half[0], b.half[1], b.half[2])); u.uClip.value[n++].copy(m).invert(); }
+    u.uClipN.value = n;
+  }
   // day: 0..1 (0 = midnight, 0.5 = noon)
   update(day, camPos, dt, viewDist) {
     this.waterUniforms.uTime.value += dt;

@@ -77,18 +77,26 @@ export const VEHICLES = {
     seats: [[0, -0.35, 0.25]], color: 0xe8c43a, style: 'minisub',
     repair: { scrap: 40, titanium: 4, metal_frags: 150 },
   },
+  // the Pacific (id kept as 'cyclops' for old saves): a big walk-in sub. Bridge with the helm under a dome window at the
+  // bow, a corridor with lockers, a fabricator and a buildable deck, the docking bay for a Mini Sub slung under the
+  // hull, and an engine room with the upgrade console at the stern. You get in and out through a hatch in the floor.
   cyclops: {
-    name: 'Leviathan Sub', sub: true, power: true, big: true, mass: 30000, hp: 4000, fuelCap: 400, fuelUse: 0.9, wheels: [],
-    half: [2.5, 2.2, 9.6], com: [0, 0, 0], thrust: 78000, maxSpeed: 7, turn: 0.34, vert: 0.4,
+    name: 'Pacific', sub: true, power: true, big: true, mass: 42000, hp: 5000, fuelCap: 480, fuelUse: 0.9, wheels: [],
+    half: [3.0, 2.5, 12.5], com: [0, 0, 0], thrust: 110000, maxSpeed: 7, turn: 0.3, vert: 0.4,
     depths: [120, 200, 290, 400], moduleSlots: 4,
-    seats: [[0, -0.95, 7.55]], color: 0xd8dcd8, style: 'cyclops',
-    // walk-in hull: dry inside, hollow colliders, a rear moon-pool doorway, a buildable deck
-    interior: { hx: 2.2, y0: -1.45, y1: 1.75, hz: 9.15 },
-    boxes: [[0, -1.7, 0, 2.45, 0.3, 9.5], [0, 2.0, 0, 2.45, 0.25, 9.5], [2.35, 0.15, 0, 0.12, 1.65, 9.5], [-2.35, 0.15, 0, 0.12, 1.65, 9.5],
-      [0, 0.15, 9.38, 2.45, 1.65, 0.12], [1.6, 0.15, -9.38, 0.85, 1.65, 0.12], [-1.6, 0.15, -9.38, 0.85, 1.65, 0.12], [0, 1.4, -9.38, 0.75, 0.4, 0.12],
-      [0, -0.95, 8.75, 0.7, 0.45, 0.3]],
-    deck: { x: 0, y: -1.4, z: -0.6, cells: [-4, -2, 0, 2, 4], levels: 0 },
-    repair: { scrap: 200, titanium: 20, metal_frags: 600 },
+    seats: [[0, -1.2, 10.15]], color: 0xdcdcd6, style: 'cyclops',
+    interior: { hx: 2.75, y0: -1.7, y1: 2.1, hz: 12.2 },
+    // [cx, cy, cz, hx, hy, hz, role]
+    boxes: [[0, -2.0, 0, 2.95, 0.3, 12.4], [0, 2.35, 0, 2.95, 0.25, 12.4], [2.88, 0.2, 0, 0.1, 1.95, 12.4], [-2.88, 0.2, 0, 0.1, 1.95, 12.4],
+      [0, 0.2, 12.35, 2.95, 1.95, 0.1], [0, 0.2, -12.35, 2.95, 1.95, 0.1],
+      [1.75, 0.2, 8.6, 1.05, 1.95, 0.1], [-1.75, 0.2, 8.6, 1.05, 1.95, 0.1], [0, 1.65, 8.6, 0.7, 0.45, 0.1],
+      [1.75, 0.2, -8.4, 1.05, 1.95, 0.1], [-1.75, 0.2, -8.4, 1.05, 1.95, 0.1], [0, 1.65, -8.4, 0.7, 0.45, 0.1],
+      [0, -1.25, 11.0, 0.95, 0.45, 0.35, 'helm'], [-2.45, -1.0, -4.6, 0.32, 0.7, 0.6, 'dock'], [0, -0.4, -10.7, 1.0, 1.3, 1.0, 'engine']],
+    deck: { x: 0, y: -1.7, z: 0.5, cells: [-2, 0, 2], levels: 0 },
+    dock: { x: 0, y: -3.45, z: -4.6 },
+    hatch: { x: 1.7, z: -6.9 },
+    outfit: [['fabricator', 2.45, 6.9, -Math.PI / 2], ['wall_locker', -2.5, 6.0, Math.PI / 2], ['wall_locker', -2.5, 7.5, Math.PI / 2]],
+    repair: { scrap: 250, titanium: 25, metal_frags: 800 },
   },
 };
 export const VEHICLE_ENTER_RANGE = 3.8;
@@ -98,7 +106,7 @@ export function subStats(def, modules, ITEMS) {
   for (const st of modules || []) { const m = st && ITEMS[st.id]?.module; if (!m) continue; depth = Math.max(depth, m.depth || 0); thrust += m.thrust || 0; hull += m.hull || 0; eff += m.eff || 0; }
   return { crush: def.depths ? def.depths[depth] : 0, thrust: 1 + Math.min(0.75, thrust), hull: Math.min(0.6, hull), eff: Math.min(0.6, eff) };
 }
-export const SPAWNABLE = { atv: 'quad', jeep: 'buggy', scout: 'buggy', jeep4: 'suv', long: 'suv', pickup: 'truck', truck: 'truck', hauler: 'hauler', mobilebase: 'hauler', rowboat: 'rowboat', boat: 'motorboat', sub: 'minisub', minisub: 'minisub', submarine: 'minisub', cyclops: 'cyclops', bigsub: 'cyclops', leviathan: 'cyclops', motorboat: 'motorboat', skiff: 'motorboat' };
+export const SPAWNABLE = { atv: 'quad', jeep: 'buggy', scout: 'buggy', jeep4: 'suv', long: 'suv', pickup: 'truck', truck: 'truck', hauler: 'hauler', mobilebase: 'hauler', rowboat: 'rowboat', boat: 'motorboat', sub: 'minisub', minisub: 'minisub', submarine: 'minisub', cyclops: 'cyclops', bigsub: 'cyclops', leviathan: 'cyclops', pacific: 'cyclops', motorboat: 'motorboat', skiff: 'motorboat' };
 
 // Height of the chassis centre above the ground when resting on its wheels.
 export function restHeight(def) {
