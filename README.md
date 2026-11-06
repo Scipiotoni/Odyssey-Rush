@@ -152,6 +152,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/tpdeath` | Teleports you to where you last died (to get your loot back) |
 | `/resetserver` | Wipes the whole world for everyone (optionally a brand-new island). Asks you to type RESET and a one-time code, then confirm once more. Sign-in accounts are kept |
 | `/cave` | Drop into the caves right below you |
+| `/weather clear\|overcast\|rain\|storm [now]` | Change the weather (rolls in, or instantly with `now`) |
 | `/tp x z [y]` · `/tppoi [type]` · `/kit` · `/heal` · `/day 0-1` | Teleport, monument teleport, starter kit, full heal, time of day |
 
 ### Vehicle physics
@@ -167,6 +168,16 @@ over animals and players. Wheels kick up dust, mud, snow or spray depending on t
 Wind moves through dense grass, flowers, ferns, reeds and the trees; birds and gulls circle overhead by day and bats
 at night, butterflies drift over meadows, rabbits bolt when you get close, leaves fall in forests and fireflies come
 out after dark — with birdsong, crickets, owls and waves to match. Deer graze, wolves sniff the ground, bears waddle.
+
+### Weather
+
+The whole server shares one sky: clear spells cloud over, rain sets in and sometimes builds into a thunderstorm. Rain
+streaks slant in the wind, splashes on the ground, darkens the land and pulls the fog in; trees and grass thrash in the
+gusts. Lightning forks down with real flashes of light, and its thunder arrives later (count the seconds — sound travels
+~343 m/s): a sharp crack when it's close, a long rolling rumble when it's far. A strike right on top of you hurts.
+The rain sound is synthesised from thousands of individual drops (including the "plink" of drops on water), a pink-noise
+wash and gusting wind; under a roof it turns into a muffled patter on the roof, and underground it's almost silent.
+Admins can force it with `/weather clear|overcast|rain|storm [now]`.
 
 ### Survival
 

@@ -33,7 +33,8 @@ function checkPassword(pass, a) {
   const h = Buffer.from(hashPassword(pass, a.salt), 'hex'), w = Buffer.from(a.hash, 'hex');
   return h.length === w.length && crypto.timingSafeEqual(h, w);
 }
-const ADMIN_HELP = 'Admin: /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
+const WEATHER_TARGETS = { clear: { cloud: 0.12, rain: 0, storm: 0, wind: 0.3 }, overcast: { cloud: 0.75, rain: 0, storm: 0, wind: 0.5 }, rain: { cloud: 0.9, rain: 0.65, storm: 0.05, wind: 0.65 }, storm: { cloud: 1, rain: 1, storm: 1, wind: 1 } };
+const ADMIN_HELP = 'Admin: /weather clear|overcast|rain|storm · /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
 const regionOf = (x, z) => [Math.floor(x / CHUNK), Math.floor(z / CHUNK)];
 const rkey = (x, z) => { const [a, b] = regionOf(x, z); return chunkKey(a, b); };
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
@@ -67,7 +68,9 @@ export class Game {
     this.chunkCache = new Map();
     this.load(saved);
     this.lastTick = now();
-    this.acc = { stats: 0, save: 0, slow: 0 };
+    this.acc = { stats: 0, save: 0, slow: 0, weather: 0 };
+    // weather: clear -> overcast -> rain -> storm cycle shared by everyone
+    this.weather = { state: 'clear', until: now() + 300 + Math.random() * 600, cloud: 0.1, rain: 0, storm: 0, wind: 0.3, windDir: Math.random() * 6.28 };
   }
 
   id(prefix) { return `${prefix}${(this.nextId++).toString(36)}`; }
@@ -197,7 +200,7 @@ export class Game {
     this.fixInv(p);
     if (p.pendingDrop?.length) { this.dropBag(p.x, p.y, p.z, p.pendingDrop); this.toast(p, '🎒 Inventories got smaller: items that no longer fit are in a bag at your feet. Craft a Small Bag or Backpack for more room.'); } p.pendingDrop = null;
     ws.player = p;
-    this.send(p, { t: 'welcome', cm: this.caves.mods, terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
+    this.send(p, { t: 'welcome', wx: this.weatherMsg(), cm: this.caves.mods, terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
@@ -1401,6 +1404,43 @@ export class Game {
     this.toNear(p.x, p.z, 20, { t: 'fx', k: 'gunmod', p: [bench.x, bench.y, bench.z] });
     this.sendInv(p);
   }
+  // ------------------------------------------------------------ weather
+  setWeather(state, quick = false) {
+    const W = this.weather;
+    W.state = state;
+    const dur = { clear: [600, 1500], overcast: [180, 420], rain: [240, 600], storm: [180, 420] }[state];
+    W.until = now() + dur[0] + Math.random() * (dur[1] - dur[0]);
+    if (quick) { const T = WEATHER_TARGETS[state]; W.cloud = T.cloud; W.rain = T.rain; W.storm = T.storm; W.wind = T.wind; }
+    this.toAll(this.weatherMsg());
+  }
+  weatherMsg() { const W = this.weather; return { t: 'weather', s: W.state, c: r2(W.cloud), r: r2(W.rain), st: r2(W.storm), w: r2(W.wind), wd: r2(W.windDir) }; }
+  tickWeather(dt) {
+    const W = this.weather, t = now();
+    if (t > W.until) {
+      const r = Math.random();
+      const next = { clear: 'overcast', overcast: r < 0.6 ? 'rain' : 'clear', rain: r < 0.38 ? 'storm' : r < 0.75 ? 'overcast' : 'rain', storm: 'rain' }[W.state];
+      this.setWeather(next);
+    }
+    // ease toward the state's targets (a storm rolls in over a minute or two)
+    const T = WEATHER_TARGETS[W.state], k = Math.min(1, dt / 70);
+    W.cloud += (T.cloud - W.cloud) * k; W.rain += (T.rain - W.rain) * k; W.storm += (T.storm - W.storm) * k; W.wind += (T.wind - W.wind) * k;
+    W.windDir += (Math.random() - 0.5) * dt * 0.01;
+    this.acc.weather += dt;
+    if (this.acc.weather >= 4) { this.acc.weather = 0; this.toAll(this.weatherMsg()); }
+    // lightning: strikes around online players, more often as the storm peaks
+    if (W.storm > 0.35) {
+      const online = [...this.players.values()].filter((p) => p.online && p.y > CAVE_ZONE);
+      if (online.length && Math.random() < dt * W.storm * 0.22) {
+        const p = online[Math.floor(Math.random() * online.length)];
+        const close = Math.random() < 0.08;
+        const d = close ? 25 + Math.random() * 60 : 120 + Math.random() * 2200, a = Math.random() * Math.PI * 2;
+        const x = p.x + Math.cos(a) * d, z = p.z + Math.sin(a) * d;
+        this.toNear(x, z, 4200, { t: 'bolt', x: r2(x), z: r2(z), y: r2(this.world.ground(x, z)), s: Math.floor(Math.random() * 1e9), e: r2(0.6 + Math.random() * 0.4) });
+        // a strike right on top of someone in the open hurts
+        for (const o of online) if (Math.hypot(o.x - x, o.z - z) < 4 && !o.vehicle) this.damagePlayer(o, 45, 'lightning');
+      }
+    }
+  }
   // ------------------------------------------------------------ caves
   caveMod(x, y, z, r) {
     this.caves.addMod(r2(x), r2(y), r2(z), r);
@@ -1714,6 +1754,10 @@ export class Game {
       const nArg = [b, c].find((x) => x !== undefined && !isNaN(+x));
       const n = Math.max(1, Math.min(10000, nArg !== undefined ? num(nArg, 1) | 0 : ITEMS[id].stack || 1));
       this.give(p, id, n); this.sendInv(p);
+    } else if (cmd === 'weather') {
+      if (!WEATHER_TARGETS[a]) return this.toast(p, 'Usage: /weather clear | overcast | rain | storm');
+      this.setWeather(a, b === 'now');
+      this.toast(p, `🌦️ Weather → ${a}${b === 'now' ? ' (instantly)' : ' (rolling in)'}`);
     } else if (cmd === 'cave') {
       const key = `adm_${Math.round(p.x)}_${Math.round(p.z)}`;
       this.openCaveAt(key, p.x, p.z);
@@ -1985,6 +2029,7 @@ export class Game {
     this.tickExplosives();
     this.tickCrafting();
     this.tickAnimals(dt);
+    this.tickWeather(dt);
     this.acc.stats += dt; this.acc.save += dt; this.acc.slow += dt;
     if (this.acc.stats >= 1) { this.tickStats(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }

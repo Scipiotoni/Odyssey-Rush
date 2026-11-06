@@ -18,6 +18,7 @@ import { Nature } from './nature.js';
 import { Gunsmith } from './gunsmith.js';
 import { Caves, CAVE_ZONE } from '/shared/caves.js';
 import { CaveWorld } from './caves3d.js';
+import { Weather } from './weather.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -97,6 +98,9 @@ class Game {
     this.structures = new Structures(this.scene, this.physics, this.effects);
     this.nature = new Nature(this.scene, this.world, this.physics);
     this.caveWorld = new CaveWorld(this.scene, this.caves, this.world);
+    this.audio = audio;
+    this.weather = new Weather(this); this.weather.setDetail(this.settings.detail ?? 2);
+    if (this.pendingWeather) this.weather.setState(this.pendingWeather);
     this.structures.onChange = (x, z) => this.nature.grass.invalidate(x, z);
     this.nature.setDetail(this.settings.detail ?? 2); this.terrain.setDetail(this.settings.detail ?? 2);
     this.entities = new Entities(this.scene, this.effects);
@@ -125,6 +129,7 @@ class Game {
     this.renderer.setSize(innerWidth, innerHeight);
     this.nature?.setDetail(v);
     this.terrain?.setDetail(v);
+    this.weather?.setDetail(v);
   }
   setupSettings() {
     const s = this.settings;
@@ -150,6 +155,8 @@ class Game {
   // ------------------------------------------------------------------ networking
   bindNet() {
     const n = this.net;
+    n.on('weather', (m) => this.weather?.setState(m));
+    n.on('bolt', (m) => this.weather?.bolt(m));
     n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], m.m[3]); });
     n.on('reset_confirm', (m) => this.showResetDialog(m));
     n.on('server_reset', (m) => {
@@ -173,7 +180,7 @@ class Game {
     });
     n.on('welcome', (m) => {
       this.onEnter?.(); this.onEnter = null;
-      this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || [];
+      this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || []; this.pendingWeather = m.wx;
       this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen;
       this.initWorld(m.seed);
       this.player.pos.set(m.p[0], m.p[1], m.p[2]);
@@ -727,6 +734,7 @@ class Game {
     this.entities.updateExplosives(dt, audio, this.camera.position);
     this.effects.update(dt);
     this.sky.update(this.day, this.camera.position, dt, this.settings.viewDist);
+    this.weather.update(dt);
     if (this.camera.position.y < CAVE_ZONE) {
       // deep underground: no sun, black fog, your lantern does the work
       this.sky.sun.intensity = 0; this.sky.hemi.intensity = 0.04;

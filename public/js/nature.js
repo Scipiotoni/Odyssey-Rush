@@ -260,7 +260,7 @@ export class Nature {
   update(dt, cam, player, day, light, audio) {
     this.t += dt;
     WIND.uTime.value = this.t;
-    WIND.uWind.value = 0.85 + Math.sin(this.t * 0.07) * 0.35;
+    WIND.uWind.value = (0.85 + Math.sin(this.t * 0.07) * 0.35) * (this.windBoost || 1);
     const w = this.world, px = player.x, pz = player.z;
     this.grass.update(px, pz);
     const night = light < 0.35;

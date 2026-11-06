@@ -64,6 +64,8 @@ export class Terrain {
   }
 
   setDetail(v) { this.detailCount = [220, 420, 700, 950][v]; const nr = v === 0 ? 2 : 3; if (nr !== NODE_RADIUS) { NODE_RADIUS = nr; this.center = [NaN, NaN]; } for (const [, list] of this.details) for (const m of list) { this.scene.remove(m); m.dispose(); } this.details.clear(); this.center = [NaN, NaN]; }
+  // rain darkens the ground a little
+  setWet(w) { const k = 1 - w * 0.22; if (Math.abs(k - (this._wet ?? 1)) > 0.005) { this._wet = k; TERRAIN_MAT.color.setRGB(k, k, k * 1.02); } }
   setViewDist(v) { this.viewDist = v; this.center = [NaN, NaN]; }
   lodFor(d) { return d <= 2 ? 1 : d <= 4 ? 2 : d <= 7 ? 4 : 8; }
 
