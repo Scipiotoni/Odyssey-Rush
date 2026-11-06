@@ -1,5 +1,8 @@
-// The cave layer: a volumetric rock field far below the island (so it never touches the surface terrain).
-// rock(x,y,z) > 0 is solid rock, < 0 is open cave. Players carve it with shovels/pickaxes (mods = spheres).
+// The underground: one volumetric rock field from the surface down to bedrock. Below the ground it's solid, except for
+// branching tunnels at every depth (which break out of hillsides as cave mouths in some areas), ravines cutting down from
+// the surface, caverns, and the deep cavern band at the bottom. rock(x,y,z) > 0 is solid, < 0 open. Players dig it
+// anywhere (mods: carve spheres, or fill with a negative radius). Where it opens the surface the terrain gets a hole and
+// the cave mesh takes over (quadOpen).
 // Shared by the server (digging, loot spots, validation) and the client (meshing, collision).
 import { mulberry32 } from './noise.js';
 
@@ -7,6 +10,12 @@ export const CAVE_TOP = -168, CAVE_BOTTOM = -238;   // the band caves live in
 export const CAVE_ZONE = -120;                       // below this you're "in the caves"
 export const CAVE_ARRIVE = -200;                     // entrances / shafts drop you here
 export const CAVE_CELL = 16;                         // mesh chunk size (m)
+export const LAVA_Y = -226;                          // the deepest caverns floor out in lava
+export const QUAD = 4;                               // terrain grid quad (matches worldgen GRID)
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// digging layers by depth below the surface: [name, depth from, hardness, colour]
+export const LAYERS = [['Topsoil', 0, 1, [0.36, 0.27, 0.17]], ['Clay', 5, 0.85, [0.55, 0.36, 0.22]], ['Stone', 18, 0.68, [0.46, 0.44, 0.42]], ['Deepstone', 60, 0.5, [0.28, 0.29, 0.33]]];
+export function layerAt(depth) { let L = LAYERS[0]; for (const l of LAYERS) if (depth >= l[1]) L = l; return L; }
 
 // ---- 3D simplex noise (Gustavson), seeded
 const G3 = [[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0], [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1], [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]];
@@ -38,7 +47,9 @@ export class Caves {
   constructor(seed) {
     this.seed = seed;
     this.nA = makeNoise3(seed * 7 + 11); this.nB = makeNoise3(seed * 13 + 5); this.nC = makeNoise3(seed * 3 + 29); this.nO = makeNoise3(seed * 17 + 3);
-    this.nM = makeNoise3(seed * 19 + 7); this.nK = makeNoise3(seed * 23 + 13);
+    this.nM = makeNoise3(seed * 19 + 7); this.nK = makeNoise3(seed * 23 + 13); this.nR = makeNoise3(seed * 29 + 1);
+    this.surface = null;  // (x, z) => ground height (set by client/server: world.ground)
+    this.openCache = new Map();
     this.seaAbove = null; // (x, z) => true where the sea lies above: those caves are flooded
     this.mods = [];                // [x, y, z, r]
     this.modGrid = new Map();      // cell -> indices
@@ -46,8 +57,11 @@ export class Caves {
   // ---- player-carved spheres
   addMod(x, y, z, r) {
     const i = this.mods.length;
+    // forget cached surface holes near it
+    const R = Math.abs(r) + QUAD;
+    for (let a = Math.floor((x - R) / QUAD); a <= Math.floor((x + R) / QUAD); a++) for (let b = Math.floor((z - R) / QUAD); b <= Math.floor((z + R) / QUAD); b++) this.openCache?.delete(a * 100003 + b);
     this.mods.push([x, y, z, r]);
-    const c0 = Math.floor((x - r) / CAVE_CELL), c1 = Math.floor((x + r) / CAVE_CELL), d0 = Math.floor((z - r) / CAVE_CELL), d1 = Math.floor((z + r) / CAVE_CELL);
+    const ar = Math.abs(r), c0 = Math.floor((x - ar) / CAVE_CELL), c1 = Math.floor((x + ar) / CAVE_CELL), d0 = Math.floor((z - ar) / CAVE_CELL), d1 = Math.floor((z + ar) / CAVE_CELL);
     for (let a = c0; a <= c1; a++) for (let b = d0; b <= d1; b++) { const k = a * 100003 + b; let l = this.modGrid.get(k); if (!l) { l = []; this.modGrid.set(k, l); } l.push(i); }
     return i;
   }
@@ -66,12 +80,80 @@ export class Caves {
     // flat-ish floors in caverns: rock rises from below near the band bottom
     return Math.min(tunnel * 0.6, cavern * 0.35) + pen * 0.1;
   }
-  rock(x, y, z) {
-    if (y > CAVE_TOP + 6 || y < CAVE_BOTTOM - 6) return 1;
-    let d = this.base(x, y, z);
-    const l = this.modGrid.get(Math.floor(x / CAVE_CELL) * 100003 + Math.floor(z / CAVE_CELL));
-    if (l) for (const i of l) { const m = this.mods[i]; const dd = (Math.hypot(x - m[0], y - m[1], z - m[2]) - m[3]) * 0.03; if (dd < d) d = dd; }
+  // natural field (no player edits)
+  natural(x, y, z, s) {
+    if (y < CAVE_BOTTOM - 6) return 1;
+    const depth = s - y;
+    if (depth < -2) return -1;                  // open air above the ground
+    let d = depth * 0.12;
+    if (y > CAVE_TOP - 4) {
+      // spaghetti tunnels at every depth, a little wider the deeper you go
+      const yy = y * 1.4;
+      const a = this.nA(x * 0.026, yy * 0.026, z * 0.026), b = this.nB(x * 0.026 + 51, yy * 0.026, z * 0.026 - 27);
+      let t = (Math.max(Math.abs(a), Math.abs(b)) - (0.07 + 0.05 * smooth(15, 100, depth))) * 0.6;
+      // a solid crust near the surface, except where the hills have cave mouths
+      const mouth = smooth(0.34, 0.5, this.nO(x * 0.0035, 3.3, z * 0.0035));
+      t += smooth(6, 0.5, depth) * 0.35 * (1 - mouth);
+      // ravines: long cracks cut down from the surface in some regions
+      const rmask = smooth(0.38, 0.55, this.nR(x * 0.0007 + 40, 2.1, z * 0.0007));
+      if (rmask > 0 && depth < 45) {
+        const rv = Math.abs(this.nR(x * 0.0016, 0.5, z * 0.0016)), Dr = 20 + 22 * rmask;
+        t = Math.min(t, (rv - 0.016 * rmask * smooth(Dr, Dr * 0.3, depth)) * 6);
+      }
+      // big caverns at middle depths
+      if (depth > 30) t = Math.min(t, (0.52 - this.nC(x * 0.011, yy * 0.016, z * 0.011)) * 0.3 + smooth(42, 30, depth) * 0.25);
+      d = Math.min(d, t);
+    }
+    if (y < CAVE_TOP + 8) d = Math.min(d, this.base(x, y, z));
     return d;
+  }
+  rock(x, y, z) {
+    const s = this.surface ? this.surface(x, z) : 1e9;
+    if (!this.surface && (y > CAVE_TOP + 6 || y < CAVE_BOTTOM - 6)) return 1;
+    let d = this.natural(x, y, z, s);
+    const l = this.modGrid.get(Math.floor(x / CAVE_CELL) * 100003 + Math.floor(z / CAVE_CELL));
+    if (l) for (const i of l) {
+      const m = this.mods[i], dd = (Math.hypot(x - m[0], y - m[1], z - m[2]) - Math.abs(m[3])) * 0.03;
+      if (m[3] >= 0) { if (dd < d) d = dd; } else if (-dd > d) d = -dd; // carve or fill
+    }
+    return d;
+  }
+  // does the ground have a hole in this terrain quad (so the cave mesh is drawn there instead of the heightfield)?
+  quadOpen(i, j) {
+    const k = i * 100003 + j;
+    let v = this.openCache.get(k);
+    if (v === undefined) {
+      if (this.openCache.size > 200000) this.openCache.clear();
+      v = false;
+      for (const [fx, fz] of [[0.5, 0.5], [0.15, 0.15], [0.85, 0.15], [0.15, 0.85], [0.85, 0.85]]) {
+        const x = (i + fx) * QUAD, z = (j + fz) * QUAD, s = this.surface(x, z);
+        if (this.rock(x, s - 0.5, z) < 0) { v = true; break; }
+      }
+      this.openCache.set(k, v);
+    }
+    return v;
+  }
+  open(x, z) { return !!this.surface && this.quadOpen(Math.floor(x / QUAD), Math.floor(z / QUAD)); }
+  // is (x,y,z) inside the underground volume (use the rock field for collision) rather than on the heightfield?
+  inVolume(x, y, z) {
+    if (!this.surface) return y < CAVE_ZONE;
+    const s = this.surface(x, z);
+    return y < s - 0.4 || (y < s + 1.6 && this.open(x, z));
+  }
+  depthAt(x, y, z) { return this.surface ? this.surface(x, z) - y : 0; }
+  // underground lakes: some regions have a water table in their caves
+  lakeLevel(x, z) {
+    const R = 192, i = Math.floor(x / R), j = Math.floor(z / R);
+    const k = 'L' + i + '_' + j;
+    this._lakes = this._lakes || new Map();
+    let v = this._lakes.get(k);
+    if (v === undefined) {
+      const h = this.nM(i * 7.31 + 0.5, 91.7, j * 3.17 + 0.5) * 0.5 + 0.5;
+      v = h < 0.32 && this.surface ? this.surface((i + 0.5) * R, (j + 0.5) * R) - 28 - h * 90 : -Infinity;
+      if (v < CAVE_TOP + 10) v = -Infinity;
+      this._lakes.set(k, v);
+    }
+    return v;
   }
   // ore veins inside the rock: >0.55 metal, < -0.55 sulfur, plus rare crystal pockets
   ore(x, y, z) { return this.nO(x * 0.06, y * 0.06, z * 0.06); }

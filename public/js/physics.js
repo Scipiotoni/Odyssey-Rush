@@ -71,7 +71,7 @@ export class Physics {
 
   // Highest walkable surface at (x,z) not more than `maxUp` above y.
   groundAt(x, z, y, maxUp = 0.55, r = 0.0, ignore = null) {
-    if (this.caves && y < CAVE_ZONE) {
+    if (this.caves && this.caves.inVolume(x, y, z)) {
       // cave floor, or anything solid down there (the big sub's deck, structures you built)
       let g = this.caves.floorBelow(x, y + maxUp, z, maxUp + 6) ?? -1e6, surf = null;
       for (const c of this.query(x, z, r + 0.5, this._q1 || (this._q1 = []))) {
@@ -123,7 +123,7 @@ export class Physics {
   // Returns {ground:boolean, ceiling:boolean}. Mutates p and vel.
   moveBody(p, vel, r, h, dt, stepH = 0.55, ignore = null) {
     const res = { ground: false, ceiling: false };
-    if (this.caves && p.y < CAVE_ZONE) return this.caveMove(p, vel, r, h, dt, stepH, res);
+    if (this.caves && this.caves.inVolume(p.x, p.y, p.z)) return this.caveMove(p, vel, r, h, dt, stepH, res);
     const steps = Math.max(1, Math.ceil((Math.hypot(vel.x, vel.z) * dt) / (r * 0.8)));
     const sdt = dt / steps;
     const list = this._q2 || (this._q2 = []);
@@ -228,7 +228,7 @@ export class Physics {
   raycast(o, d, maxT, targets = null, opts = {}) {
     let best = { t: maxT, kind: null };
     // cave rock march
-    if (this.caves && o.y < CAVE_ZONE && !opts.noTerrain) {
+    if (this.caves && this.caves.inVolume(o.x, o.y, o.z) && !opts.noTerrain) {
       const C = this.caves, st = 0.25;
       let prev = 0;
       for (let t = st; t <= maxT; t += st) {
@@ -248,7 +248,12 @@ export class Physics {
         for (let t = step; t <= maxT + step; t += step) {
           const tt = Math.min(t, maxT);
           const x = o.x + d.x * tt, y = o.y + d.y * tt, z = o.z + d.z * tt;
-          const f = y - this.world.ground(x, z);
+          let f = y - this.world.ground(x, z);
+          // a hole in the ground: the ray carries on into it unless it meets the rock
+          if (f < 0 && this.caves?.open(x, z)) {
+            if (this.caves.rock(x, y, z) < 0) { prevT = tt; prevF = f; if (tt >= maxT) break; continue; }
+            best = { t: tt, kind: 'cave' }; break;
+          }
           if (f < 0) {
             let a = prevT, b = tt;
             for (let k = 0; k < 8; k++) {

@@ -8,7 +8,7 @@ import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatY
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
 import { seasonInfo, SEASON_DAYS, SEASONS, SEASON_NAMES, FOOTPRINT_LIFE } from '../shared/season.js';
-import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP } from '../shared/caves.js';
+import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP, LAVA_Y, LAYERS, layerAt } from '../shared/caves.js';
 import { dryCells, cellAt, sealedRooms, hullIntegrity, roomOfCell, HULL_BASE } from '../shared/sealed.js';
 import { IceField, iceFrozen, ICE_TOP, ICE_HOLE_R, ICE_REGEN, BREATH_MAX, breathDrain } from '../shared/ice.js';
 import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
@@ -92,6 +92,7 @@ export class Game {
     this.newPrints = new Map();
     this.ice = new IceField(this.world); // frozen lakes in winter; holes: {id, x, z, r, born}
     this.caves.seaAbove = (x, z) => this.world.ground(x, z) < -8 && !this.ice.inland(x, z); // caves under the sea are flooded
+    this.caves.surface = (x, z) => this.world.ground(x, z);
     this.chunkCache = new Map();
     this.load(saved);
     this.ice.setFrozen(iceFrozen(seasonInfo(this.year)));
@@ -1195,6 +1196,19 @@ export class Game {
 
   // ------------------------------------------------------------ terrain editing
   // Why is a grid vertex not editable? (null = ok)
+  // digging a hole near the surface: not under buildings, right next to trees/rocks, or in monuments
+  holeBlocked(x, z) {
+    if (this.inPOI(x, z)) return "Can't dig in monuments";
+    for (const s of this.structsNear(x, z, 0)) { const r = s.kind === 'piece' ? 3.2 : 1.6; if (Math.hypot(s.x - x, s.z - z) < r) return "Can't dig under a building"; }
+    const [cx, cz] = regionOf(x, z);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const k = chunkKey(cx + i, cz + j);
+      let list = this.chunkCache.get(k);
+      if (!list) { list = this.world.chunkNodes(cx + i, cz + j); this.chunkCache.set(k, list); }
+      for (const n of list) if (Math.abs(n.x - x) < 1.6 && Math.abs(n.z - z) < 1.6 && !(this.nodeState.get(n.id)?.hp <= 0)) return 'Too close to a tree or rock — chop or mine it first';
+    }
+    return null;
+  }
   digBlocked(ix, iz) {
     const x = ix * GRID, z = iz * GRID;
     if (this.inPOI(x, z)) return "Can't dig in monuments";
@@ -1845,28 +1859,57 @@ export class Game {
     this.send(p, { t: 'fishres', id: f.id, ok: 1 });
     this.toast(p, `🎣 You caught ${name}!`);
   }
+  // Dig anywhere: shovels (and drills) scoop smooth holes out of the ground, deeper layers are harder, and the dirt
+  // turns up finds; pickaxes chip rock and break out ore. RMB with a shovel fills (costs stone).
   onCaveDig(p, m) {
-    if (!p.alive || p.y > CAVE_ZONE) return;
+    if (!p.alive) return;
     const st = p.inv[num(m.sel) | 0], d = st && ITEMS[st.id];
     if (!d || !(d.dig || d.tool?.ore)) return;
     const t = now();
-    if (t - (p.lastDig || 0) < 0.35) return;
+    if (t - (p.lastDig || 0) < (d.digRate || 0.35)) return;
     p.lastDig = t;
     const pt = Array.isArray(m.pt) ? m.pt.slice(0, 3).map((v) => num(v)) : null;
-    if (!pt || Math.hypot(pt[0] - p.x, pt[1] - p.y - 1.4, pt[2] - p.z) > 5.5 || pt[1] > CAVE_TOP + 4) return;
+    if (!pt || Math.hypot(pt[0] - p.x, pt[1] - p.y - 1.4, pt[2] - p.z) > 5.5) return;
+    const s0 = this.world.ground(pt[0], pt[2]), depth = s0 - pt[1];
+    if (m.fill) {
+      if (!d.dig) return;
+      if (!this.settings.creative && Inv.count(p.inv, 'stone') < 3) return this.toast(p, 'Filling needs 3 stone');
+      if (Math.hypot(pt[0] - p.x, pt[1] - p.y - 0.9, pt[2] - p.z) < 1.4) return; // don't bury yourself
+      if (!this.settings.creative) { Inv.remove(p.inv, 'stone', 3); this.sendInv(p); }
+      this.caveMod(pt[0], pt[1], pt[2], -0.9);
+      return;
+    }
     if (this.caves.rock(pt[0], pt[1], pt[2]) < -0.05) return; // nothing solid there
-    const ore = this.caves.ore(pt[0], pt[1], pt[2]), crystal = this.caves.crystal(pt[0], pt[1], pt[2]);
-    const shovel = !!d.dig;
-    this.caveMod(pt[0], pt[1], pt[2], shovel ? 1.35 : 0.95);
-    const k = shovel ? 1 : 1.6 * (d.tool.ore || 1);
-    this.give(p, 'stone', Math.round((4 + Math.random() * 4) * k));
-    if (ore > 0.5) this.give(p, 'metal_ore', Math.round((5 + Math.random() * 6) * k));
-    else if (ore < -0.5) this.give(p, 'sulfur_ore', Math.round((5 + Math.random() * 6) * k));
-    if (crystal) this.give(p, 'hqm', 1 + Math.floor(Math.random() * 2 * k));
-    const min = this.caves.mineral(pt[0], pt[1], pt[2]);
-    if (min) this.give(p, min, Math.max(1, Math.round((min === 'kyanite' || min === 'quartz' ? 1 + Math.random() * 2 : 4 + Math.random() * 5) * k)));
+    if (depth < 3) {
+      if (this.inPOI(pt[0], pt[2])) return this.toast(p, "Can't dig in monuments");
+      const why = this.holeBlocked(pt[0], pt[2]);
+      if (why) return this.toast(p, why);
+      if (this.privBlocked(p, pt[0], pt[2])) return this.toast(p, 'Building blocked: someone else owns this area');
+    }
+    const L = layerAt(depth), shovel = !!d.dig;
+    const base = shovel ? (d.dig === true ? 1.0 : d.dig) : 0.75;
+    const r = Math.max(0.35, base * L[2]);
+    this.caveMod(pt[0], pt[1], pt[2], r);
+    const k = shovel ? r * r : 1.6 * (d.tool.ore || 1) / 18;
+    this.give(p, 'stone', Math.max(1, Math.round((2 + Math.random() * 3) * k * (depth > 5 ? 1.6 : 1))));
+    const ore = depth > 8 ? this.caves.ore(pt[0], pt[1], pt[2]) : 0, crystal = depth > 20 && this.caves.crystal(pt[0], pt[1], pt[2]);
+    const ok = shovel ? 0.6 : 1.4;
+    if (ore > 0.5) this.give(p, 'metal_ore', Math.round((5 + Math.random() * 6) * ok * (1 + k * 0.2)));
+    else if (ore < -0.5) this.give(p, 'sulfur_ore', Math.round((5 + Math.random() * 6) * ok * (1 + k * 0.2)));
+    if (crystal) this.give(p, 'hqm', 1 + Math.floor(Math.random() * 2 * ok));
+    const min = depth > 12 ? this.caves.mineral(pt[0], pt[1], pt[2]) : null;
+    if (min) this.give(p, min, Math.max(1, Math.round((min === 'kyanite' || min === 'quartz' ? 1 + Math.random() * 2 : 4 + Math.random() * 5) * ok)));
+    // things buried in the dirt, better the deeper you go
+    const FINDS = [[['bone', 2, 4], ['cloth', 3, 6], ['rope', 1, 1], ['scrap', 2, 5], ['berries', 1, 2]], [['scrap', 4, 8], ['metal_ore', 6, 12], ['bone', 3, 6], ['gears', 1, 1], ['pipe', 1, 1]], [['metal_ore', 10, 18], ['sulfur_ore', 8, 14], ['scrap', 6, 12], ['hqm', 1, 2], ['spring', 1, 1]], [['hqm', 2, 4], ['tech_trash', 1, 1], ['scrap', 10, 20], ['gears', 1, 2], ['pearl', 1, 1]]];
+    const li = LAYERS.indexOf(L);
+    if (Math.random() < 0.07 + li * 0.02) { const f = FINDS[li][Math.floor(Math.random() * FINDS[li].length)]; const n = f[1] + Math.floor(Math.random() * (f[2] - f[1] + 1)); this.give(p, f[0], n); }
+    if (depth > 4 && Math.random() < 0.004 + li * 0.002) {
+      // a buried chest!
+      for (const it of rollLoot(Math.min(3, 1 + li))) this.give(p, it.id, it.n);
+      this.toast(p, `📦 You dug up a buried chest (${L[0].toLowerCase()} layer, ${Math.round(depth)} m down)!`);
+    }
     this.addXp(p, 1);
-    this.toNear(pt[0], pt[2], 40, { t: 'fx', k: 'cavedig', p: pt, ore: ore > 0.5 ? 1 : ore < -0.5 ? 2 : crystal ? 3 : min ? 4 + ['copper_ore', 'lithium_ore', 'titanium_ore', 'quartz', 'kyanite'].indexOf(min) : 0 });
+    this.toNear(pt[0], pt[2], 40, { t: 'fx', k: 'cavedig', p: pt, ore: ore > 0.5 ? 1 : ore < -0.5 ? 2 : crystal ? 3 : min ? 4 + ['copper_ore', 'lithium_ore', 'titanium_ore', 'quartz', 'kyanite'].indexOf(min) : 0, layer: li });
   }
   // loot crates waiting in the larger caverns (spawned the first time someone explores nearby)
   ensureCaveLoot(p) {
@@ -2485,9 +2528,27 @@ export class Game {
       const id = this.id('A');
       this.animals.set(id, { id, type: 'shark', x, y: Math.max(g + 2, -4 - Math.random() * 10), z, yaw: Math.random() * 6.28, hp: ANIMALS.shark.hp, st: 0, tx: x, tz: z, until: 0, lastAtk: 0 });
     }
+    // cave spiders and bats in the dark, a few metres in
+    for (const p of online) {
+      if (!this.settings.animals || !this.caves.inVolume(p.x, p.y + 0.3, p.z) || this.caves.depthAt(p.x, p.y, p.z) < 8 || this.caves.flooded(p.x, p.z)) continue;
+      let near = 0;
+      for (const a of this.animals.values()) if (ANIMALS[a.type].cave && dist2(a, p) < 50 * 50) near++;
+      if (near >= 4 || Math.random() > 0.04) continue;
+      const type = Math.random() < 0.45 ? 'bat' : 'cave_spider';
+      for (let k = 0; k < 6; k++) {
+        const ang = Math.random() * 6.28, r = 12 + Math.random() * 18, x = p.x + Math.cos(ang) * r, z = p.z + Math.sin(ang) * r, y = p.y + (Math.random() - 0.3) * 8;
+        if (this.caves.rock(x, y, z) > -0.08 || !this.caves.inVolume(x, y, z)) continue;
+        const fy = type === 'cave_spider' ? this.caves.floorBelow(x, y, z, 12) : y;
+        if (fy === null || fy === undefined) continue;
+        const id = this.id('A');
+        this.animals.set(id, { id, type, x, y: fy, z, yaw: Math.random() * 6.28, hp: ANIMALS[type].hp, st: 0, tx: x, tz: z, ty: fy, until: 0, lastAtk: 0 });
+        break;
+      }
+    }
     for (const a of [...this.animals.values()]) {
       const def = ANIMALS[a.type];
       if (def.swim) { this.tickSwimmer(a, def, online, t, dt); continue; }
+      if (def.cave) { this.tickCaveCritter(a, def, online, t, dt); continue; }
       let nearest = null, nd = Infinity;
       for (const p of online) { if (p.vehicle || Math.abs(p.y - a.y) > 40) continue; const d = Math.sqrt(dist2(a, p)); if (d < nd) { nd = d; nearest = p; } }
       let anyNear = false;
@@ -2528,6 +2589,39 @@ export class Game {
         else { a.x = nx; a.z = nz; a.y = g; }
       }
     }
+  }
+  tickCaveCritter(a, def, online, t, dt) {
+    let nearest = null, nd = Infinity, anyNear = false;
+    for (const p of online) {
+      const d = Math.hypot(a.x - p.x, a.y - p.y - 0.8, a.z - p.z);
+      if (d < 120) anyNear = true;
+      if (!p.vehicle && d < nd) { nd = d; nearest = p; }
+    }
+    if (!anyNear) { this.animals.delete(a.id); return; }
+    const C = this.caves;
+    if (def.fly) {
+      // bats: flit about the open air, scatter from lights and people
+      if (t > a.until || Math.hypot(a.tx - a.x, a.ty - a.y, a.tz - a.z) < 1) { a.tx = a.x + (Math.random() - 0.5) * 14; a.ty = a.y + (Math.random() - 0.5) * 5; a.tz = a.z + (Math.random() - 0.5) * 14; a.until = t + 2 + Math.random() * 3; }
+      if (nearest && nd < 5) { a.tx = a.x + (a.x - nearest.x) * 2; a.tz = a.z + (a.z - nearest.z) * 2; }
+      const dx = a.tx - a.x, dy = a.ty - a.y, dz = a.tz - a.z, l = Math.hypot(dx, dy, dz) || 1, sp = def.speed * dt;
+      const nx = a.x + (dx / l) * sp, ny = a.y + (dy / l) * sp, nz = a.z + (dz / l) * sp;
+      if (C.rock(nx, ny, nz) > -0.05) { a.until = 0; return; }
+      a.x = nx; a.y = ny; a.z = nz; a.yaw = Math.atan2(dx, dz); a.st = 1;
+      return;
+    }
+    // spiders: creep along cave floors (and up slopes), rush you when close
+    let tx = a.tx, tz = a.tz, speed;
+    const hunting = nearest && nd < 22 && this.settings.difficulty !== 'peaceful';
+    if (hunting) { tx = nearest.x; tz = nearest.z; speed = def.speed; a.st = 1; if (nd < 1.7 + def.size && t - a.lastAtk > 1.1) { a.lastAtk = t; a.st = 2; this.damagePlayer(nearest, def.dmg, `a ${def.name.toLowerCase()}`); this.toNear(a.x, a.z, 40, { t: 'fx', k: 'bite', id: a.id }); } }
+    else { a.st = 0; speed = def.speed * 0.3; if (t > a.until || Math.hypot(a.tx - a.x, a.tz - a.z) < 1) { a.tx = a.x + (Math.random() - 0.5) * 16; a.tz = a.z + (Math.random() - 0.5) * 16; a.until = t + 3 + Math.random() * 5; } }
+    const dx = tx - a.x, dz = tz - a.z;
+    let dyaw = Math.atan2(dx, dz) - a.yaw; while (dyaw > Math.PI) dyaw -= 2 * Math.PI; while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+    a.yaw += Math.max(-5 * dt, Math.min(5 * dt, dyaw));
+    if (Math.hypot(dx, dz) < 1.2) return;
+    const nx = a.x + Math.sin(a.yaw) * speed * dt, nz = a.z + Math.cos(a.yaw) * speed * dt;
+    const fy = C.floorBelow(nx, a.y + 1.2, nz, 3);
+    if (fy === null || fy === undefined || C.rock(nx, fy + 0.5, nz) > 0) { a.yaw += Math.PI * (0.5 + Math.random()); a.until = 0; return; }
+    a.x = nx; a.z = nz; a.y = fy;
   }
   // sea creatures: swim in 3D, circle, then charge anyone in the water (not boats, not dry rooms)
   tickSwimmer(a, def, online, t, dt) {
@@ -2626,7 +2720,9 @@ export class Game {
       const sub = this.subAround(p), room = sub ? null : head < 1 ? this.roomAt(p.x, p.y + 0.2, p.z) : null;
       const wl = sub ? sub.y + VEHICLES[sub.type].interior.y0 + (sub.broken ? 99 : sub.flood || 0) : room ? room.floorY + room.level : null;
       p.dry = wl !== null && head > wl;
-      const under = !p.vehicle && (wl !== null ? head < wl - 0.05 : p.y > CAVE_ZONE ? head < -0.1 && this.world.ground(p.x, p.z) < head : this.caves.flooded(p.x, p.z));
+      const inVol = this.caves.inVolume(p.x, p.y + 0.3, p.z), lake = inVol ? this.caves.lakeLevel(p.x, p.z) : -Infinity;
+      const under = !p.vehicle && (wl !== null ? head < wl - 0.05 : inVol ? this.caves.flooded(p.x, p.z) || head < lake - 0.05 : head < -0.1 && this.world.ground(p.x, p.z) < head);
+      if (inVol && p.y < LAVA_Y + 0.4 && !p.vehicle) { p.hp -= 25 * dt; this.send(p, { t: 'hurt', dmg: 25 }); if (p.hp <= 0) { this.killPlayer(p, 'lava'); continue; } }
       if (p.breath === undefined) p.breath = BREATH_MAX;
       // the deeper you are, the faster a breath (or a tank) runs out
       const drain = breathDrain(-head);

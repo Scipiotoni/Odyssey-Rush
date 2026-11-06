@@ -96,6 +96,12 @@ function build(id) {
     case 'metal_pickaxe': return [P(cyl(0.02, 0.025, 0.62, 8), C.dwood, { y: 0.12 }), P(rb(0.04, 0.05, 0.08, 0.008), C.dmetal, { y: 0.42 }), P(cone(0.03, 0.22, 6), C.metal, { y: 0.42, z: -0.14, rx: -Math.PI / 2 - 0.15 }), P(box(0.05, 0.025, 0.16), C.metal, { y: 0.42, z: 0.11, rx: 0.15 }), P(cyl(0.024, 0.024, 0.12, 8), C.black, { y: -0.08 })];
     case 'hammer': return [P(cyl(0.018, 0.022, 0.42, 8), C.wood, { y: 0.06 }), P(rb(0.05, 0.05, 0.12, 0.008), C.dmetal, { y: 0.29, z: -0.02 }), P(cyl(0.028, 0.028, 0.03, 10), C.metal, { y: 0.29, z: -0.09, rx: Math.PI / 2 }), P(box(0.02, 0.03, 0.08), C.dmetal, { y: 0.3, z: 0.07, rx: -0.4 }), P(cyl(0.022, 0.022, 0.1, 8), C.red, { y: -0.08 })];
     case 'shovel': return [P(cyl(0.018, 0.022, 0.75, 8), C.wood, { y: 0.17 }), P(rb(0.14, 0.035, 0.035, 0.01), C.black, { y: -0.22 }), P(rb(0.16, 0.2, 0.015, 0.006), C.steel, { y: 0.63, rx: 0.15 }), P(cone(0.08, 0.06, 4), C.steel, { y: 0.75, rx: 0.15, ry: Math.PI / 4, sz: 0.2 })];
+    case 'steel_shovel': return [P(cyl(0.017, 0.02, 0.78, 8), C.steel, { y: 0.18 }), P(rb(0.13, 0.03, 0.03, 0.01), C.rubber, { y: -0.2 }), P(cyl(0.022, 0.022, 0.16, 8), C.rubber, { y: -0.12 }), P(rb(0.19, 0.24, 0.016, 0.006), 0x9aa4ad, { y: 0.68, rx: 0.15 }), P(cone(0.1, 0.07, 4), 0x9aa4ad, { y: 0.83, rx: 0.15, ry: Math.PI / 4, sz: 0.2 }), P(box(0.2, 0.02, 0.03), 0x6e767e, { y: 0.56, z: -0.01 })];
+    case 'power_drill': return [
+      P(rb(0.05, 0.16, 0.06, 0.012), 0xe0a020, { y: 0.02 }), P(rb(0.09, 0.05, 0.1, 0.01), C.dmetal, { y: -0.08 }), P(box(0.07, 0.012, 0.08), 0x3ac870, { y: -0.05 }),
+      P(rb(0.07, 0.08, 0.22, 0.02), 0xe0a020, { y: 0.14, z: -0.05 }), P(cyl(0.035, 0.035, 0.03, 12), C.dmetal, { y: 0.14, z: 0.075, rx: Math.PI / 2 }),
+      P(box(0.012, 0.03, 0.02), C.black, { y: 0.08, z: -0.035 }),
+      P(cyl(0.026, 0.02, 0.06, 10), C.dmetal, { y: 0.14, z: -0.19, rx: Math.PI / 2 }), P(cyl(0.008, 0.004, 0.16, 6), 0xd0d4d8, { y: 0.14, z: -0.3, rx: Math.PI / 2 }), P(helix(0.009, 0.12, 4, 0.003), 0xd0d4d8, { y: 0.14, z: -0.3, rx: Math.PI / 2 })];
     case 'spray_can': return [P(cyl(0.035, 0.035, 0.17, 14), 0xd8342a, { y: 0.085 }), P(cyl(0.036, 0.036, 0.035, 14), 0xe8e8e8, { y: 0.1 }), P(cyl(0.036, 0.03, 0.02, 14), 0xb8bcc0, { y: 0.18 }), P(cyl(0.016, 0.016, 0.03, 10), 0xf2f2f2, { y: 0.2 }), P(box(0.012, 0.012, 0.02), 0x222222, { y: 0.212, z: -0.014 }), P(tor(0.036, 0.004, Math.PI * 2, 14), 0x8a1c16, { y: 0.004, rx: Math.PI / 2 })];
     case 'building_plan': return [P(box(0.24, 0.006, 0.3), 0x2f5f9a, {}), P(box(0.25, 0.01, 0.04), 0x6a4a2a, { z: -0.15, y: 0.004 }), ...[0, 1, 2].map((i) => P(box(0.18, 0.008, 0.004), 0xe8f0ff, { y: 0.004, z: -0.06 + i * 0.06 })), P(box(0.004, 0.008, 0.2), 0xe8f0ff, { x: 0.05, y: 0.004 })];
     // ---------------- melee weapons
@@ -209,6 +215,7 @@ export function makeItemModel(id, mods = null) {
   const geo = itemGeometry(id);
   if (geo) { const m = new THREE.Mesh(geo, MAT); m.castShadow = true; g.add(m); }
   else if (d.deploy) { const m = new THREE.Mesh(deployGeometry(d.deploy.kind), MAT); m.scale.setScalar(0.2); m.castShadow = true; g.add(m); }
+  if (!g.children.length) { const m = new THREE.Mesh(rb(0.14, 0.14, 0.14, 0.02), MAT); m.position.y = 0.07; g.add(m); } // never an empty model
   if (id === 'torch') {
     const f = new THREE.Mesh(cone(0.05, 0.17, 6), new THREE.MeshBasicMaterial({ color: 0xffa030 }));
     f.position.y = 0.55; g.add(f); g.userData.flame = f;

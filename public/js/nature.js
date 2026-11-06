@@ -128,6 +128,7 @@ class Grass {
       if (!def || r > def.d) continue;
       if (w.groundNormal(x, z)[1] < 0.78) continue;
       if (inPoi(x, z)) continue;
+      if (this.physics.caves?.surface && this.physics.caves.open(x, z)) continue; // no grass floating over a hole
       if (cols.length) { const g = this.physics.groundAt(x, z, h + 4, 8); if (this.physics.lastSurf && g > h - 0.6) continue; }
       // a little clumping: grass thins out in noisy patches
       if (Math.sin(x * 0.21 + Math.sin(z * 0.13) * 2) * Math.sin(z * 0.19 + x * 0.05) > 0.55 && r2 < 0.6) continue;

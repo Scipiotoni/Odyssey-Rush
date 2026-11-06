@@ -79,6 +79,8 @@ export const ITEMS = {
   stone_pickaxe: { name: 'Stone Pickaxe', cat: 'tool', stack: 1, icon: '⛏️', tool: { tree: 4, ore: 18, dmg: 12, range: 2.4, rate: 1.3 } },
   metal_hatchet: { name: 'Metal Hatchet', cat: 'tool', stack: 1, icon: '🪓', tool: { tree: 32, ore: 6, dmg: 20, range: 2.5, rate: 1.6 }, tint: 0x9aa4ad },
   metal_pickaxe: { name: 'Metal Pickaxe', cat: 'tool', stack: 1, icon: '⛏️', tool: { tree: 6, ore: 32, dmg: 20, range: 2.5, rate: 1.5 }, tint: 0x9aa4ad },
+  steel_shovel: { name: 'Steel Shovel', cat: 'tool', stack: 1, icon: '🪏', tool: { tree: 3, ore: 8, dmg: 16, range: 3.4, rate: 2.4 }, dig: 1.35, digRate: 0.3, tint: 0x9aa4ad },
+  power_drill: { name: 'Power Drill', cat: 'tool', stack: 1, icon: '🛠️', tool: { tree: 5, ore: 30, dmg: 20, range: 3.4, rate: 3 }, dig: 1.9, digRate: 0.22 },
   shovel: { name: 'Shovel', cat: 'tool', stack: 1, icon: '🪏', tool: { tree: 2, ore: 4, dmg: 12, range: 3.2, rate: 2.2 }, dig: true },
   hammer: { name: 'Hammer', cat: 'tool', stack: 1, icon: '🔨', tool: { tree: 0, ore: 0, dmg: 5, range: 3.5, rate: 2 }, hammer: true },
   building_plan: { name: 'Building Plan', cat: 'tool', stack: 1, icon: '📐', plan: true },
@@ -151,6 +153,8 @@ export const ITEMS = {
   wood_door: { name: 'Wooden Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 200, tier: 'wood' } },
   metal_door: { name: 'Sheet Metal Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 400, tier: 'metal' } },
   armored_door: { name: 'Armored Door', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 900, tier: 'armored' } },
+  ladder: { name: 'Ladder', cat: 'deployable', stack: 10, icon: '🪜', deploy: { kind: 'ladder', hp: 150, wall: true } },
+  wall_torch: { name: 'Torch (placeable)', cat: 'deployable', stack: 20, icon: '🕯️', deploy: { kind: 'wall_torch', hp: 40, wall: true, light: true } },
   fabricator: { name: 'Fabricator', cat: 'deployable', stack: 1, icon: '🖨️', deploy: { kind: 'fabricator', hp: 900 } },
   wall_locker: { name: 'Wall Locker', cat: 'deployable', stack: 1, icon: '🗄️', deploy: { kind: 'wall_locker', hp: 500, slots: 24 } },
   hull_reinforcement: { name: 'Hull Reinforcement Frame', cat: 'deployable', stack: 4, icon: '🧱', deploy: { kind: 'hull_reinforcement', hp: 800, hull: 6 } },
@@ -294,6 +298,11 @@ RECIPES.push({ out: 'repair_tool', n: 1, time: 8, station: 'wb1', cost: { titani
 RECIPES.push({ out: 'hull_reinforcement', n: 1, time: 12, station: 'wb2', cost: { titanium: 6, metal_frags: 150, lithium: 1 } });
 RECIPES.push({ out: 'fabricator', n: 1, time: 30, station: 'wb2', cost: { titanium: 8, copper: 6, glass: 2, battery: 2, metal_frags: 300 } });
 RECIPES.push({ out: 'wall_locker', n: 1, time: 8, station: 'wb1', cost: { titanium: 2, metal_frags: 120 } });
+// ---- digging (appended: recipe ids are positional)
+RECIPES.push({ out: 'steel_shovel', n: 1, time: 8, station: 'wb1', cost: { metal_frags: 120, wood: 80 } });
+RECIPES.push({ out: 'power_drill', n: 1, time: 20, station: 'wb2', cost: { titanium: 4, battery: 2, gears: 2, metal_frags: 200 } });
+RECIPES.push({ out: 'ladder', n: 1, time: 3, cost: { wood: 60 } });
+RECIPES.push({ out: 'wall_torch', n: 2, time: 2, cost: { wood: 10, cloth: 2 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench', fabricator: 'Fabricator' };
@@ -355,7 +364,7 @@ export function itemMaxStack(id) { return ITEMS[id]?.stack || 1; }
 const SIZES = {
   // 2x2: long guns, big tools of war, bulky gear
   rifle: [2, 2], bolt_rifle: [2, 2], lmg: [2, 2], rocket_launcher: [2, 2], shotgun: [2, 2], double_barrel: [2, 2], crossbow: [2, 2],
-  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], o2_tank: [1, 2], minisub_kit: [2, 2], cyclops_kit: [2, 2], rowboat_kit: [2, 2], power_cell: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
+  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], steel_shovel: [1, 2], power_drill: [2, 1], ladder: [1, 2], o2_tank: [1, 2], minisub_kit: [2, 2], cyclops_kit: [2, 2], rowboat_kit: [2, 2], power_cell: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
   // long handles: 1 wide, 2 tall
   wooden_spear: [1, 2], stone_hatchet: [1, 2], stone_pickaxe: [1, 2], metal_hatchet: [1, 2], metal_pickaxe: [1, 2], shovel: [1, 2],
   machete: [1, 2], sword: [1, 2], battle_axe: [1, 2], bow: [1, 2], torch: [1, 2], cloth_pants: [1, 2], leather_pants: [1, 2], metal_legs: [1, 2], rocket: [1, 2],
@@ -387,5 +396,7 @@ export const ANIMALS = {
   boar: { name: 'Boar', hp: 60, speed: 6.5, aggro: 'defensive', dmg: 12, drops: { raw_meat: 5, leather: 12, animal_fat: 8, bone: 10 }, color: 0x4f3a2a, size: 0.8 },
   wolf: { name: 'Wolf', hp: 35, speed: 7.2, aggro: true, dmg: 8, drops: { raw_meat: 3, leather: 15, animal_fat: 3, bone: 8 }, color: 0x6b6b70, size: 0.85 },
   shark: { name: 'Shark', hp: 110, speed: 7.5, aggro: true, dmg: 24, drops: { raw_big_fish: 3, animal_fat: 8, bone: 12 }, color: 0x6c7a86, size: 1.5, swim: true },
+  cave_spider: { name: 'Cave Spider', hp: 45, speed: 5.5, aggro: true, dmg: 9, drops: { cloth: 6, raw_meat: 1, bone: 3 }, color: 0x2a2522, size: 0.7, cave: true },
+  bat: { name: 'Bat', hp: 8, speed: 6, aggro: false, dmg: 0, drops: { raw_meat: 1, bone: 1, leather: 2 }, color: 0x3a3030, size: 0.35, cave: true, fly: true },
   bear: { name: 'Bear', hp: 160, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
 };

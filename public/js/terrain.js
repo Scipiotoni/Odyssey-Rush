@@ -175,7 +175,36 @@ export class Terrain {
     return true;
   }
 
+  // a cave mouth, ravine or dug hole: rebuild the chunks around it so the ground gets its hole
+  refreshHoles(x, z, r) {
+    // batched: chunks are rebuilt at most a couple of times a second while you dig
+    this.holeDirty = this.holeDirty || new Set();
+    for (const dx of [-r - 4, 0, r + 4]) for (const dz of [-r - 4, 0, r + 4]) this.holeDirty.add(chunkKey(Math.floor((x + dx) / CHUNK), Math.floor((z + dz) / CHUNK)));
+    if (this.holeTimer) return;
+    this.holeTimer = setTimeout(() => {
+      this.holeTimer = null;
+      for (const k of this.holeDirty) { const c = this.chunks.get(k); if (c && c.lod <= 2 && !this.queue.some((q) => q.k === k)) { const [cx, cz] = k.split(',').map(Number); this.ver.set(k, (this.ver.get(k) || 0) + 1); this.queue.unshift({ k, x: cx, z: cz, lod: c.lod, d: 0 }); } }
+      this.holeDirty.clear();
+    }, 600);
+  }
+  // drop the triangles over open quads (the cave mesh draws the ground there)
+  cutHoles(d, lod) {
+    const caves = this.caves;
+    if (!caves?.surface || lod > 2) return d;
+    const P = d.pos, keep = new Uint8Array(P.length / 9);
+    let n = 0;
+    for (let t = 0; t < keep.length; t++) {
+      const o = t * 9, mx = (P[o] + P[o + 3] + P[o + 6]) / 3, mz = (P[o + 2] + P[o + 5] + P[o + 8]) / 3;
+      if (!caves.quadOpen(Math.floor(mx / 4), Math.floor(mz / 4))) { keep[t] = 1; n++; }
+    }
+    if (n === keep.length) return d;
+    const out = { pos: new Float32Array(n * 9), col: new Float32Array(n * 9), nrm: new Float32Array(n * 9) };
+    let w = 0;
+    for (let t = 0; t < keep.length; t++) if (keep[t]) { out.pos.set(d.pos.subarray(t * 9, t * 9 + 9), w); out.col.set(d.col.subarray(t * 9, t * 9 + 9), w); out.nrm.set(d.nrm.subarray(t * 9, t * 9 + 9), w); w += 9; }
+    return { ...d, ...out };
+  }
   installChunk(k, lod, ver, d) {
+    d = this.cutHoles(d, lod);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(d.pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(d.col, 3));
@@ -193,6 +222,7 @@ export class Terrain {
   disposeChunk(c) { this.scene.remove(c.mesh); c.mesh.geometry.dispose(); }
 
   buildNodes(nodes, k) {
+    if (this.caves?.surface) nodes = nodes.filter((n) => !this.caves.open(n.x, n.z)); // nothing stands over a cave mouth
     const byType = new Map();
     for (const n of nodes) { if (!byType.has(n.type)) byType.set(n.type, []); byType.get(n.type).push(n); }
     const meshes = [];

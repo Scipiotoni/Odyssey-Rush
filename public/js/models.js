@@ -391,6 +391,11 @@ export function deployGeometry(kind) {
         return merge(parts);
       }
       case 'small_box': return merge([part(box(0.9, 0.6, 0.6), 0x8a6238, { y: 0.3 }, 0.08), part(box(0.92, 0.06, 0.62), 0x5a3e22, { y: 0.45 })]);
+      case 'ladder': {
+        const W = 0x7a5534;
+        return merge([part(box(0.07, 3.2, 0.07), W, { x: -0.25, y: 1.6 }), part(box(0.07, 3.2, 0.07), W, { x: 0.25, y: 1.6 }), ...[0.3, 0.7, 1.1, 1.5, 1.9, 2.3, 2.7, 3.1].map((y) => part(box(0.5, 0.05, 0.06), 0x8a6544, { y }))]);
+      }
+      case 'wall_torch': return merge([part(box(0.05, 0.4, 0.05), 0x6a4a2a, { y: 0.2, rx: -0.3, z: -0.03 }), part(box(0.09, 0.1, 0.09), 0x3a2a1a, { y: 0.42, z: 0.03 }), part(new THREE.IcosahedronGeometry(0.07, 0), 0xffb040, { y: 0.52, z: 0.04 })]);
       case 'fabricator': {
         // a wall-mounted fabricator: white housing, a glowing print bay with nozzle arms, a screen
         const W = 0xe4e6e4, D = 0x3a3e44;

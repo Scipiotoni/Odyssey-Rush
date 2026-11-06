@@ -37,7 +37,7 @@ export class Player {
     let sx = (k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0);
     const len = Math.hypot(fx, sx) || 1; fx /= len; sx /= len;
     const fwd = [-Math.sin(this.yaw), -Math.cos(this.yaw)], right = [Math.cos(this.yaw), -Math.sin(this.yaw)];
-    const inCave = this.pos.y < CAVE_ZONE;
+    const inCave = g.caves ? g.caves.inVolume(this.pos.x, this.pos.y, this.pos.z) : this.pos.y < CAVE_ZONE;
     const groundY = inCave ? -1e6 : w.ground(this.pos.x, this.pos.z);
     // the water line here: the sea (0), whatever has leaked into a sealed room / the Pacific, or none (dry)
     const W = g.waterAt ? g.waterAt(this.pos) : { top: inCave ? -Infinity : 0 };
@@ -101,8 +101,12 @@ export class Player {
       const a = 1 - Math.exp(-accel * dt);
       this.vel.x += (tx - this.vel.x) * a;
       this.vel.z += (tz - this.vel.z) * a;
-      this.vel.y -= GRAV * dt;
-      if (k('Space') && this.onGround) { this.vel.y = JUMP; this.onGround = false; }
+      // ladders: hold W or Space to climb, let go to slide down slowly
+      const lad = g.structures?.ladderNear?.(this.pos);
+      if (lad && (fx > 0 || k('Space'))) { this.vel.y = 3.2; this.vel.x *= 0.6; this.vel.z *= 0.6; this.fallStart = null; }
+      else if (lad && !this.onGround) { this.vel.y = Math.max(this.vel.y - GRAV * dt, -2); this.fallStart = null; }
+      else this.vel.y -= GRAV * dt;
+      if (k('Space') && this.onGround && !lad) { this.vel.y = JUMP; this.onGround = false; }
     }
     const wasGround = this.onGround;
     const preVy = this.vel.y;

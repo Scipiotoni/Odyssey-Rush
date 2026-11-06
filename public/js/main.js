@@ -18,7 +18,7 @@ import { Builder } from './building.js';
 import { Painter } from './painter.js';
 import { Nature } from './nature.js';
 import { Gunsmith } from './gunsmith.js';
-import { Caves, CAVE_ZONE, CAVE_TOP } from '/shared/caves.js';
+import { Caves, CAVE_ZONE, CAVE_TOP, LAVA_Y, layerAt } from '/shared/caves.js';
 import { CaveWorld } from './caves3d.js';
 import { Weather } from './weather.js';
 import { Footprints } from './footprints.js';
@@ -102,11 +102,12 @@ class Game {
     this.physics = new Physics(this.world);
     this.caves = new Caves(seed); this.caves.setMods(this.pendingCaveMods || []);
     this.physics.caves = this.caves;
+    this.caves.surface = (x, z) => this.world.ground(x, z);
     this.caves.seaAbove = (x, z) => this.world.ground(x, z) < -8 && !(this.iceField && this.iceField.inland(x, z));
     this.sky = new Sky(this.scene);
     this.sky.sun.castShadow = this.settings.shadows;
     this.effects = new Effects(this.scene);
-    this.terrain = new Terrain(this.scene, this.world, this.physics);
+    this.terrain = new Terrain(this.scene, this.world, this.physics); this.terrain.caves = this.caves;
     this.terrain.shadows = this.settings.shadows;
     this.terrain.setViewDist(this.settings.viewDist);
     this.structures = new Structures(this.scene, this.physics, this.effects);
@@ -178,7 +179,7 @@ class Game {
     const n = this.net;
     n.on('weather', (m) => this.weather?.setState(m));
     n.on('bolt', (m) => this.weather?.bolt(m));
-    n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], m.m[3]); });
+    n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); const r = Math.abs(m.m[3]); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], r); if (Math.abs(m.m[1] - this.world.ground(m.m[0], m.m[2])) < r + 2.5) { this.terrain.refreshHoles(m.m[0], m.m[2], r); this.nature.grass?.invalidate?.(m.m[0], m.m[2]); } });
     n.on('reset_confirm', (m) => this.showResetDialog(m));
     n.on('server_reset', (m) => {
       this.resetting = m;
@@ -417,7 +418,7 @@ class Game {
       if (d < 120) { audio.iceCrack(true, d); if (d < 60) { this.effects.burst(pos, { count: 40, color: 0xe4f0f8, speed: 4.5, size: 0.11, life: 1.1, gravity: 9 }); this.effects.burst(pos, { count: 18, color: 0xbfdcec, speed: 2.5, size: 0.06, life: 0.8 }); } }
       return;
     }
-    if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff, 0x3aa080, 0xe890b0, 0xd8dce0, 0xf4f4ff, 0x3a70ff][m.ore || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
+    if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: m.ore ? [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff, 0x3aa080, 0xe890b0, 0xd8dce0, 0xf4f4ff, 0x3a70ff][m.ore] : [0x5c4530, 0x8c5c38, 0x75706a, 0x484a52][m.layer || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
     if (m.k === 'gunmod') { audio.click(); return; }
     if (m.k === 'throw') { this.held.showThrown(m.a, m.v, m.dur); return; }
     if (m.k === 'spray') { if (cam.distanceTo(new THREE.Vector3(...m.p)) < 30) audio.spray(); return; }
@@ -604,8 +605,9 @@ class Game {
       const target = v.view.pos.clone().add(new THREE.Vector3(0, def.half[1] + 1.2, 0));
       const want = target.clone().add(new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist));
       const gy = this.world.ground(want.x, want.z) + 0.6;
-      if (want.y < gy && v.view.pos.y > CAVE_ZONE) want.y = gy;
-      if (v.view.pos.y < CAVE_ZONE && this.caves.rock(want.x, want.y, want.z) > 0) want.lerp(target, 0.7); // keep the camera out of the rock
+      const vin = this.caves.inVolume(v.view.pos.x, v.view.pos.y, v.view.pos.z);
+      if (want.y < gy && !vin) want.y = gy;
+      if (vin && this.caves.rock(want.x, want.y, want.z) > 0) want.lerp(target, 0.7); // keep the camera out of the rock
       if (!this.vcamPos || this.vcamPos.distanceTo(want) > 30) this.vcamPos = want.clone();
       this.vcamPos.lerp(want, 1 - Math.exp(-dt * 10));
       cam.position.copy(this.vcamPos);
@@ -755,7 +757,12 @@ class Game {
     const sub = this.inSubInterior(pos);
     if (sub) { const I = VEHICLES[sub.type].interior, fl = sub.broken ? 99 : sub.flood || 0; return { inside: true, sub, top: fl > 0.02 ? sub.pos.y + I.y0 + fl : -Infinity }; }
     if (pos.y < 1 && pos.y > CAVE_ZONE) { const r = this.structures.roomAt(pos.x, pos.y + 0.2, pos.z); if (r) return { inside: true, room: r, top: r.level > 0.02 ? r.floorY + r.level : -Infinity }; }
-    if (pos.y < CAVE_ZONE) return { inside: false, top: this.caves.flooded(pos.x, pos.z) ? Infinity : -Infinity };
+    if (this.caves.inVolume(pos.x, pos.y, pos.z)) {
+      if (this.caves.flooded(pos.x, pos.z)) return { inside: false, top: Infinity };
+      const lk = this.caves.lakeLevel(pos.x, pos.z);
+      if (pos.y < lk + 1) return { inside: false, top: lk, cave: true }; // an underground lake
+      return { inside: false, top: -Infinity, lava: pos.y < LAVA_Y + 0.6 };
+    }
     return { inside: false, top: 0 };
   }
   // hull readout while you're inside a sealed space
@@ -822,8 +829,9 @@ class Game {
     const cockpit = this.vehicle && VEHICLES[this.vehicle.view.type].sub;
     const Wc = cockpit ? { inside: true, top: -Infinity } : this.waterAt(cam.clone().setY(cam.y - 1.0));
     const caveWet = !Wc.inside && Wc.top === Infinity;
-    const seaOutside = cam.y < CAVE_ZONE ? this.caves.flooded(cam.x, cam.z) : cam.y < -0.04 && this.world.ground(cam.x, cam.z) < cam.y;
-    const inWater = Wc.inside ? cam.y < Wc.top : caveWet || seaOutside;
+    const inVol = this.caves.inVolume(cam.x, cam.y, cam.z);
+    const seaOutside = inVol ? this.caves.flooded(cam.x, cam.z) : cam.y < -0.04 && this.world.ground(cam.x, cam.z) < cam.y;
+    const inWater = Wc.inside ? cam.y < Wc.top : caveWet || seaOutside || (Wc.cave && cam.y < Wc.top);
     const below = inWater || seaOutside;
     const dryRoom = Wc.inside && !inWater;
     const water = this.sky.water.material;
@@ -947,7 +955,9 @@ class Game {
     // world
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;
     this.terrain.update(cp.x, cp.z, 5);
-    const underground = this.camera.position.y < CAVE_ZONE;
+    // how far underground the camera is (0 on the surface, 1 = full darkness)
+    { const c = this.camera.position; this.ugDepth = this.caves.inVolume(c.x, c.y - 0.5, c.z) ? Math.max(0, this.caves.depthAt(c.x, c.y, c.z)) : 0; this.ugDark = Math.min(1, Math.max(0, (this.ugDepth - 2) / 10)); }
+    const underground = this.ugDark > 0.5;
     this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, underground ? null : audio, this.season);
     this.caveWorld.update(this.camera.position, dt);
     // blue holes: swim (or steer a sub) down into one to drop into the flooded caves, up its shaft to come back
@@ -964,7 +974,7 @@ class Game {
     }
     this.timers.entr = (this.timers.entr || 0) - dt;
     if (this.timers.entr <= 0) { this.timers.entr = 1; this.caveWorld.setEntrances(this.caveEntrances(cp.x, cp.z)); this.caveWorld.setBlueHoles(this.blueHoles || []); this.seaLife.setBlueHoles(this.blueHoles || []); }
-    this.structures.update(dt);
+    this.structures.update(dt, this.camera.position);
     this.entities.updatePlayers(dt, this.camera.position, this.vehicleViews);
     this.entities.updateAnimals(dt);
     this.entities.updateExplosives(dt, audio, this.camera.position);
@@ -983,13 +993,14 @@ class Game {
     this.seaLife.update(dt, this.camera.position, !!this.wasUnderwater);
     this.floodView.update(dt, this);
     if (this.fishing.state !== 'idle' && (!ITEMS[this.inv[this.sel]?.id]?.fishing || this.vehicle || !this.alive)) this.fishing.cancel();
-    if (this.camera.position.y < CAVE_ZONE) {
-      // deep underground: no sun, black fog, your lantern does the work
-      this.sky.sun.intensity = 0; this.sky.hemi.intensity = 0.04;
-      this.scene.fog.color.setRGB(0.02, 0.02, 0.025); this.scene.fog.near = 6; this.scene.fog.far = 55;
-      this.scene.background = this.caveBg || (this.caveBg = new THREE.Color(0x050506));
+    if (this.ugDark > 0.01) {
+      // underground: the daylight fades out a few metres in; black fog; your lantern and torches do the work
+      const k = this.ugDark;
+      this.sky.sun.intensity *= 1 - k; this.sky.hemi.intensity = this.sky.hemi.intensity * (1 - k) + 0.04 * k;
+      this.scene.fog.color.lerp(new THREE.Color(0.02, 0.02, 0.025), k); this.scene.fog.near = this.scene.fog.near * (1 - k) + 6 * k; this.scene.fog.far = this.scene.fog.far * (1 - k) + 60 * k;
+      if (k > 0.6) this.scene.background = this.caveBg || (this.caveBg = new THREE.Color(0x050506)); else if (this.scene.background === this.caveBg) this.scene.background = null;
       this.timers.drip = (this.timers.drip || 0) - dt;
-      if (this.timers.drip <= 0) { this.timers.drip = 1.5 + Math.random() * 4; audio.drip(); }
+      if (k > 0.5 && this.timers.drip <= 0) { this.timers.drip = 1.5 + Math.random() * 4; audio.drip(); }
     } else if (this.scene.background === this.caveBg) this.scene.background = null;
     this.underwaterView(dt);
 
@@ -1003,7 +1014,7 @@ class Game {
       const b = this.world.biome(cp.x, cp.z);
       const np = this.world.nearestPOI(cp.x, cp.z);
       const h = this.day * 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-      this.ui.topbar(this.player.yaw, cp.y < CAVE_ZONE ? `🕯️ Caves · ${Math.round(this.world.ground(cp.x, cp.z) - cp.y)} m deep · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${b === 0 && this.iceField.inland(cp.x, cp.z) ? (this.iceField.frozen ? 'Frozen lake' : 'Lake') : BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${SEASON_ICONS[this.season?.season ?? 1]} ${SEASON_NAMES[this.season?.season ?? 1]} · ${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ''}`);
+      this.ui.topbar(this.player.yaw, this.ugDepth > 3 ? `🕯️ Underground · ${Math.round(this.ugDepth)} m deep · ${layerAt(this.ugDepth)[0]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${b === 0 && this.iceField.inland(cp.x, cp.z) ? (this.iceField.frozen ? 'Frozen lake' : 'Lake') : BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${SEASON_ICONS[this.season?.season ?? 1]} ${SEASON_NAMES[this.season?.season ?? 1]} · ${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ''}`);
       this.ui.renderQueue(this.queue.map((q) => ({ ...q, left: Math.max(0, q.left - (now - (q._t || (q._t = now))) / 1000) })));
     }
     this.timers.save -= dt;

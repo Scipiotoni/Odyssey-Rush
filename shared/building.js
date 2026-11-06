@@ -88,6 +88,8 @@ export function pieceBoxes(type, open = false) {
     case 'large_box': return [[0, 0.4, 0, 0.75, 0.4, 0.45]];
     case 'furnace': return [[0, 0.7, 0, 0.6, 0.7, 0.6]];
     case 'tool_cupboard': return [[0, 0.9, 0, 0.45, 0.9, 0.3]];
+    case 'ladder': return [[0, 1.6, 0, 0.3, 1.6, 0.05]];
+    case 'wall_torch': return [];
     case 'fabricator': return [[0, 0.85, 0, 0.5, 0.85, 0.28]];
     case 'wall_locker': return [[0, 0.95, 0, 0.45, 0.95, 0.25]];
     case 'hull_reinforcement': return [[-1.2, 1.45, 0, 0.13, 1.45, 0.13], [1.2, 1.45, 0, 0.13, 1.45, 0.13]];

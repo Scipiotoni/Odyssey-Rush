@@ -13,6 +13,8 @@ export class Structures {
     this.map = new Map();       // id -> {s, obj}
     this.buildings = new Map(); // bid -> {x,y,z,yaw, pieces: Map id->s}
     this.fires = [];
+    // wall torches share a small pool of lights that follow the nearest ones (lights cost every shader, and adding one recompiles them all)
+    this.torchPool = Array.from({ length: 8 }, () => { const l = new THREE.PointLight(0xffa850, 0, 14, 1.5); scene.add(l); return l; });
     this.attached = new Map(); // vehicle id -> Set of struct ids riding on it (hauler deck)
   }
   // air-filled watertight rooms (shared/sealed.js); cached per building until anything changes. Water levels in them
@@ -29,6 +31,11 @@ export class Structures {
       if (dw) doors.set(slotKey(dw.gx, dw.gz, dw.level, 'edge'), { sealed: e.s.dt === 'sealed', open: !!e.s.open });
     }
     return (b._rooms = sealedRooms(pieces, doors));
+  }
+  ladderNear(p) {
+    if (!this._ladders || this._ladRev !== this.rev) { this._ladRev = this.rev; this._ladders = [...this.map.values()].filter((e) => e.s.type === 'ladder').map((e) => e.s); }
+    for (const s of this._ladders) if (Math.hypot(s.x - p.x, s.z - p.z) < 0.85 && p.y > s.y - 0.4 && p.y < s.y + 3.3) return s;
+    return null;
   }
   dryOf(b) { const d = new Set(); for (const r of this.roomsOf(b)) for (const k of r.cells) d.add(k); return d; }
   roomAt(x, y, z) {
@@ -75,6 +82,7 @@ export class Structures {
     } else {
       const dg = deployGeometry(s.type);
       obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(dg, 'd_' + s.type, s.pa) : dg, MAT);
+      if (s.type === 'wall_torch') this.fires.push({ id: s.id, light: null, s, obj, torch: true });
       if (s.type === 'lamp') { const light = new THREE.PointLight(0xffe2a8, 5, 16, 1.4); light.position.y = 1.5; obj.add(light); }
       if (s.type === 'campfire' || s.type === 'furnace') {
         const light = new THREE.PointLight(0xff9040, 6, 14, 1.6);
@@ -175,10 +183,20 @@ export class Structures {
     }
   }
 
-  update(dt) {
+  update(dt, cam) {
+    if (cam) {
+      const ts = this.fires.filter((f) => f.torch).map((f) => [f, (f.s.x - cam.x) ** 2 + (f.s.y - cam.y) ** 2 + (f.s.z - cam.z) ** 2]).filter((a) => a[1] < 60 * 60).sort((a, b) => a[1] - b[1]);
+      this.torchPool.forEach((l, i) => {
+        const f = ts[i]?.[0];
+        if (!f) { l.intensity = 0; return; }
+        const p = new THREE.Vector3(0, 0.6, 0.12).applyMatrix4(f.obj.matrixWorld);
+        l.position.copy(p); l.intensity = 3.2 + Math.random() * 1.2;
+      });
+    }
     for (const f of this.fires) {
+      if (!f.light) continue;
       f.light.intensity = 5 + Math.random() * 2.5;
-      if (Math.random() < dt * 25) this.effects.burst({ x: f.s.x, y: f.s.y + (f.s.type === 'campfire' ? 0.3 : 1.6), z: f.s.z }, { count: 1, color: Math.random() < 0.5 ? 0xffa030 : 0xff5010, speed: 0.6, up: 2, size: 0.12, life: 0.7, gravity: -2, drag: 1, glow: true, jitter: 0.3 });
+      if (Math.random() < dt * (f.torch ? 10 : 25)) this.effects.burst({ x: f.s.x, y: f.s.y + (f.s.type === 'campfire' ? 0.3 : f.torch ? 0.55 : 1.6), z: f.s.z }, { count: 1, color: Math.random() < 0.5 ? 0xffa030 : 0xff5010, speed: 0.6, up: 2, size: 0.12, life: 0.7, gravity: -2, drag: 1, glow: true, jitter: 0.3 });
     }
   }
 }

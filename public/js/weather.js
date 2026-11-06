@@ -168,7 +168,7 @@ export class Weather {
     this.bolts.push({ group, t: 0, strokes, dur: 0.12 + strokes * 0.09, x: m.x, y: m.y, z: m.z, e: m.e, dist });
     // thunder arrives at the speed of sound
     const delay = dist / 343;
-    const cave = cam.y < CAVE_ZONE;
+    const cave = cam.y < CAVE_ZONE || (!!this.g.caves && this.g.caves.inVolume(cam.x, cam.y, cam.z) && this.g.caves.depthAt(cam.x, cam.y, cam.z) > 3);
     const ang = Math.atan2(m.x - cam.x, m.z - cam.z), yaw = g.player.yaw;
     const pan = Math.sin(ang - (yaw + Math.PI));
     setTimeout(() => this.audio.thunder(dist, m.e || 1, -pan, cave), delay * 1000);
@@ -176,7 +176,7 @@ export class Weather {
 
   update(dt) {
     const g = this.g, cam = g.camera.position, sky = g.sky, cur = this.cur, T = this.target;
-    const cave = cam.y < CAVE_ZONE;
+    const cave = cam.y < CAVE_ZONE || (!!this.g.caves && this.g.caves.inVolume(cam.x, cam.y, cam.z) && this.g.caves.depthAt(cam.x, cam.y, cam.z) > 3);
     for (const k of ['c', 'r', 'st', 'w']) cur[k] += (T[k] - cur[k]) * Math.min(1, dt * 0.25);
     cur.wd = T.wd;
     // ---- shelter check (roof or vehicle overhead) a few times a second

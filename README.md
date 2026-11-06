@@ -15,6 +15,22 @@ Bases, gathered trees, holes you dig, vehicles and sleeping players are stored i
 server restarts. (Free hosting: after ~15 min with nobody online the server sleeps, so the first visit can
 take about a minute to load.)
 
+### Servers: public, private and your own rules
+
+The home screen has a **server browser**:
+
+- **Browse**: the official world and every public server, with player counts and rule tags (PvP, difficulty, creative, day length…).
+- **Join with code**: private servers aren't listed. Type the 6-letter **invite code** (plus the password, if the owner set one).
+- **Create**: make your own server (up to 3 per device). Pick a name, public or private, an optional password, a world seed
+  (or a random island), max players, **difficulty** (🕊️ Peaceful: animals and sharks don't hurt you and you can't starve ·
+  ⚔️ Normal · 💀 Hardcore: dying wipes your level, kills and respawn points), day and season length, gather rate, hunger and
+  thirst rate, PvP, animals and sharks on or off, and **Creative** (free building and crafting, the item spawner for everyone,
+  and the owner flies with **Z**).
+- **My servers**: change any setting later and it applies live for everyone online. You can also roll a new invite code,
+  generate a brand-new island, or delete the server. The owner has admin commands on their own server.
+
+Each server is its own saved world. Idle ones are saved and unloaded after 10 minutes and come back when someone joins.
+
 Hosting is defined in [`render.yaml`](render.yaml): a Node web service plus a Postgres database
 (`DATABASE_URL`). Pushing to the deployed branch redeploys automatically; players reconnect on their own.
 
@@ -57,7 +73,8 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | F | Drink (standing in a river or lake — the ocean is salty) |
 | L | Clan menu (create, invite, accept, kick) · clan chat: type `/c message` |
 | M | Map with fog-of-war (reveals as you explore, remembers discovered places) |
-| LMB / RMB with Shovel | Dig a hole (gives stone, sometimes ore) / pile up dirt (costs stone) |
+| LMB / RMB with Shovel or Drill | Dig anywhere — the ground scoops away smoothly, deeper layers are harder (stone, ores and buried finds) / fill a hole back in (3 stone) |
+| Z | Fly (server owner, Creative servers) |
 | X | Demolish your own piece (hammer, within 10 min of placing) |
 | G / H | Refuel / patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
@@ -117,11 +134,21 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    press **🔧 Customize weapons** to fit them with a live 3D preview and stat bars. Every part changes the real stats
    (suppressed shots are quiet with no muzzle flash, scopes zoom, lights light up caves) and shows on the gun. Pick one of
    9 finishes (black, desert, olive, arctic, crimson, cobalt, chrome, gold).
-9c. **Caves.** A huge, winding cave network lies ~200 m under the whole island. Climb down at a **Mine** (timber entrance),
-   or dig your own way in: keep digging a hole with the shovel until it can't go deeper and you break through into a shaft
-   with a ladder. Down there it's dark — bring a torch or a weapon light. Carve new tunnels with a shovel or pickaxe;
-   orange veins give metal ore, yellow ones sulfur, glowing crystals high quality metal. Explosives blast the rock open too.
-   Cavern crates hold good loot, and you can hide stashes and sleeping bags underground.
+9c. **The underground.** The whole island is solid ground you can walk into and dig through, all the way down:
+   - **Cave mouths** open in some hillsides and lead into winding **tunnels** at every depth. **Ravines** cut deep cracks into
+     the land, **caverns** open up from about 40 m down, and the deepest caverns, ~200 m below, floor out in **lava** (it burns).
+     Some caves hold **underground lakes**.
+   - **Dig anywhere** with a shovel: every scoop carves a smooth hole, and you can tunnel straight down, sideways or stairs.
+     The deeper you go, the harder the ground: **Topsoil → Clay (5 m) → Stone (18 m) → Deepstone (60 m)**. Better tools scoop
+     more (Shovel → **Steel Shovel** at Workbench 1 → **Power Drill** at Workbench 2, made with titanium and batteries).
+     The dirt turns up **finds** that get better with depth: bones, cloth and scrap near the top, gears, pipes and ore lower
+     down, HQM, tech trash and pearls deep down, and now and then a **buried chest**. Below 8 m you hit ore veins, below 12 m
+     the cave minerals, below 20 m crystals. **RMB fills** a hole back in (3 stone). You can't dig under buildings or monuments.
+   - It's **dark** a few metres in. Craft **Wall Torches** and stick them on any wall (only the nearest 8 give off light, so place
+     as many as you like), and **Ladders** to climb back out of a shaft you dug.
+   - **Bats** flutter about the caves, and **cave spiders** crawl the floors and bite (not on Peaceful servers).
+   - The **Mines** (timber entrances) still drop you into the deep cavern band. Cavern crates hold good loot, and you can hide
+     stashes and sleeping bags underground.
 9d. **New places.** Lighthouses, crashed cargo planes, ranger cabins, mines, bunker complexes, abandoned villages,
    observatories and beached shipwrecks join the older monuments.
 10. **Paint.** Craft a **Spray Can** (25 metal fragments, 5 cloth). Equip it and press **R** for the palette: 16 colours,

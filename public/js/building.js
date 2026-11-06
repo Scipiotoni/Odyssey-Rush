@@ -184,10 +184,16 @@ export class Builder {
       else {
         const p = hit.point;
         const gy = g.physics.groundAt(p.x, p.z, p.y + 0.1, 0.3);
-        if (Math.abs(gy - p.y) > 0.2) err = 'Needs a flat surface';
+        if (Math.abs(gy - p.y) > 0.2 && !d.deploy?.wall) err = 'Needs a flat surface';
         const np = g.world.nearestPOI(p.x, p.z);
         if (np && np.d < POI_FLAT + 12) err = "Can't deploy in monuments";
         plan = { t: { x: p.x, y: gy, z: p.z, yaw: g.player.yaw } };
+        if (d.deploy?.wall) {
+          // mounted on whatever you aim at: torches where you point, ladders standing on the floor against the wall
+          const dir = g.held.dir(), bx = p.x - dir.x * 0.12, bz = p.z - dir.z * 0.12;
+          const fy = d.deploy.kind === 'ladder' ? g.physics.groundAt(bx - dir.x * 0.2, bz - dir.z * 0.2, p.y + 0.3, 0.6) : p.y - 0.35;
+          plan = { t: { x: bx, y: fy > p.y - 4 ? fy : p.y - 1, z: bz, yaw: g.player.yaw } };
+        }
       }
       this.setGhost('d:' + d.deploy.kind, () => deployGeometry(d.deploy.kind));
     }

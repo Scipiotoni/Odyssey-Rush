@@ -52,7 +52,7 @@ export class SubSim {
     vS *= Math.exp(-2.2 * dt);
     // vertical: thrusters against water drag; floats up to the surface when out of power
     const surfaceY = -hy * 0.45 + waveHeight(this.pos.x, this.pos.z, t) * 0.6;
-    const inCave = this.pos.y < CAVE_ZONE;
+    const caves0 = this.physics.caves, inCave = caves0 ? caves0.inVolume(this.pos.x, this.pos.y, this.pos.z) : this.pos.y < CAVE_ZONE;
     vy += vert * a * def.vert * dt - vy * (Math.abs(vy) * 0.6 + 0.8) * dt;
     if (!canDrive && !inCave) vy += 0.4 * dt;
     if (!inCave && this.pos.y > surfaceY) { vy -= 9.8 * dt * Math.min(1, (this.pos.y - surfaceY) * 2); if (vert <= 0) vy += (surfaceY - this.pos.y) * 4 * dt; }
@@ -72,7 +72,7 @@ export class SubSim {
     let blocked = false, grounded = false;
     for (const [lx, ly, lz] of this.pts) {
       P.set(this.pos.x + lx * c2 + lz * s2, this.pos.y + ly + lz * Math.sin(-this.pitch), this.pos.z - lx * s2 + lz * c2);
-      if (P.y < CAVE_ZONE) {
+      if (caves ? caves.inVolume(P.x, P.y, P.z) : P.y < CAVE_ZONE) {
         if (caves && caves.rock(P.x, P.y, P.z) > 0) { blocked = true; break; }
         continue;
       }

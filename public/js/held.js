@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { VEHICLES } from '/shared/vehicles.js';
 import { ICE_HITS } from '/shared/ice.js';
+import { layerAt } from '/shared/caves.js';
 import { ITEMS, NODES, FIST } from '/shared/items.js';
 import { makeItemModel, makeFPArm } from './models.js';
 import { gunStats, modsKey } from '/shared/gunmods.js';
@@ -259,19 +260,19 @@ export class Held {
       return;
     }
     if (d.dig) {
+      // dig anywhere: LMB scoops out a hole (deeper layers are harder), RMB fills (3 stone)
       const hit = this.ray(4.5);
-      const onGround = hit && hit.kind === 'terrain', inRock = hit && hit.kind === 'cave';
-      g.ui.prompt(inRock ? '<kbd>LMB</kbd> carve through the rock (ore veins give ore)' : onGround ? '<kbd>LMB</kbd> dig · <kbd>RMB</kbd> pile up dirt (5 stone) · dig a hole to the bottom to break into the caves' : '<small>Aim at the ground to dig</small>');
-      if (inRock && L && performance.now() >= this.coolUntil) {
-        this.coolUntil = performance.now() + 420; this.swingAnim(0.45, true);
-        setTimeout(() => g.net.send({ t: 'cavedig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z] }), 200);
-        return;
-      }
+      const ok = hit && (hit.kind === 'terrain' || hit.kind === 'cave');
+      if (ok) {
+        const dep = g.world.ground(hit.point.x, hit.point.z) - hit.point.y, L = layerAt(dep);
+        const r = Math.max(0.35, (d.dig === true ? 1 : d.dig) * L[2]);
+        g.ui.prompt(`<kbd>LMB</kbd> dig · <kbd>RMB</kbd> fill (3 stone) <small>· ${L[0]}${dep > 1 ? `, ${Math.round(dep)} m down` : ''} · scoop ${r.toFixed(2)} m${L[2] < 0.7 ? ' — better tools dig faster here' : ''}</small>`);
+      } else g.ui.prompt('<small>Aim at the ground to dig</small>');
       const R = input.mouse.right;
       if ((L || R) && performance.now() >= this.coolUntil) {
-        this.coolUntil = performance.now() + 450;
-        this.swingAnim(0.45, true);
-        if (onGround) setTimeout(() => g.net.send({ t: 'dig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z], up: R && !L }), 200);
+        this.coolUntil = performance.now() + (d.digRate || 0.35) * 1000 + 80;
+        this.swingAnim(Math.max(0.25, (d.digRate || 0.35) + 0.1), true);
+        if (ok) setTimeout(() => { g.net.send({ t: 'cavedig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z], fill: R && !L ? 1 : undefined }); audio.dig(); }, 150);
         else if (L) this.melee(st, d);
       }
       return;

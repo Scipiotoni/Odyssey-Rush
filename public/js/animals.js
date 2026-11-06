@@ -30,6 +30,8 @@ const SPEC = {
 
 export function makeAnimal(type, color, size = 1) {
   if (type === 'shark') return makeShark(color, size);
+  if (type === 'cave_spider') return makeSpider(color, size);
+  if (type === 'bat') return makeBat(color, size);
   const sp = SPEC[type] || SPEC.deer, s = size;
   const C = new THREE.Color(color);
   const main = C.getHex(), dark = C.clone().multiplyScalar(0.62).getHex(), darker = C.clone().multiplyScalar(0.42).getHex();
@@ -115,6 +117,8 @@ export function makeAnimal(type, color, size = 1) {
 // Procedural animation: speed (m/s), state (0 idle/wander, 1 flee/chase, 2 attack), t seconds.
 export function animateAnimal(ud, e, speed, dt) {
   if (ud.type === 'shark') return animateShark(ud, e, speed, dt);
+  if (ud.type === 'cave_spider') return animateSpider(ud, e, speed, dt);
+  if (ud.type === 'bat') return animateBat(ud, e, speed, dt);
   const t = performance.now() / 1000;
   const running = speed > 3.5;
   e.walk = (e.walk || 0) + speed * dt * (running ? 1.35 : 2.6) / (ud.type === 'bear' ? 1.2 : 1);
@@ -189,4 +193,52 @@ function animateShark(ud, e, speed, dt) {
   ud.body.rotation.z = Math.sin(t * 0.7 + ud.seed) * 0.05;
   ud.body.position.y = ud.bodyY + Math.sin(t * 0.9 + ud.seed) * 0.08;
   ud.body.rotation.x = e.st === 2 ? Math.sin(t * 12) * 0.15 : 0;
+}
+
+// ---- cave spider: a hairy abdomen, a head with glowing eyes, eight jointed legs
+function makeSpider(color, s) {
+  const g = new THREE.Group(), body = joint(g, 0, 0.35 * s, 0);
+  const dark = new THREE.Color(color).multiplyScalar(0.7).getHex();
+  mesh(body, [part(blob(0.32 * s, 3, 0.2).scale(1, 0.8, 1.25), color, { z: -0.32 * s, y: 0.05 * s }), part(blob(0.2 * s, 5, 0.12), dark, { z: 0.12 * s }), part(blob(0.13 * s, 7, 0.1), color, { z: 0.32 * s, y: 0.02 * s }),
+    ...[-1, 1].flatMap((x) => [part(ico(0.035 * s, 0), 0xff3a2a, { x: x * 0.05 * s, y: 0.07 * s, z: 0.42 * s }), part(ico(0.025 * s, 0), 0xff3a2a, { x: x * 0.09 * s, y: 0.09 * s, z: 0.38 * s })]),
+    ...[-1, 1].map((x) => part(cone(0.03 * s, 0.14 * s, 4), 0x1a1210, { x: x * 0.05 * s, y: -0.04 * s, z: 0.44 * s, rx: Math.PI / 2 + 0.6 }))]);
+  const legs = [];
+  for (const side of [-1, 1]) for (let i = 0; i < 4; i++) {
+    const hip = joint(body, side * 0.15 * s, 0, (0.22 - i * 0.12) * s);
+    hip.rotation.y = side * (0.4 + i * 0.35) * (i < 2 ? -1 : 1) + (side < 0 ? Math.PI : 0);
+    mesh(hip, [part(cyl(0.025 * s, 0.03 * s, 0.4 * s, 4), dark, { x: 0.2 * s, y: 0.12 * s, rz: -1.0 })]);
+    const knee = joint(hip, 0.36 * s, 0.26 * s, 0);
+    mesh(knee, [part(cyl(0.018 * s, 0.025 * s, 0.5 * s, 4), color, { x: 0.12 * s, y: -0.2 * s, rz: 0.55 })]);
+    legs.push({ hip, knee, ph: i * 1.6 + (side > 0 ? Math.PI : 0) });
+  }
+  g.userData = { type: 'cave_spider', body, legs, bodyY: 0.35 * s, seed: Math.random() * 10 };
+  return g;
+}
+function animateSpider(ud, e, speed, dt) {
+  e.walk = (e.walk || 0) + dt * (2 + speed * 3);
+  for (const L of ud.legs) { L.hip.rotation.x = Math.sin(e.walk + L.ph) * 0.35 * Math.min(1, speed); L.knee.rotation.z = Math.max(0, Math.cos(e.walk + L.ph)) * 0.4 * Math.min(1, speed); }
+  ud.body.position.y = ud.bodyY + Math.abs(Math.sin(e.walk * 2)) * 0.03;
+  ud.body.rotation.x = e.st === 2 ? -0.35 + Math.sin(performance.now() / 60) * 0.1 : 0;
+}
+// ---- bat: furry body, big ears, membrane wings that flap
+function makeBat(color, s) {
+  const g = new THREE.Group(), body = joint(g, 0, 0, 0);
+  mesh(body, [part(blob(0.12 * s * 2, 9, 0.15).scale(0.8, 0.8, 1.2), color, {}), ...[-1, 1].map((x) => part(cone(0.05 * s * 2, 0.12 * s * 2, 3), color, { x: x * 0.07 * s * 2, y: 0.12 * s * 2, z: 0.08 * s * 2 }))]);
+  const wings = [];
+  for (const side of [-1, 1]) {
+    const w = joint(body, side * 0.1 * s * 2, 0.02, 0);
+    const geo = new THREE.BufferGeometry();
+    const W = 0.6 * s * 2;
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.12, side * W, 0.05, 0.05, side * W * 0.7, 0, -0.18, 0, 0, 0.12, side * W * 0.7, 0, -0.18, 0, 0, -0.12], 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x2a2020, side: THREE.DoubleSide, flatShading: true })); w.add(m);
+    wings.push({ w, side });
+  }
+  g.userData = { type: 'bat', body, wings, bodyY: 0, seed: Math.random() * 10 };
+  return g;
+}
+function animateBat(ud, e, speed, dt) {
+  e.walk = (e.walk || 0) + dt * 22;
+  for (const W of ud.wings) W.w.rotation.z = Math.sin(e.walk) * 0.9 * W.side;
+  ud.body.position.y = Math.sin(e.walk * 0.5) * 0.06;
 }

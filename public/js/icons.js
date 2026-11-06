@@ -63,6 +63,7 @@ class IconRenderer {
     this.scene.add(pivot);
     pivot.updateMatrixWorld(true);
     const bb = new THREE.Box3().setFromObject(pivot);
+    if (bb.isEmpty() || !Number.isFinite(bb.min.x + bb.max.x + bb.min.y + bb.max.y)) { this.scene.remove(pivot); return null; }
     const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
     const r = Math.max(sz.x, sz.y, sz.z) * 0.62 + 0.001;
     const dist = r / Math.tan((this.camera.fov * Math.PI) / 360);
