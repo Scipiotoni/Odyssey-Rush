@@ -7,6 +7,7 @@ import { pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTr
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { seasonInfo, SEASON_DAYS, SEASONS, SEASON_NAMES, FOOTPRINT_LIFE } from '../shared/season.js';
 import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP } from '../shared/caves.js';
 import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
 import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
@@ -34,7 +35,7 @@ function checkPassword(pass, a) {
   return h.length === w.length && crypto.timingSafeEqual(h, w);
 }
 const WEATHER_TARGETS = { clear: { cloud: 0.12, rain: 0, storm: 0, wind: 0.3 }, overcast: { cloud: 0.75, rain: 0, storm: 0, wind: 0.5 }, rain: { cloud: 0.9, rain: 0.65, storm: 0.05, wind: 0.65 }, storm: { cloud: 1, rain: 1, storm: 1, wind: 1 } };
-const ADMIN_HELP = 'Admin: /weather clear|overcast|rain|storm · /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
+const ADMIN_HELP = 'Admin: /season spring|summer|autumn|winter [late] · /weather clear|overcast|rain|storm · /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
 const regionOf = (x, z) => [Math.floor(x / CHUNK), Math.floor(z / CHUNK)];
 const rkey = (x, z) => { const [a, b] = regionOf(x, z); return chunkKey(a, b); };
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
@@ -65,6 +66,9 @@ export class Game {
     this.nextId = 1;
     this.nextPid = 1;
     this.day = 0.3;
+    this.year = 1.05;            // starts in early summer; 0 spring, 1 summer, 2 autumn, 3 winter
+    this.prints = new Map();     // region key -> [[x, z, yaw, time, kind]] footprints / tyre tracks in the snow
+    this.newPrints = new Map();
     this.chunkCache = new Map();
     this.load(saved);
     this.lastTick = now();
@@ -88,7 +92,7 @@ export class Game {
     if (d.customSeed) this.customSeed = true;
     try {
       if (d.seed !== this.seed) { console.log('[world] seed changed, starting fresh world'); return; }
-      this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3;
+      this.nextId = d.nextId || 1; this.nextPid = d.nextPid || 1; this.day = d.day ?? 0.3; this.year = d.year ?? 1.05;
       for (const p of d.players || []) { p.ws = null; p.online = false; p.regions = new Set(); p.queue = p.queue || []; p.openCont = null; p.vehicle = null; this.migrateInv(p); this.players.set(p.token, p); this.byPid.set(p.pid, p); }
       this.caves.setMods(d.caveMods || []); for (const k of d.caveOpened || []) this.caveOpened.add(k);
       for (const b of d.buildings || []) this.buildings.set(b.id, b);
@@ -109,7 +113,7 @@ export class Game {
   serialize() {
     const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, ...rest } = p; return rest; };
     const d = {
-      seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day,
+      seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day, year: this.year,
       players: [...this.players.values()].map(strip),
       buildings: [...this.buildings.values()],
       structs: [...this.structs.values()],
@@ -200,7 +204,7 @@ export class Game {
     this.fixInv(p);
     if (p.pendingDrop?.length) { this.dropBag(p.x, p.y, p.z, p.pendingDrop); this.toast(p, '🎒 Inventories got smaller: items that no longer fit are in a bag at your feet. Craft a Small Bag or Backpack for more room.'); } p.pendingDrop = null;
     ws.player = p;
-    this.send(p, { t: 'welcome', wx: this.weatherMsg(), cm: this.caves.mods, terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
+    this.send(p, { t: 'welcome', year: this.year, yearLen: DAY_LENGTH * SEASON_DAYS, wx: this.weatherMsg(), cm: this.caves.mods, terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
@@ -314,6 +318,7 @@ export class Game {
     p.sel = Math.max(0, Math.min(5, num(m.sel) | 0));
     this.updateRegions(p);
     if (p.y < CAVE_ZONE && t - (p.caveLootT || 0) > 3) { p.caveLootT = t; this.ensureCaveLoot(p); }
+    if (!p.vehicle && !p.air) this.footstep(p);
   }
 
   // speed of the vehicle a player says they're standing on (hauler deck), if plausible
@@ -342,7 +347,7 @@ export class Game {
       const [cx, cz] = k.split(',').map(Number);
       this.ensureSpawned(cx, cz);
       const r = this.region(k);
-      this.send(p, { t: 'rg', k, s: [...r.s].map((id) => this.sStruct(this.structs.get(id))).filter(Boolean), l: [...r.l].map((id) => this.sLoot(this.loot.get(id))).filter(Boolean), d: [...r.d] });
+      this.send(p, { t: 'rg', k, fp: this.printsMsg(k), s: [...r.s].map((id) => this.sStruct(this.structs.get(id))).filter(Boolean), l: [...r.l].map((id) => this.sLoot(this.loot.get(id))).filter(Boolean), d: [...r.d] });
     }
   }
 
@@ -1404,6 +1409,54 @@ export class Game {
     this.toNear(p.x, p.z, 20, { t: 'fx', k: 'gunmod', p: [bench.x, bench.y, bench.z] });
     this.sendInv(p);
   }
+  // ------------------------------------------------------------ seasons & footprints in the snow
+  snowAt(x, z, y) {
+    if (y !== undefined && y < CAVE_ZONE) return false;
+    const g = this.world.ground(x, z), b = this.world.biome(x, z, g);
+    if (g < 0.2 || b === BIOME.DESERT) return false;
+    return b === BIOME.SNOW || seasonInfo(this.year).snow > 0.3;
+  }
+  addPrint(x, z, yaw, kind) {
+    const k = rkey(x, z);
+    let l = this.prints.get(k);
+    if (!l) { l = []; this.prints.set(k, l); }
+    const pr = [r2(x), r2(z), r2(yaw), Math.floor(now()), kind];
+    l.push(pr); if (l.length > 5000) l.shift();
+    let n = this.newPrints.get(k); if (!n) { n = []; this.newPrints.set(k, n); } n.push(pr);
+  }
+  footstep(p) {
+    if (p.printX === undefined) { p.printX = p.x; p.printZ = p.z; return; }
+    const lx = p.printX, lz = p.printZ;
+    const d = Math.hypot(p.x - lx, p.z - lz);
+    if (d < (p.cr ? 0.5 : p.spr ? 0.95 : 0.72)) return;
+    p.printX = p.x; p.printZ = p.z;
+    if (d > 6 || !this.snowAt(p.x, p.z, p.y) || p.y - this.world.ground(p.x, p.z) > 0.4) return;
+    p.printSide = !p.printSide;
+    const yaw = Math.atan2(p.x - lx, p.z - lz), side = p.printSide ? 1 : -1;
+    this.addPrint(p.x + Math.cos(yaw) * 0.13 * side, p.z - Math.sin(yaw) * 0.13 * side, yaw, p.printSide ? 0 : 1);
+  }
+  tyreTracks(v) {
+    if (v.printX === undefined) { v.printX = v.x; v.printZ = v.z; return; }
+    const lx = v.printX, lz = v.printZ, d = Math.hypot(v.x - lx, v.z - lz);
+    if (d < 1.4) return;
+    v.printX = v.x; v.printZ = v.z;
+    if (d > 12 || !this.snowAt(v.x, v.z)) return;
+    const yaw = Math.atan2(v.x - lx, v.z - lz), def = VEHICLES[v.type], tr = def.track || 0.8;
+    for (const sd of [-1, 1]) this.addPrint(v.x + Math.cos(yaw) * tr * sd, v.z - Math.sin(yaw) * tr * sd, yaw, 2);
+  }
+  printsMsg(k) {
+    const l = this.prints.get(k), t = now();
+    return l ? l.filter((pr) => t - pr[3] < FOOTPRINT_LIFE).map((pr) => [pr[0], pr[1], pr[2], Math.floor(t - pr[3]), pr[4]]) : [];
+  }
+  flushPrints() {
+    if (!this.newPrints.size) return;
+    for (const [k, l] of this.newPrints) this.toRegion(k, { t: 'fp', p: l.map((pr) => [pr[0], pr[1], pr[2], 0, pr[4]]) });
+    this.newPrints.clear();
+  }
+  expirePrints() {
+    const t = now();
+    for (const [k, l] of this.prints) { const keep = l.filter((pr) => t - pr[3] < FOOTPRINT_LIFE); if (keep.length) this.prints.set(k, keep); else this.prints.delete(k); }
+  }
   // ------------------------------------------------------------ weather
   setWeather(state, quick = false) {
     const W = this.weather;
@@ -1428,7 +1481,7 @@ export class Game {
     this.acc.weather += dt;
     if (this.acc.weather >= 4) { this.acc.weather = 0; this.toAll(this.weatherMsg()); }
     // lightning: strikes around online players, more often as the storm peaks
-    if (W.storm > 0.35) {
+    if (W.storm > 0.35 && seasonInfo(this.year).season !== 3) {
       const online = [...this.players.values()].filter((p) => p.online && p.y > CAVE_ZONE);
       if (online.length && Math.random() < dt * W.storm * 0.22) {
         const p = online[Math.floor(Math.random() * online.length)];
@@ -1754,6 +1807,12 @@ export class Game {
       const nArg = [b, c].find((x) => x !== undefined && !isNaN(+x));
       const n = Math.max(1, Math.min(10000, nArg !== undefined ? num(nArg, 1) | 0 : ITEMS[id].stack || 1));
       this.give(p, id, n); this.sendInv(p);
+    } else if (cmd === 'season') {
+      const i = SEASONS.indexOf(String(a || ''));
+      if (i < 0) return this.toast(p, 'Usage: /season spring | summer | autumn | winter [late]');
+      this.year = i + (b === 'late' ? 0.6 : i === 3 ? 0.3 : 0.02);
+      this.toAll({ t: 'time', day: this.day, year: this.year, jump: 1 });
+      this.toast(p, `${['🌸', '☀️', '🍂', '❄️'][i]} It is now ${SEASON_NAMES[i]}`);
     } else if (cmd === 'weather') {
       if (!WEATHER_TARGETS[a]) return this.toast(p, 'Usage: /weather clear | overcast | rain | storm');
       this.setWeather(a, b === 'now');
@@ -1886,6 +1945,7 @@ export class Game {
     if (Math.abs(v.thr) > 0.05) { v.fuel = Math.max(0, v.fuel - VEHICLES[v.type].fuelUse * dt * Math.abs(v.thr)); }
     for (const pid of v.seats) { const o = this.byPid.get(pid); if (o) { o.x = v.x; o.y = v.y; o.z = v.z; this.updateRegions(o); } }
     this.refreshAttached(v);
+    this.tyreTracks(v);
   }
   onVehicleFuel(p, m) {
     const v = this.vehicles.get(String(m.id));
@@ -2026,6 +2086,9 @@ export class Game {
     const dt = Math.min(0.5, t - this.lastTick);
     this.lastTick = t;
     this.day = (this.day + dt / DAY_LENGTH) % 1;
+    const ps = Math.floor(this.year);
+    this.year = (this.year + dt / (DAY_LENGTH * SEASON_DAYS)) % 4;
+    if (Math.floor(this.year) !== ps) { const si = Math.floor(this.year); this.toAll({ t: 'chat', from: '', m: ['🌸 Spring is here — the snow melts and the flowers come back.', '☀️ Summer has arrived.', '🍂 Autumn: the leaves are turning.', '❄️ Winter has come. Snow will cover the island — dress warm and keep a fire going.'][si] }); this.toAll({ t: 'time', day: this.day, year: this.year }); }
     this.tickExplosives();
     this.tickCrafting();
     this.tickAnimals(dt);
@@ -2034,6 +2097,7 @@ export class Game {
     if (this.acc.stats >= 1) { this.tickStats(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }
     if (this.acc.save >= 60 && this.onSave) { this.acc.save = 0; this.onSave(); }
+    this.flushPrints();
     this.sendSnapshots();
     for (const p of this.players.values()) if (p.invDirty && p.online) this.sendInv(p);
   }
@@ -2052,6 +2116,7 @@ export class Game {
       const night = this.day > 0.78 || this.day < 0.2;
       let cold = 0;
       if (b === BIOME.SNOW) cold += 0.7;
+      if (p.y > CAVE_ZONE && b !== BIOME.DESERT) { const si = seasonInfo(this.year); cold += si.cold + (si.season === 3 ? this.weather.rain * 0.25 : 0); } // winter (and snowfall) bites
       if (night) cold += 0.25;
       if (p.y < 0.5 && this.world.ground(p.x, p.z) < 0) cold += 0.3;
       let warmth = 0;
@@ -2066,6 +2131,7 @@ export class Game {
 
   tickSlow() {
     const t = now();
+    this.expirePrints();
     for (const [id, st] of this.nodeState) {
       if (st.hp <= 0 && st.until < t) {
         this.nodeState.delete(id);
@@ -2083,7 +2149,7 @@ export class Game {
         if (!near) { l.slots = this.lootSlots(l.tier); l.respawn = 0; this.updLoot(l); }
       }
     }
-    this.toAll({ t: 'time', day: this.day });
+    this.toAll({ t: 'time', day: this.day, year: this.year });
   }
 
   sendSnapshots() {

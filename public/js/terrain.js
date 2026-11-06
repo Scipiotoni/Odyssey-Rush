@@ -8,21 +8,23 @@ import { BIOME } from '/shared/worldgen.js';
 import { hashRng } from '/shared/noise.js';
 import { buildChunkData } from './chunkgen.js';
 import { windMaterial } from './nature.js';
+import { applySeason, WORLD_MAT } from './season.js';
 
 // Trees and plants bend in the wind (more toward the top); each instance gets a slight colour shift.
 const TREE_MATS = {
-  tree_oak: windMaterial(MAT, { amp: 0.22, height: 8, freq: 0.9, key: 'oak' }),
-  tree_pine: windMaterial(MAT, { amp: 0.3, height: 10, freq: 0.75, key: 'pine' }),
-  tree_palm: windMaterial(MAT, { amp: 0.45, height: 10, freq: 0.7, key: 'palm' }),
-  tree_dead: windMaterial(MAT, { amp: 0.08, height: 6, freq: 0.8, key: 'dead' }),
-  hemp: windMaterial(MAT, { amp: 0.12, height: 1.2, freq: 1.6, key: 'hemp' }),
-  berry: windMaterial(MAT, { amp: 0.05, height: 1, freq: 1.4, key: 'berry' }),
+  tree_oak: windMaterial(MAT, { amp: 0.22, height: 8, freq: 0.9, key: 'oak', season: 'tree' }),
+  tree_pine: windMaterial(MAT, { amp: 0.3, height: 10, freq: 0.75, key: 'pine', season: 'pine' }),
+  tree_palm: windMaterial(MAT, { amp: 0.45, height: 10, freq: 0.7, key: 'palm', season: 'pine' }),
+  tree_dead: windMaterial(MAT, { amp: 0.08, height: 6, freq: 0.8, key: 'dead', season: 'world' }),
+  hemp: windMaterial(MAT, { amp: 0.12, height: 1.2, freq: 1.6, key: 'hemp', season: 'plant' }),
+  berry: windMaterial(MAT, { amp: 0.05, height: 1, freq: 1.4, key: 'berry', season: 'plant' }),
+  cactus: windMaterial(MAT, { amp: 0.0, height: 3, freq: 1, key: 'cactus', season: 'world' }),
 };
 const DETAIL_MATS = {
-  flower: windMaterial(MAT_DS, { amp: 0.1, height: 0.5, freq: 1.7, key: 'flower' }),
-  fern: windMaterial(MAT_DS, { amp: 0.12, height: 0.8, freq: 1.3, key: 'fern' }),
-  bush: windMaterial(MAT, { amp: 0.06, height: 1, freq: 1.2, key: 'bush' }),
-  reeds: windMaterial(MAT_DS, { amp: 0.2, height: 1.6, freq: 1.4, key: 'reeds' }),
+  flower: windMaterial(MAT_DS, { amp: 0.1, height: 0.5, freq: 1.7, key: 'flower', season: 'flower' }),
+  fern: windMaterial(MAT_DS, { amp: 0.12, height: 0.8, freq: 1.3, key: 'fern', season: 'plant' }),
+  bush: windMaterial(MAT, { amp: 0.06, height: 1, freq: 1.2, key: 'bush', season: 'plant' }),
+  reeds: windMaterial(MAT_DS, { amp: 0.2, height: 1.6, freq: 1.4, key: 'reeds', season: 'plant' }),
 };
 const FLOWER_COLS = [0xf2d23a, 0xe2485e, 0xf4f0ea, 0x9a62d8, 0xf08a2a, 0x5aa0f0, 0xf07ab8];
 const _tc = new THREE.Color();
@@ -65,7 +67,8 @@ export class Terrain {
 
   setDetail(v) { this.detailCount = [220, 420, 700, 950][v]; const nr = v === 0 ? 2 : 3; if (nr !== NODE_RADIUS) { NODE_RADIUS = nr; this.center = [NaN, NaN]; } for (const [, list] of this.details) for (const m of list) { this.scene.remove(m); m.dispose(); } this.details.clear(); this.center = [NaN, NaN]; }
   // rain darkens the ground a little
-  setWet(w) { const k = 1 - w * 0.22; if (Math.abs(k - (this._wet ?? 1)) > 0.005) { this._wet = k; TERRAIN_MAT.color.setRGB(k, k, k * 1.02); } }
+  setWet(w) {
+    if (!TERRAIN_MAT._season) { TERRAIN_MAT._season = true; applySeason(TERRAIN_MAT, 'ground'); } const k = 1 - w * 0.22; if (Math.abs(k - (this._wet ?? 1)) > 0.005) { this._wet = k; TERRAIN_MAT.color.setRGB(k, k, k * 1.02); } }
   setViewDist(v) { this.viewDist = v; this.center = [NaN, NaN]; }
   lodFor(d) { return d <= 2 ? 1 : d <= 4 ? 2 : d <= 7 ? 4 : 8; }
 
@@ -195,7 +198,7 @@ export class Terrain {
     const meshes = [];
     const group = 'nodes:' + k;
     for (const [type, list] of byType) {
-      const im = new THREE.InstancedMesh(nodeGeometry(type), TREE_MATS[type] || MAT, list.length);
+      const im = new THREE.InstancedMesh(nodeGeometry(type), TREE_MATS[type] || WORLD_MAT, list.length);
       im.castShadow = this.shadows && NODES[type].kind !== 'pick';
       im.receiveShadow = false;
       const def = NODES[type];
@@ -246,7 +249,7 @@ export class Terrain {
     for (const kind in lists) {
       const L = lists[kind];
       if (!L.length) continue;
-      const im = new THREE.InstancedMesh(detailGeometry(kind), DETAIL_MATS[kind] || (kind === 'pebbles' || kind === 'mushroom' || kind === 'stick' ? MAT : MAT_DS), L.length);
+      const im = new THREE.InstancedMesh(detailGeometry(kind), DETAIL_MATS[kind] || (kind === 'pebbles' || kind === 'mushroom' || kind === 'stick' ? WORLD_MAT : MAT_DS), L.length);
       L.forEach(([x, y, z, r, sc], i) => {
         _q.setFromAxisAngle(_up, r); _s.set(sc, sc, sc); _p.set(x, y - 0.02, z); _m.compose(_p, _q, _s); im.setMatrixAt(i, _m);
         if (kind === 'flower') im.setColorAt(i, _tc.set(FLOWER_COLS[Math.floor((r * 1000) % FLOWER_COLS.length)]));
@@ -295,7 +298,7 @@ export class Terrain {
       if (this.pois.has(p.id)) continue;
       const lay = this.world.poiLayout(p);
       const geo = poiGeometry(lay);
-      const mesh = geo ? new THREE.Mesh(geo, MAT) : null;
+      const mesh = geo ? new THREE.Mesh(geo, WORLD_MAT) : null;
       if (mesh) { mesh.castShadow = this.shadows; mesh.receiveShadow = true; this.scene.add(mesh); }
       const group = 'poi:' + p.id;
       for (const pr of lay.props) {

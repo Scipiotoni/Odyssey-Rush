@@ -19,6 +19,9 @@ import { Gunsmith } from './gunsmith.js';
 import { Caves, CAVE_ZONE } from '/shared/caves.js';
 import { CaveWorld } from './caves3d.js';
 import { Weather } from './weather.js';
+import { Footprints } from './footprints.js';
+import { SEASON } from './season.js';
+import { seasonInfo, SEASON_NAMES, SEASON_ICONS } from '/shared/season.js';
 import { Held } from './held.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -99,6 +102,7 @@ class Game {
     this.nature = new Nature(this.scene, this.world, this.physics);
     this.caveWorld = new CaveWorld(this.scene, this.caves, this.world);
     this.audio = audio;
+    this.footprints = new Footprints(this.scene, this.world);
     this.weather = new Weather(this); this.weather.setDetail(this.settings.detail ?? 2);
     if (this.pendingWeather) this.weather.setState(this.pendingWeather);
     this.structures.onChange = (x, z) => this.nature.grass.invalidate(x, z);
@@ -181,7 +185,7 @@ class Game {
     n.on('welcome', (m) => {
       this.onEnter?.(); this.onEnter = null;
       this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || []; this.pendingWeather = m.wx;
-      this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen;
+      this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen; this.year = m.year ?? 1.05; this.yearLen = m.yearLen || 4800;
       this.initWorld(m.seed);
       this.player.pos.set(m.p[0], m.p[1], m.p[2]);
       this.player.yaw = m.yaw || 0;
@@ -211,11 +215,12 @@ class Game {
     n.on('toast', (m) => this.ui.toast(m.m));
     n.on('chat', (m) => this.ui.chat(m.from, m.m, m.clan));
     n.on('claninfo', (m) => { this.clanInfo = m; if (this.ui.open === 'clan') this.ui.renderClan(); });
-    n.on('time', (m) => (this.day = m.day));
+    n.on('time', (m) => { this.day = m.day; if (m.year !== undefined) this.year = m.year; });
     n.on('v_reset', (m) => { const v = this.vehicle; if (v && v.id === m.id && v.sim) { v.sim.setState(m.p, m.q, [0, 0, 0]); v.sim.ang.set(0, 0, 0); } });
     n.on('tp', (m) => { this.ride = null; this.tpSeq = m.seq || 0; this.player.pos.set(m.p[0], m.p[1], m.p[2]); this.player.vel.set(0, 0, 0); });
     n.on('rg', (m) => {
       const rc = { s: new Set(), l: new Set(), d: new Set(m.d) };
+      if (m.fp) this.footprints?.add(m.k, m.fp, true);
       this.regionContents.set(m.k, rc);
       for (const s of m.s) { this.structures.upsert(s); rc.s.add(s.id); }
       for (const l of m.l) { this.entities.addLoot(l, this.physics); rc.l.add(l.id); }
@@ -223,6 +228,7 @@ class Game {
       this.refreshBags();
     });
     n.on('rgu', (m) => {
+      this.footprints?.drop(m.k);
       const rc = this.regionContents.get(m.k);
       if (!rc) return;
       for (const id of rc.s) this.structures.remove(id);
@@ -231,6 +237,7 @@ class Game {
       this.regionContents.delete(m.k);
     });
     const regionOf = (x, z) => chunkKey(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
+    n.on('fp', (m) => { if (m.p.length) this.footprints?.add(regionOf(m.p[0][0], m.p[0][1]), m.p); });
     n.on('sadd', (m) => { this.structures.upsert(m.s); if (!m.s.veh) this.regionContents.get(regionOf(m.s.x, m.s.z))?.s.add(m.s.id); this.refreshBags(); if (m.s.o === this.pid) audio.hitStruct(); });
     n.on('supd', (m) => this.structures.upsert(m.s));
     n.on('vpaint', (m) => { const v = this.vehicleViews.get(m.id); if (v) v.setPaint(m); });
@@ -724,7 +731,7 @@ class Game {
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;
     this.terrain.update(cp.x, cp.z, 5);
     const underground = this.camera.position.y < CAVE_ZONE;
-    this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, underground ? null : audio);
+    this.nature.update(dt, this.camera.position, cp, this.day, this.sky.dayLight, underground ? null : audio, this.season);
     this.caveWorld.update(this.camera.position, dt);
     this.timers.entr = (this.timers.entr || 0) - dt;
     if (this.timers.entr <= 0) { this.timers.entr = 1; this.caveWorld.setEntrances(this.caveEntrances(cp.x, cp.z)); }
@@ -734,7 +741,12 @@ class Game {
     this.entities.updateExplosives(dt, audio, this.camera.position);
     this.effects.update(dt);
     this.sky.update(this.day, this.camera.position, dt, this.settings.viewDist);
+    // seasons: advance the year locally between server syncs and feed the season shaders
+    this.year = ((this.year ?? 1.05) + dt / (this.yearLen || 4800)) % 4;
+    this.season = seasonInfo(this.year);
+    SEASON.uSnow.value = this.season.snow; SEASON.uFrost.value = this.season.frost; SEASON.uAutumn.value = this.season.autumn; SEASON.uBloom.value = this.season.bloom;
     this.weather.update(dt);
+    this.footprints.update(dt, this.camera.position);
     if (this.camera.position.y < CAVE_ZONE) {
       // deep underground: no sun, black fog, your lantern does the work
       this.sky.sun.intensity = 0; this.sky.hemi.intensity = 0.04;
@@ -754,7 +766,7 @@ class Game {
       const b = this.world.biome(cp.x, cp.z);
       const np = this.world.nearestPOI(cp.x, cp.z);
       const h = this.day * 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-      this.ui.topbar(this.player.yaw, cp.y < CAVE_ZONE ? `🕯️ Caves · ${Math.round(this.world.ground(cp.x, cp.z) - cp.y)} m deep · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ' ☀️'}`);
+      this.ui.topbar(this.player.yaw, cp.y < CAVE_ZONE ? `🕯️ Caves · ${Math.round(this.world.ground(cp.x, cp.z) - cp.y)} m deep · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${SEASON_ICONS[this.season?.season ?? 1]} ${SEASON_NAMES[this.season?.season ?? 1]} · ${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ''}`);
       this.ui.renderQueue(this.queue.map((q) => ({ ...q, left: Math.max(0, q.left - (now - (q._t || (q._t = now))) / 1000) })));
     }
     this.timers.save -= dt;

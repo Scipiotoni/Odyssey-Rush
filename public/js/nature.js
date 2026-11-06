@@ -3,12 +3,13 @@
 import * as THREE from 'three';
 import { BIOME, POI_FLAT } from '/shared/worldgen.js';
 import { hashRng } from '/shared/noise.js';
+import { injectSeason } from './season.js';
 
 // ---------------------------------------------------------------- wind shader
 export const WIND = { uTime: { value: 0 }, uWind: { value: 1 }, uFade: { value: 60 } };
 // Clone a material and bend its vertices with the wind: more at the top (y / height).
 // fade = distance (m) at which the geometry shrinks into the ground (used by grass).
-export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0, key = '' } = {}) {
+export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0, key = '', season = null } = {}) {
   const m = base.clone();
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = WIND.uTime; sh.uniforms.uWind = WIND.uWind; sh.uniforms.uFade = WIND.uFade;
@@ -29,8 +30,9 @@ export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0
         float fs = 1.0 - smoothstep(uFade * 0.72, uFade, dc);
         transformed *= fs;` : ''}
       }`);
+    if (season) injectSeason(sh, season);
   };
-  m.customProgramCacheKey = () => 'wind:' + key + amp + height + fade;
+  m.customProgramCacheKey = () => 'wind:' + key + amp + height + fade + (season || '');
   return m;
 }
 
@@ -38,7 +40,7 @@ export function windMaterial(base, { amp = 0.1, height = 1, freq = 1.4, fade = 0
 const CELL = 16; // grass cells of 16 m; how many around the player depends on the detail setting
 let RADIUS = 3;
 const VC = new THREE.MeshLambertMaterial({ vertexColors: true }); // blades are built two-sided with upward normals so both sides are lit
-const GRASS_MAT = windMaterial(VC, { amp: 0.14, height: 0.55, freq: 1.7, fade: 1, key: 'grass' });
+const GRASS_MAT = windMaterial(VC, { amp: 0.14, height: 0.55, freq: 1.7, fade: 1, key: 'grass', season: 'grass' });
 
 function tuftGeometry(blades, hMin, hMax, seed) {
   const rnd = hashRng(seed, 1, 2, 3);
@@ -257,7 +259,9 @@ export class Nature {
     this.rabbits.forEach((r, i) => { r.off = i >= [1, 3, 5, 5][v]; if (r.off) { r.alive = false; r.m.visible = false; } });
     this.flocks.forEach((f, i) => { f.off = i >= [1, 2, 3, 3][v]; for (const b of f.birds) b.m.visible = !f.off; });
   }
-  update(dt, cam, player, day, light, audio) {
+  update(dt, cam, player, day, light, audio, season = null) {
+    const S = season || { season: 1, snow: 0, bloom: 1, autumn: 0 };
+    const winter = S.snow > 0.3;
     this.t += dt;
     WIND.uTime.value = this.t;
     WIND.uWind.value = (0.85 + Math.sin(this.t * 0.07) * 0.35) * (this.windBoost || 1);
@@ -296,7 +300,7 @@ export class Nature {
     // ---- butterflies over meadows by day
     for (const b of this.butterflies) {
       if (b.off) continue;
-      const want = !night && green && light > 0.5;
+      const want = !night && green && light > 0.5 && S.bloom > 0.25 && !winter;
       if (!b.alive || b.p.distanceTo(cam) > 34) {
         b.alive = false; b.m.visible = false;
         if (want && Math.random() < dt * 2) {
@@ -322,7 +326,7 @@ export class Nature {
     // ---- rabbits: hop around, bolt away from you
     for (const r of this.rabbits) {
       if (r.off) continue;
-      const want = !night && green && biome !== BIOME.SWAMP;
+      const want = !night && (green || winter) && biome !== BIOME.SWAMP;
       const d = Math.hypot(r.p.x - px, r.p.z - pz);
       if (!r.alive || d > 60) {
         r.alive = false; r.m.visible = false;
@@ -370,17 +374,17 @@ export class Nature {
       });
       c.g.attributes.position.needsUpdate = true;
     };
-    cloud(this.fireflies, night && green, 30, 0.4, 2.6, (f) => {
+    cloud(this.fireflies, night && green && !winter && S.season !== 2, 30, 0.4, 2.6, (f) => {
       f.ph += dt * f.sp;
       f.x += Math.sin(f.ph * 0.9) * dt * 0.6; f.z += Math.cos(f.ph * 0.7) * dt * 0.6; f.y += Math.sin(f.ph * 1.3) * dt * 0.3;
     });
     this.fireflies.m.size = 0.16 + Math.max(0, Math.sin(this.t * 3)) * 0.1;
-    cloud(this.pollen, !night && light > 0.6 && green, 18, 0.3, 3, (f) => {
+    cloud(this.pollen, !night && light > 0.6 && green && S.bloom > 0.5, 18, 0.3, 3, (f) => {
       f.ph += dt * f.sp * 0.4; f.x += (Math.sin(f.ph) * 0.2 + 0.15) * dt; f.z += Math.cos(f.ph * 0.8) * 0.2 * dt; f.y += Math.sin(f.ph * 1.7) * 0.05 * dt;
     });
 
     // ---- leaves drifting down in forests
-    const forest = biome === BIOME.FOREST;
+    const forest = !winter && (biome === BIOME.FOREST || (S.autumn > 0.3 && green));
     this.leaves.forEach((l, i) => {
       if (l.p.y < w.ground(l.p.x, l.p.z) + 0.05 || Math.hypot(l.p.x - px, l.p.z - pz) > 26) {
         if (forest && Math.random() < dt * 1.5) { const a = Math.random() * 6.28, r = Math.random() * 22; l.p.set(px + Math.cos(a) * r, 0, pz + Math.sin(a) * r); l.p.y = w.ground(l.p.x, l.p.z) + 5 + Math.random() * 5; }
@@ -399,8 +403,8 @@ export class Nature {
     if (audio && audio.ok) {
       const s = this.sound;
       s.bird -= dt; s.cricket -= dt; s.owl -= dt; s.wave -= dt;
-      if (!night && green && s.bird <= 0) { s.bird = 2 + Math.random() * 6; audio.birdsong(Math.random()); }
-      if (night && green && s.cricket <= 0) { s.cricket = 0.35 + Math.random() * 0.5; audio.cricket(); }
+      if (!night && green && s.bird <= 0) { s.bird = (winter ? 8 : 2) + Math.random() * 6; audio.birdsong(Math.random()); }
+      if (night && green && !winter && S.season !== 2 && s.cricket <= 0) { s.cricket = 0.35 + Math.random() * 0.5; audio.cricket(); }
       if (night && biome === BIOME.FOREST && s.owl <= 0) { s.owl = 18 + Math.random() * 30; audio.owl(); }
       if (g0 < 3 && s.wave <= 0) { s.wave = 4 + Math.random() * 3; audio.wave(); }
       if (!night && biome === BIOME.BEACH && s.bird <= 0) { s.bird = 5 + Math.random() * 8; audio.gull(); }

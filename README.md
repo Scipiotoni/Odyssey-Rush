@@ -152,6 +152,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/tpdeath` | Teleports you to where you last died (to get your loot back) |
 | `/resetserver` | Wipes the whole world for everyone (optionally a brand-new island). Asks you to type RESET and a one-time code, then confirm once more. Sign-in accounts are kept |
 | `/cave` | Drop into the caves right below you |
+| `/season spring\|summer\|autumn\|winter [late]` | Jump to a season |
 | `/weather clear\|overcast\|rain\|storm [now]` | Change the weather (rolls in, or instantly with `now`) |
 | `/tp x z [y]` · `/tppoi [type]` · `/kit` · `/heal` · `/day 0-1` | Teleport, monument teleport, starter kit, full heal, time of day |
 
@@ -168,6 +169,17 @@ over animals and players. Wheels kick up dust, mud, snow or spray depending on t
 Wind moves through dense grass, flowers, ferns, reeds and the trees; birds and gulls circle overhead by day and bats
 at night, butterflies drift over meadows, rabbits bolt when you get close, leaves fall in forests and fireflies come
 out after dark — with birdsong, crickets, owls and waves to match. Deer graze, wolves sniff the ground, bears waddle.
+
+### Seasons
+
+The year turns for everyone: **spring → summer → autumn → winter**, each lasting two in-game days (~80 minutes).
+In **autumn** the oaks, grass and ferns turn gold, orange and red and leaves blow about. Late autumn brings frost, and in
+**winter** snow settles over the whole island (all but the hot desert): on the ground, rocks, monuments, roofs and the tops
+of tree crowns. Pines sag under it, grass is pressed flat and frozen, flowers die back and everything gets a cold
+glaze of hoarfrost with glinting ice crystals. Rain falls as **snow**, storms become **blizzards** (whiteout, no lightning)
+and it's cold everywhere — wear warm clothes or stay near a fire. **Footprints and tyre tracks** stay in the snow for
+everyone to see and slowly fill back in over an hour. In **spring** the snow melts and the flowers come back.
+The tundra in the north stays snowy all year. Admins: `/season spring|summer|autumn|winter [late]`.
 
 ### Weather
 

@@ -75,6 +75,43 @@ export class Weather {
     }));
     this.rain.frustumCulled = false; this.rain.visible = false;
     scene.add(this.rain);
+    // ---- snowfall: soft flakes drifting and swirling down (replaces rain in winter)
+    const SN = 9000, sp = new Float32Array(SN * 3);
+    for (let i = 0; i < SN; i++) sp.set([Math.random(), Math.random(), Math.random()], i * 3);
+    const sgeo = new THREE.BufferGeometry(); sgeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+    this.snowU = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAmt: { value: 0 }, uWind: { value: new THREE.Vector2() }, uLight: { value: 1 }, uFlash: { value: 0 }, uClear: { value: 0 }, fogColor: { value: new THREE.Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 } };
+    this.snow = new THREE.Points(sgeo, new THREE.ShaderMaterial({
+      uniforms: this.snowU, transparent: true, depthWrite: false, fog: true,
+      vertexShader: `uniform float uTime; uniform vec3 uCam; uniform float uAmt; uniform vec2 uWind; uniform float uClear; varying float vA;
+        #include <fog_pars_vertex>
+        void main() {
+          vec3 s = position;
+          float idx = fract(s.x * 7.13 + s.z * 3.71);
+          float on = step(idx, uAmt);
+          float speed = 1.1 + s.y * 0.9;
+          float t = uTime;
+          vec3 p;
+          p.x = uCam.x + mod(s.x * 50.0 - uCam.x + uWind.x * t * 0.9 + sin(t * 0.8 + s.z * 40.0) * 0.8, 50.0) - 25.0;
+          p.z = uCam.z + mod(s.z * 50.0 - uCam.z + uWind.y * t * 0.9 + cos(t * 0.7 + s.x * 40.0) * 0.8, 50.0) - 25.0;
+          p.y = uCam.y - 6.0 + mod(s.y * 26.0 - t * speed, 26.0);
+          float d = length(p.xz - uCam.xz);
+          vA = on * (1.0 - smoothstep(19.0, 25.0, d)) * step(uClear, d);
+          vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          gl_PointSize = clamp((0.6 + s.y * 0.9) * 22.0 / -mvPosition.z, 1.0, 7.0);
+          #include <fog_vertex>
+        }`,
+      fragmentShader: `uniform float uLight; uniform float uFlash; varying float vA;
+        #include <fog_pars_fragment>
+        void main() {
+          vec2 q = gl_PointCoord - 0.5; float r = dot(q, q);
+          if (r > 0.25 || vA < 0.01) discard;
+          gl_FragColor = vec4(vec3(0.95, 0.97, 1.0) * (0.45 + uLight * 0.55) + uFlash, vA * (1.0 - r * 3.0) * 0.9);
+          #include <fog_fragment>
+        }`,
+    }));
+    this.snow.frustumCulled = false; this.snow.visible = false;
+    scene.add(this.snow);
     // ---- splashes: little crowns on the ground around you
     this.splashGeo = new THREE.RingGeometry(0.02, 0.05, 8); this.splashGeo.rotateX(-Math.PI / 2);
     this.splash = new THREE.InstancedMesh(this.splashGeo, new THREE.MeshBasicMaterial({ color: 0xc8d4e0, transparent: true, opacity: 0.22, depthWrite: false }), 220);
@@ -150,8 +187,15 @@ export class Weather {
       this.covered = !!hit || !!g.vehicle;
     }
     this.cover += ((this.covered ? 1 : 0) - this.cover) * Math.min(1, dt * 4);
-    // ---- rain
-    const rainAmt = cave ? 0 : cur.r * (this.maxDrops ?? 0.8);
+    // ---- rain (or snow in winter)
+    const snowing = (g.season?.snow ?? 0) > 0.25 || g.season?.season === 3;
+    const precip = cave ? 0 : cur.r * (this.maxDrops ?? 0.8);
+    const rainAmt = snowing ? 0 : precip;
+    const su = this.snowU;
+    su.uTime.value += dt; su.uCam.value.copy(cam); su.uAmt.value = snowing ? Math.min(1, precip * 1.2 + cur.st * 0.2) : 0;
+    su.uWind.value.set(Math.sin(cur.wd) * cur.w * (2 + cur.st * 5), Math.cos(cur.wd) * cur.w * (2 + cur.st * 5));
+    su.uLight.value = Math.max(0.2, sky.dayLight); su.uFlash.value = this.flash; su.uClear.value = this.covered ? 4.5 : 0;
+    this.snow.visible = su.uAmt.value > 0.005;
     this.rain.visible = rainAmt > 0.005;
     const u = this.rainU;
     u.uTime.value += dt; u.uCam.value.copy(cam); u.uAmt.value = rainAmt;
@@ -194,7 +238,7 @@ export class Weather {
     if (!cave) {
       this.g.scene.fog.color.lerp(gray, ov);
       const vd = g.settings.viewDist;
-      this.g.scene.fog.far = vd * (1 - cur.r * 0.62) * (1 - cur.st * 0.15); this.g.scene.fog.near = this.g.scene.fog.far * (0.12 - cur.r * 0.08);
+      this.g.scene.fog.far = vd * (1 - cur.r * (snowing ? 0.78 : 0.62)) * (1 - cur.st * (snowing ? 0.5 : 0.15)); this.g.scene.fog.near = this.g.scene.fog.far * (0.12 - cur.r * 0.08);
       sky.sun.intensity *= 1 - cur.c * 0.72;
       sky.hemi.intensity *= 1 - cur.c * 0.3 - cur.st * 0.2;
       sky.starMat.opacity *= 1 - cur.c;
@@ -220,7 +264,7 @@ export class Weather {
     if (this.flash > 0.01) { const f = this.flash * (1 - day * 0.55), w = new THREE.Color(0.8, 0.85, 1); sky.uniforms.top.value.lerp(w, f * 0.6); sky.uniforms.hor.value.lerp(w, f * 0.5); this.g.scene.fog.color.lerp(w, f * 0.35); this.clouds.material.color.lerp(w, f); }
     // ---- the rest of the world reacts: wind in the grass and trees, wet darker ground
     if (g.nature) g.nature.windBoost = 1 + cur.w * 1.6 + cur.st * 0.8;
-    if (g.terrain?.setWet) g.terrain.setWet(cave ? 0 : Math.min(1, cur.r * 1.4));
-    this.audio.update(dt, { rain: cave ? 0 : cur.r, storm: cur.st, wind: cave ? 0 : cur.w, cover: this.cover, cave: cave ? 1 : 0 });
+    if (g.terrain?.setWet) g.terrain.setWet(cave || snowing ? 0 : Math.min(1, cur.r * 1.4));
+    this.audio.update(dt, { rain: cave || snowing ? 0 : cur.r, storm: cur.st, wind: cave ? 0 : Math.min(1, cur.w + (snowing ? cur.st * 0.4 : 0)), cover: this.cover, cave: cave ? 1 : 0 });
   }
 }

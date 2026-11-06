@@ -4,6 +4,7 @@ const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector
 import { worldBoxes, buildIndex } from '/shared/building.js';
 import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT, DOOR_MATS } from './models.js';
 import { paintGeometry, paintedMaterial, applyDecals } from './paint.js';
+import { WORLD_MAT } from './season.js';
 
 export class Structures {
   constructor(scene, physics, effects) {
@@ -29,7 +30,7 @@ export class Structures {
     let obj;
     if (s.k === 'piece') {
       const pg = pieceGeometry(s.type, s.tier || 0);
-      obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(pg, `p_${s.type}_${s.tier || 0}`, s.pa) : pg, MAT);
+      obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(pg, `p_${s.type}_${s.tier || 0}`, s.pa) : pg, s.type === 'roof' ? WORLD_MAT : MAT); // snow settles on roofs
       if (s.rf) { const rg = reinforceGeometry(s.type, s.rf); if (rg) obj.add(new THREE.Mesh(rg, MAT)); }
       if (s.b) {
         let b = this.buildings.get(s.bid);
