@@ -20,6 +20,8 @@ import { Caves, CAVE_ZONE } from '/shared/caves.js';
 import { CaveWorld } from './caves3d.js';
 import { Weather } from './weather.js';
 import { Footprints } from './footprints.js';
+import { IceView } from './ice.js';
+import { IceField, BREATH_MAX, ICE_TOP } from '/shared/ice.js';
 import { SEASON } from './season.js';
 import { seasonInfo, SEASON_NAMES, SEASON_ICONS } from '/shared/season.js';
 import { Held } from './held.js';
@@ -103,6 +105,9 @@ class Game {
     this.caveWorld = new CaveWorld(this.scene, this.caves, this.world);
     this.audio = audio;
     this.footprints = new Footprints(this.scene, this.world);
+    this.iceField = new IceField(this.world); this.physics.ice = this.iceField;
+    this.iceView = new IceView(this.scene, this.iceField, this.world);
+    if (this.pendingIce) this.applyIce(this.pendingIce);
     this.weather = new Weather(this); this.weather.setDetail(this.settings.detail ?? 2);
     if (this.pendingWeather) this.weather.setState(this.pendingWeather);
     this.structures.onChange = (x, z) => this.nature.grass.invalidate(x, z);
@@ -184,7 +189,7 @@ class Game {
     });
     n.on('welcome', (m) => {
       this.onEnter?.(); this.onEnter = null;
-      this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || []; this.pendingWeather = m.wx;
+      this.pendingTerr = m.terr || []; this.pendingCaveMods = m.cm || []; this.pendingWeather = m.wx; this.pendingIce = m.ice;
       this.pid = m.pid; this.day = m.day; this.tpSeq = m.seq || 0; this.dayLen = m.dayLen; this.year = m.year ?? 1.05; this.yearLen = m.yearLen || 4800;
       this.initWorld(m.seed);
       this.player.pos.set(m.p[0], m.p[1], m.p[2]);
@@ -209,7 +214,7 @@ class Game {
       setTimeout(retry, 1000);
     });
     n.on('inv', (m) => { this.inv = m.inv; this.armor = m.armor; if (this.ui.open === 'inv') this.ui.renderInventory(); else this.ui.renderHotbar(); if (this.ui.open === 'gunsmith') this.gunsmith.render(); });
-    n.on('stats', (m) => { const was = this.stats.lvl; this.stats = m; this.ui.renderStats(m); if (m.lvl > was && was) audio.craftDone(); });
+    n.on('stats', (m) => { const was = this.stats.lvl; if (m.br !== undefined && this.player && Math.abs(m.br - this.player.breath) > 2) this.player.breath = m.br; this.stats = m; this.ui.renderStats(m); if (m.lvl > was && was) audio.craftDone(); });
     n.on('queue', (m) => { const done = this.queue.length > m.q.length; this.queue = m.q; this.ui.renderQueue(m.q); if (done) audio.craftDone(); });
     n.on('gain', (m) => { this.ui.gain(m.id, m.n); audio.pickup(); });
     n.on('toast', (m) => this.ui.toast(m.m));
@@ -286,7 +291,8 @@ class Game {
       this.terrain.center = [NaN, NaN];
     });
     n.on('snap', (m) => this.onSnap(m));
-    n.on('terr', (m) => this.terrain.applyMods(m.m));
+    n.on('terr', (m) => { this.terrain.applyMods(m.m); this.iceField?.cache.clear(); });
+    n.on('ice', (m) => this.applyIce(m));
     n.on('fx', (m) => this.onFx(m));
     n.on('ex', (m) => this.entities.addExplosive(m));
     n.on('v_seat', (m) => this.onSeat(m));
@@ -383,6 +389,11 @@ class Game {
 
   onFx(m) {
     const cam = this.camera.position;
+    if (m.k === 'icebreak') {
+      const pos = new THREE.Vector3(...m.p), d = cam.distanceTo(pos);
+      if (d < 120) { audio.iceCrack(true, d); if (d < 60) { this.effects.burst(pos, { count: 40, color: 0xe4f0f8, speed: 4.5, size: 0.11, life: 1.1, gravity: 9 }); this.effects.burst(pos, { count: 18, color: 0xbfdcec, speed: 2.5, size: 0.06, life: 0.8 }); } }
+      return;
+    }
     if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff][m.ore || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
     if (m.k === 'gunmod') { audio.click(); return; }
     if (m.k === 'throw') { this.held.showThrown(m.a, m.v, m.dur); return; }
@@ -665,6 +676,50 @@ class Game {
   }
 
   // ------------------------------------------------------------------ main loop
+  applyIce(m) {
+    const t = performance.now() / 1000;
+    this.iceField.setFrozen(!!m.f);
+    this.iceField.setHoles((m.h || []).map(([id, x, z, r, age]) => ({ id, x, z, r, born: t - age })));
+  }
+  // under the surface: murky green-blue fog that darkens with depth (and under the ice), the water's
+  // surface seen from below, muffled sound, a breath bar
+  underwaterView(dt) {
+    const cam = this.camera.position, p = this.player;
+    const inWater = cam.y < -0.04 && cam.y > CAVE_ZONE && this.world.ground(cam.x, cam.z) < cam.y;
+    const water = this.sky.water.material;
+    if (inWater) {
+      const depth = Math.min(1, -cam.y / 28), lit = 0.25 + this.sky.dayLight * 0.75;
+      const iced = this.iceField.frozen && this.iceField.solid(cam.x, cam.z) ? 0.45 : 1;
+      const k = (1 - depth * 0.75) * lit * iced;
+      const c = this.uwColor || (this.uwColor = new THREE.Color());
+      c.setRGB(0.05 * k, 0.24 * k + 0.01, 0.27 * k + 0.02);
+      this.scene.fog.color.copy(c); this.scene.fog.near = 0.5; this.scene.fog.far = 22 + 18 * lit * iced - depth * 10;
+      this.scene.background = c;
+      this.sky.sun.intensity *= 0.55 * (1 - depth * 0.6); this.sky.hemi.intensity *= 0.7;
+      if (water.side !== THREE.DoubleSide) { water.side = THREE.DoubleSide; water.needsUpdate = true; }
+      // the surface seen from below glows with the daylight coming through it
+      water.emissive.setRGB(0.1 * lit, 0.42 * lit, 0.45 * lit).multiplyScalar(iced < 1 ? 0.3 : 1);
+      this.sky.dome.visible = false; this.sky.stars.visible = false;
+      this.weather.setHidden?.(true);
+    } else if (this.wasUnderwater) {
+      if (this.scene.background === this.uwColor) this.scene.background = null;
+      water.side = THREE.FrontSide; water.needsUpdate = true; water.emissive.setRGB(0, 0, 0);
+      this.sky.dome.visible = true; this.sky.stars.visible = true;
+      this.weather.setHidden?.(false);
+    }
+    if (inWater !== this.wasUnderwater) {
+      $('underwater').classList.toggle('hidden', !inWater);
+      if (!inWater && this.wasUnderwater && p.breath < BREATH_MAX * 0.5) audio.gasp?.();
+    }
+    this.wasUnderwater = inWater;
+    audio.setUnderwater(inWater ? 1 : 0, inWater ? Math.min(1, -cam.y / 20) : 0);
+    if (inWater) $('underwater').style.opacity = String(0.55 + Math.min(0.4, -cam.y / 40));
+    // breath bar: shows while you're holding your breath or catching it back
+    const br = p.breath, show = br < BREATH_MAX - 0.05 && this.alive;
+    if (show !== this._brShow) { this._brShow = show; $('breathrow').classList.toggle('hidden', !show); }
+    if (show) { $('breathbar').style.width = (br / BREATH_MAX) * 100 + '%'; $('breathrow').classList.toggle('low', br < 8); }
+  }
+
   loop() {
     requestAnimationFrame(() => this.loop());
     const now = performance.now();
@@ -725,7 +780,7 @@ class Game {
     if (now - this.lastSend > 66) {
       this.lastSend = now;
       const p = this.player;
-      this.net.send({ t: 'st', p: this.vehicle ? undefined : [+p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2)], yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3), cr: p.crouch ? 1 : 0, air: !p.onGround && !p.swimming ? 1 : 0, spr: p.sprinting ? 1 : 0, sel: this.sel, seq: this.tpSeq, on: this.ride && !this.vehicle ? this.ride.vid : undefined });
+      this.net.send({ t: 'st', p: this.vehicle ? undefined : [+p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2)], yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3), cr: p.crouch ? 1 : 0, air: !p.onGround && !p.swimming ? 1 : 0, spr: p.sprinting ? 1 : 0, sw: p.swimming ? 1 : 0, sel: this.sel, seq: this.tpSeq, on: this.ride && !this.vehicle ? this.ride.vid : undefined });
     }
     // world
     const cp = this.vehicle ? this.vehicle.view.pos : this.player.pos;
@@ -747,6 +802,8 @@ class Game {
     SEASON.uSnow.value = this.season.snow; SEASON.uFrost.value = this.season.frost; SEASON.uAutumn.value = this.season.autumn; SEASON.uBloom.value = this.season.bloom;
     this.weather.update(dt);
     this.footprints.update(dt, this.camera.position);
+    this.iceView.light.value = 0.15 + this.sky.dayLight * 0.85;
+    this.iceView.update(dt, this.camera.position, now / 1000);
     if (this.camera.position.y < CAVE_ZONE) {
       // deep underground: no sun, black fog, your lantern does the work
       this.sky.sun.intensity = 0; this.sky.hemi.intensity = 0.04;
@@ -755,6 +812,7 @@ class Game {
       this.timers.drip = (this.timers.drip || 0) - dt;
       if (this.timers.drip <= 0) { this.timers.drip = 1.5 + Math.random() * 4; audio.drip(); }
     } else if (this.scene.background === this.caveBg) this.scene.background = null;
+    this.underwaterView(dt);
 
     // hud
     this.timers.reveal -= dt;
@@ -766,7 +824,7 @@ class Game {
       const b = this.world.biome(cp.x, cp.z);
       const np = this.world.nearestPOI(cp.x, cp.z);
       const h = this.day * 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-      this.ui.topbar(this.player.yaw, cp.y < CAVE_ZONE ? `🕯️ Caves · ${Math.round(this.world.ground(cp.x, cp.z) - cp.y)} m deep · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${SEASON_ICONS[this.season?.season ?? 1]} ${SEASON_NAMES[this.season?.season ?? 1]} · ${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ''}`);
+      this.ui.topbar(this.player.yaw, cp.y < CAVE_ZONE ? `🕯️ Caves · ${Math.round(this.world.ground(cp.x, cp.z) - cp.y)} m deep · ${Math.round(cp.x)}, ${Math.round(cp.z)}` : `${np && np.d < 200 ? np.poi.name + ' · ' : ''}${b === 0 && this.iceField.inland(cp.x, cp.z) ? (this.iceField.frozen ? 'Frozen lake' : 'Lake') : BIOME_NAMES[b]} · ${Math.round(cp.x)}, ${Math.round(cp.z)}`, `${SEASON_ICONS[this.season?.season ?? 1]} ${SEASON_NAMES[this.season?.season ?? 1]} · ${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}${night ? ' 🌙' : ''}`);
       this.ui.renderQueue(this.queue.map((q) => ({ ...q, left: Math.max(0, q.left - (now - (q._t || (q._t = now))) / 1000) })));
     }
     this.timers.save -= dt;

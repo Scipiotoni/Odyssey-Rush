@@ -47,7 +47,8 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 | Key | Action |
 |---|---|
-| WASD / Shift / Ctrl or C / Space | Move / sprint / crouch / jump (swim up in water) |
+| WASD / Shift / Ctrl or C / Space | Move / sprint / crouch / jump |
+| In water | Swim where you look (look down + W to dive) · **Space** up · **Ctrl/C** down · **Shift** swim fast · swim into a ledge or ice edge to climb out |
 | Mouse | Look · **LMB** use / attack / place · **RMB** aim, build menu, repair |
 | 1–6, wheel | Belt slots |
 | E | Interact: pick up, loot, open doors/boxes, authorize at a tool cupboard, enter / repair vehicles |
@@ -180,6 +181,19 @@ glaze of hoarfrost with glinting ice crystals. Rain falls as **snow**, storms be
 and it's cold everywhere — wear warm clothes or stay near a fire. **Footprints and tyre tracks** stay in the snow for
 everyone to see and slowly fill back in over an hour. In **spring** the snow melts and the flowers come back.
 The tundra in the north stays snowy all year. Admins: `/season spring|summer|autumn|winter [late]`.
+
+### Swimming, diving and frozen lakes
+
+Deep water is for swimming: you tread water at the surface, swim where you look, and dive by looking down. Underwater
+the light turns murky green-blue and darker with depth, sound is muffled, bubbles rise and you see the surface from
+below. You can hold your breath for **30 seconds** (the 🫧 bar); after that you start **drowning**. Swim into a jetty, a
+steep bank or the edge of the ice to climb out. Inland lakes and rivers are calm; the open sea has waves.
+
+In **winter every inland lake and river freezes over** (from early winter until early spring). You can walk and drive on the
+ice, but it's slippery for feet and tyres. A **pickaxe breaks a hole** through it in three blows (six from below), and so
+does an explosion. Fall through and you're in freezing water; swim away from the hole and the ice is a ceiling above you.
+Holes **freeze over again after 20 minutes**, and anyone still swimming under them is then **trapped under the ice**, unless
+they have a pickaxe and enough breath to hack their way out.
 
 ### Weather
 

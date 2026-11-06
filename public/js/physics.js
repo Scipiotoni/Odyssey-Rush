@@ -2,6 +2,10 @@
 // player movement resolution and raycasting.
 import { rayOBB, invRotY, rotY } from '/shared/building.js';
 import { CAVE_ZONE } from '/shared/caves.js';
+import { ICE_TOP, ICE_BOT } from '/shared/ice.js';
+
+// marker for 'standing on lake ice' (lastSurf): slippery for feet and tyres
+export const ICE_SURF = { ice: true };
 
 const CELL = 8;
 const ck = (i, j) => i * 100003 + j;
@@ -83,8 +87,24 @@ export class Physics {
         if (top <= y + maxUp && top > g) { g = top; surf = c; }
       }
     }
+    // frozen lake
+    const ice = this.ice;
+    if (ice && ice.frozen && ICE_TOP <= y + maxUp && ICE_TOP > g && ice.solid(x, z)) { g = ICE_TOP; surf = ICE_SURF; }
     this.lastSurf = surf;
     return g;
+  }
+  // the ice slab as a solid: climbing onto it from a hole is a ledge, swimming into it from below is a ceiling
+  _iceResolve(p, vel, h, px, pz, res) {
+    const ice = this.ice;
+    if (!ice || !ice.frozen || p.y >= ICE_TOP - 0.001 || p.y + h <= ICE_BOT || !ice.solid(p.x, p.z)) return;
+    if (ICE_TOP - p.y < 0.4 && vel.y <= 1) { p.y = ICE_TOP; if (vel.y < 0) vel.y = 0; res.ground = true; return; }
+    const fromHole = !ice.solid(px, pz);
+    if (fromHole && p.y + h > ICE_BOT + 0.25) {
+      // the edge of the hole: a wall at head height
+      p.x = px; p.z = pz; res.wall = true; return;
+    }
+    // under the ice: the head stays below its underside
+    p.y = ICE_BOT - h; if (vel.y > 0) vel.y = 0; res.ceiling = true; res.underIce = true;
   }
 
   // Resolve a vertical-cylinder body (feet position p, radius r, height h) against colliders.
@@ -96,7 +116,9 @@ export class Physics {
     const sdt = dt / steps;
     const list = this._q2 || (this._q2 = []);
     for (let s = 0; s < steps; s++) {
+      const px = p.x, pz = p.z;
       p.x += vel.x * sdt; p.z += vel.z * sdt; p.y += vel.y * sdt;
+      this._iceResolve(p, vel, h, px, pz, res);
       this.query(p.x, p.z, r + 2, list);
       for (let it = 0; it < 2; it++) {
         for (const c of list) {
@@ -223,6 +245,15 @@ export class Physics {
           prevT = tt; prevF = f;
           if (tt >= maxT) break;
         }
+      }
+    }
+    // lake ice, from above or from below
+    const ice = this.ice;
+    if (ice && ice.frozen && !opts.noTerrain && o.y > CAVE_ZONE && Math.abs(d.y) > 1e-4) {
+      const plane = o.y >= ICE_TOP ? ICE_TOP : o.y <= ICE_BOT ? ICE_BOT : null;
+      if (plane !== null) {
+        const t = (plane - o.y) / d.y;
+        if (t > 0 && t < best.t && ice.solid(o.x + d.x * t, o.z + d.z * t)) best = { t, kind: 'ice', under: plane === ICE_BOT };
       }
     }
     // colliders along the ray

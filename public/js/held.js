@@ -2,6 +2,7 @@
 // and an animated first-person viewmodel: equip, wind-up/strike/recover swings, spring recoil,
 // reload motion, look sway, walk/sprint bob, landing dip, idle breathing, aiming and scopes.
 import * as THREE from 'three';
+import { ICE_HITS } from '/shared/ice.js';
 import { ITEMS, NODES, FIST } from '/shared/items.js';
 import { makeItemModel, makeFPArm } from './models.js';
 import { gunStats, modsKey } from '/shared/gunmods.js';
@@ -301,6 +302,21 @@ export class Held {
       if (hit && hit.kind === 'cave') {
         // pickaxes (and anything that mines ore) carve the cave rock
         if (tool.ore) { g.net.send({ t: 'cavedig', sel: g.sel, pt: [hit.point.x, hit.point.y, hit.point.z] }); audio.mine(); g.effects.burst(hit.point, { count: 8, color: 0x7a746c, speed: 3, size: 0.07, life: 0.6 }); }
+        g.net.send(msg);
+        return;
+      }
+      if (hit && hit.kind === 'ice') {
+        // lake ice: a pickaxe cracks it, a few blows break a hole through (from above or from below)
+        this.kick.rv -= 2;
+        if (tool.ore) {
+          const key = Math.round(hit.point.x / 1.5) + ',' + Math.round(hit.point.z / 1.5), t = performance.now();
+          const c = this.iceHits && this.iceHits.key === key && t - this.iceHits.t < 12000 ? this.iceHits : (this.iceHits = { key, n: 0 });
+          c.n++; c.t = t;
+          const need = ICE_HITS * (hit.under ? 2 : 1);
+          if (c.n >= need) { this.iceHits = null; g.net.send({ t: 'icebreak', sel: g.sel, x: hit.point.x, z: hit.point.z }); }
+          else audio.iceCrack(false);
+          g.effects.burst(hit.point, { count: 10, color: 0xe6f2fa, speed: 3, size: 0.07, life: 0.7 });
+        } else { audio.hitStruct(); g.effects.burst(hit.point, { count: 4, color: 0xe6f2fa, speed: 2, size: 0.05 }); }
         g.net.send(msg);
         return;
       }

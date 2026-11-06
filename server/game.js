@@ -9,6 +9,7 @@ import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
 import { seasonInfo, SEASON_DAYS, SEASONS, SEASON_NAMES, FOOTPRINT_LIFE } from '../shared/season.js';
 import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP } from '../shared/caves.js';
+import { IceField, iceFrozen, ICE_TOP, ICE_HOLE_R, ICE_REGEN, BREATH_MAX } from '../shared/ice.js';
 import { gunStats, canMod, MODS, FINISHES, modsKey, isModdable } from '../shared/gunmods.js';
 import { playerSpec, canPlace, rowOf, sizeOf, occupancy, specOf } from '../shared/grid.js';
 import { PAINT_COLORS, DECALS, DECAL_SIZES, MAX_DECALS, SPRAY_RANGE } from '../shared/paint.js';
@@ -69,8 +70,10 @@ export class Game {
     this.year = 1.05;            // starts in early summer; 0 spring, 1 summer, 2 autumn, 3 winter
     this.prints = new Map();     // region key -> [[x, z, yaw, time, kind]] footprints / tyre tracks in the snow
     this.newPrints = new Map();
+    this.ice = new IceField(this.world); // frozen lakes in winter; holes: {id, x, z, r, born}
     this.chunkCache = new Map();
     this.load(saved);
+    this.ice.setFrozen(iceFrozen(seasonInfo(this.year)));
     this.lastTick = now();
     this.acc = { stats: 0, save: 0, slow: 0, weather: 0 };
     // weather: clear -> overcast -> rain -> storm cycle shared by everyone
@@ -106,12 +109,13 @@ export class Game {
       for (const k of d.spawned || []) this.spawned.add(k);
       for (const c of d.clans || []) this.clans.set(c.id, c);
       for (const [ix, iz, v] of d.terrain || []) this.world.setMod(ix, iz, v);
+      if (Array.isArray(d.iceHoles)) this.ice.setHoles(d.iceHoles.filter((h) => now() - h.born < ICE_REGEN));
       console.log(`[world] loaded: ${this.players.size} players, ${this.structs.size} structures, ${this.vehicles.size} vehicles`);
     } catch (e) { console.error('[world] failed to load save:', e.message); }
   }
   // Serializable snapshot of the whole persistent world.
   serialize() {
-    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, ...rest } = p; return rest; };
+    const strip = (p) => { const { ws, regions, openCont, vehicle, lastSt, air, spr, sw, ...rest } = p; return rest; };
     const d = {
       seed: this.seed, nextId: this.nextId, nextPid: this.nextPid, day: this.day, year: this.year,
       players: [...this.players.values()].map(strip),
@@ -127,6 +131,7 @@ export class Game {
       caveOpened: [...this.caveOpened],
       customSeed: !!this.customSeed,
       terrain: this.world.modList(),
+      iceHoles: this.ice.holes,
     };
     return d;
   }
@@ -204,7 +209,7 @@ export class Game {
     this.fixInv(p);
     if (p.pendingDrop?.length) { this.dropBag(p.x, p.y, p.z, p.pendingDrop); this.toast(p, '🎒 Inventories got smaller: items that no longer fit are in a bag at your feet. Craft a Small Bag or Backpack for more room.'); } p.pendingDrop = null;
     ws.player = p;
-    this.send(p, { t: 'welcome', year: this.year, yearLen: DAY_LENGTH * SEASON_DAYS, wx: this.weatherMsg(), cm: this.caves.mods, terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
+    this.send(p, { t: 'welcome', year: this.year, yearLen: DAY_LENGTH * SEASON_DAYS, wx: this.weatherMsg(), cm: this.caves.mods, ice: this.iceMsg(), terr: this.world.modList(), seq: p.tpSeq || 0, pid: p.pid, seed: this.seed, day: this.day, dayLen: DAY_LENGTH, p: [p.x, p.y, p.z], yaw: p.yaw, alive: p.alive });
     this.sendInv(p); this.sendStats(p); this.sendQueue(p);
     if (!p.alive) this.send(p, { t: 'dead', by: p.killedBy || 'unknown', bags: this.bagsOf(p) });
     this.updateRegions(p, true);
@@ -264,6 +269,7 @@ export class Game {
       case 'cave_enter': return this.onCaveEnter(p, m);
       case 'cave_exit': return this.onCaveExit(p, m);
       case 'cavedig': return this.onCaveDig(p, m);
+      case 'icebreak': return this.onIceBreak(p, m);
       case 'throwrock': return this.onThrowRock(p, m);
       case 'rockland': return this.onRockLand(p, m);
       case 'look': p.look = sanitizeLook(m.look); p.lookStr = encodeLook(p.look); return;
@@ -283,7 +289,7 @@ export class Game {
     if (l1 > l0) { this.toast(p, `⭐ Level ${l1}! Max health +2, gather rate +4%`); this.sendStats(p); }
   }
   sendStats(p) {
-    this.send(p, { t: 'stats', hp: r2(p.hp), food: r2(p.food), water: r2(p.water), xp: p.xp | 0, lvl: this.level(p), maxhp: this.maxHp(p), cold: p.cold || 0, kills: p.kills, deaths: p.deaths });
+    this.send(p, { t: 'stats', hp: r2(p.hp), food: r2(p.food), water: r2(p.water), xp: p.xp | 0, lvl: this.level(p), maxhp: this.maxHp(p), cold: p.cold || 0, br: r2(p.breath ?? BREATH_MAX), kills: p.kills, deaths: p.deaths });
   }
   sendQueue(p) {
     const t = now();
@@ -314,7 +320,7 @@ export class Game {
       } else { p.x = x; p.y = y; p.z = z; }
     }
     p.lastSt = t;
-    p.yaw = num(m.yaw); p.pitch = num(m.pitch); p.cr = m.cr ? 1 : 0; p.air = m.air ? 1 : 0; p.spr = m.spr ? 1 : 0;
+    p.yaw = num(m.yaw); p.pitch = num(m.pitch); p.cr = m.cr ? 1 : 0; p.air = m.air ? 1 : 0; p.spr = m.spr ? 1 : 0; p.sw = m.sw ? 1 : 0;
     p.sel = Math.max(0, Math.min(5, num(m.sel) | 0));
     this.updateRegions(p);
     if (p.y < CAVE_ZONE && t - (p.caveLootT || 0) > 3) { p.caveLootT = t; this.ensureCaveLoot(p); }
@@ -1530,6 +1536,38 @@ export class Game {
     if (!e) return this.toast(p, 'Find a ladder to climb up');
     this.teleport(p, e.x + 1.6, this.world.ground(e.x + 1.6, e.z + 0.8) + 0.4, e.z + 0.8);
   }
+  // ------------------------------------------------------------ frozen lakes
+  iceMsg() { const t = now(); return { f: this.ice.frozen ? 1 : 0, h: this.ice.holes.map((h) => [h.id, r2(h.x), r2(h.z), h.r, Math.floor(t - h.born)]) }; }
+  sendIce() { this.toAll({ t: 'ice', ...this.iceMsg() }); }
+  tickIce() {
+    const f = iceFrozen(seasonInfo(this.year)), t = now();
+    let changed = false;
+    if (f !== this.ice.frozen) { this.ice.setFrozen(f); changed = true; if (!f && this.ice.holes.length) this.ice.setHoles([]); }
+    const keep = this.ice.holes.filter((h) => t - h.born < ICE_REGEN);
+    if (keep.length !== this.ice.holes.length) { this.ice.setHoles(keep); changed = true; }
+    if (changed) this.sendIce();
+  }
+  breakIce(x, z, r, src) {
+    if (!this.ice.frozen || !this.ice.lakeAt(x, z)) return false;
+    const holes = this.ice.holes.filter((h) => Math.hypot(h.x - x, h.z - z) > 0.6);
+    holes.push({ id: this.id('ih'), x, z, r, born: now() });
+    if (holes.length > 400) holes.shift();
+    this.ice.setHoles(holes);
+    this.sendIce();
+    this.toNear(x, z, 120, { t: 'fx', k: 'icebreak', p: [x, ICE_TOP, z], r });
+    return true;
+  }
+  onIceBreak(p, m) {
+    if (!p.alive || p.vehicle || !this.ice.frozen) return;
+    const st = p.inv[num(m.sel) | 0], d = st && ITEMS[st.id];
+    if (!d || !d.tool?.ore) return;
+    const t = now();
+    if (t - (p.lastIce || 0) < 0.3) return;
+    p.lastIce = t;
+    const x = num(m.x), z = num(m.z);
+    if (Math.hypot(x - p.x, z - p.z) > 5 || Math.abs(p.y - ICE_TOP) > 3.5 || !this.ice.solid(x, z)) return;
+    this.breakIce(x, z, ICE_HOLE_R, p);
+  }
   onCaveDig(p, m) {
     if (!p.alive || p.y > CAVE_ZONE) return;
     const st = p.inv[num(m.sel) | 0], d = st && ITEMS[st.id];
@@ -1640,7 +1678,8 @@ export class Game {
     }
     for (const a of [...this.animals.values()]) { const d = dist3(a, e); if (d < ex.radius * 1.6) this.damageAnimal(a, ex.playerDmg, src); }
     const ix = Math.round(x / GRID), iz = Math.round(z / GRID);
-    if (y - this.world.ground(x, z) < 1.2 && !this.digBlocked(ix, iz)) this.editTerrain(ix, iz, -ex.radius * 0.18);
+    if (this.ice.frozen && Math.abs(y - ICE_TOP) < 2.5 && this.ice.lakeAt(x, z)) this.breakIce(x, z, 1.6 + (ex.radius || 3) * 0.6, src);
+    else if (y - this.world.ground(x, z) < 1.2 && !this.digBlocked(ix, iz)) this.editTerrain(ix, iz, -ex.radius * 0.18);
     for (const v of this.vehicles.values()) { const d = dist3(v, e); if (d < ex.radius * 1.6) this.damageVehicle(v, ex.dmg * 0.6 * (1 - d / (ex.radius * 1.6))); }
   }
 
@@ -1812,6 +1851,7 @@ export class Game {
       if (i < 0) return this.toast(p, 'Usage: /season spring | summer | autumn | winter [late]');
       this.year = i + (b === 'late' ? 0.6 : i === 3 ? 0.3 : 0.02);
       this.toAll({ t: 'time', day: this.day, year: this.year, jump: 1 });
+      this.tickIce();
       this.toast(p, `${['🌸', '☀️', '🍂', '❄️'][i]} It is now ${SEASON_NAMES[i]}`);
     } else if (cmd === 'weather') {
       if (!WEATHER_TARGETS[a]) return this.toast(p, 'Usage: /weather clear | overcast | rain | storm');
@@ -1842,7 +1882,7 @@ export class Game {
       for (const [id, n] of [['wood', 2000], ['stone', 2000], ['metal_frags', 1000], ['hqm', 100], ['cloth', 300], ['leather', 200], ['scrap', 500], ['fuel', 200], ['building_plan', 1], ['hammer', 1], ['rifle', 1], ['rifle_ammo', 120], ['c4', 4], ['satchel', 6], ['wheel', 4], ['engine_parts', 2], ['tool_cupboard', 1], ['wood_door', 2], ['workbench3', 1], ['furnace', 1], ['metal_chest', 1], ['metal_mask', 1], ['metal_legs', 1]]) this.give(p, id, n, false);
       this.sendInv(p);
     } else if (cmd === 'day') { this.day = Math.max(0, Math.min(0.999, num(a, 0.5))); this.toAll({ t: 'time', day: this.day }); }
-    else if (cmd === 'heal') { p.hp = this.maxHp(p); p.food = 100; p.water = 100; this.sendStats(p); }
+    else if (cmd === 'heal') { p.hp = this.maxHp(p); p.food = 100; p.water = 100; p.breath = BREATH_MAX; this.sendStats(p); }
     else this.toast(p, ADMIN_HELP);
   }
   // step 2: the admin typed RESET + the code and confirmed twice
@@ -2118,12 +2158,18 @@ export class Game {
       if (b === BIOME.SNOW) cold += 0.7;
       if (p.y > CAVE_ZONE && b !== BIOME.DESERT) { const si = seasonInfo(this.year); cold += si.cold + (si.season === 3 ? this.weather.rain * 0.25 : 0); } // winter (and snowfall) bites
       if (night) cold += 0.25;
-      if (p.y < 0.5 && this.world.ground(p.x, p.z) < 0) cold += 0.3;
+      if (p.y < 0.1 && this.world.ground(p.x, p.z) < 0) cold += 0.3 + (this.ice.frozen && this.ice.lakeAt(p.x, p.z) ? 0.6 : 0); // icy water bites hard
       let warmth = 0;
       for (const s of ARMOR_SLOTS) if (p.armor[s]) warmth += ITEMS[p.armor[s].id].armor.cold;
       for (const s of this.structsNear(p.x, p.z, 0)) if ((s.type === 'campfire' || s.type === 'furnace') && dist3(s, p) < 5) warmth += 1;
       p.cold = Math.max(0, cold - warmth);
       if (p.cold > 0.5) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }
+      // breath: holding it underwater, drowning when it runs out
+      const head = p.y + (p.cr ? 1.05 : 1.55);
+      const under = !p.vehicle && p.y > CAVE_ZONE && head < -0.1 && this.world.ground(p.x, p.z) < head;
+      if (p.breath === undefined) p.breath = BREATH_MAX;
+      p.breath = under ? Math.max(0, p.breath - dt) : Math.min(BREATH_MAX, p.breath + dt * 5);
+      if (under && p.breath <= 0) { p.hp -= 9 * dt; if (p.hp <= 0) { p.breath = BREATH_MAX; this.killPlayer(p, 'drowning'); continue; } }
       this.sendStats(p);
     }
     for (const p of this.players.values()) if (p.online && p.queue.length) this.sendQueue(p);
@@ -2132,6 +2178,7 @@ export class Game {
   tickSlow() {
     const t = now();
     this.expirePrints();
+    this.tickIce();
     for (const [id, st] of this.nodeState) {
       if (st.hp <= 0 && st.until < t) {
         this.nodeState.delete(id);
@@ -2161,7 +2208,7 @@ export class Game {
       for (const o of all) {
         if (o === p || !o.alive || dist2(o, p) > R2) continue;
         const hs = o.inv[o.sel], held = hs ? hs.id + (hs.mods ? '|' + modsKey(hs.mods) : '') : '';
-        const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0) | (o.air ? 8 : 0) | (o.spr ? 16 : 0) | (this.sameClan(o, p) ? 32 : 0);
+        const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0) | (o.air ? 8 : 0) | (o.spr ? 16 : 0) | (this.sameClan(o, p) ? 32 : 0) | (o.sw && !o.vehicle ? 64 : 0);
         pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1, o.lookStr || '', this.clans.get(o.clan)?.tag || '']);
       }
       for (const v of this.vehicles.values()) {

@@ -58,6 +58,16 @@ kbd { background: #333; border: 1px solid #555; border-bottom-width: 2px; border
 .fill { height: 100%; width: 100%; transition: width .3s; }
 .fill.hp { background: #8fb33a; } .fill.food { background: #d08a35; } .fill.water { background: #3a8fd0; }
 #cold { color: #8ad0ff; }
+.fill.breath { background: linear-gradient(90deg, #7fd8ff, #d8f6ff); }
+#breathrow.low .fill.breath { background: #ff6a4a; animation: blink .5s infinite alternate; }
+@keyframes blink { from { opacity: 1 } to { opacity: .35 } }
+#underwater { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: .6;
+  background: radial-gradient(ellipse at 50% 35%, rgba(40,140,150,.05) 0%, rgba(10,60,70,.35) 55%, rgba(0,20,28,.85) 100%);
+  mix-blend-mode: multiply; }
+#underwater::after { content: ''; position: absolute; inset: 0; opacity: .35;
+  background: repeating-linear-gradient(115deg, rgba(160,240,255,.05) 0 18px, transparent 18px 46px), repeating-linear-gradient(65deg, rgba(160,240,255,.04) 0 24px, transparent 24px 60px);
+  animation: caustic 7s linear infinite; }
+@keyframes caustic { from { background-position: 0 0, 0 0 } to { background-position: 230px 0, -180px 0 } }
 #ammo { position: absolute; right: 260px; bottom: 20px; font-size: 26px; font-weight: 700; text-shadow: 0 2px 2px #000; }
 #ammo small { font-size: 14px; opacity: .7; }
 #hotbar { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }

@@ -67,6 +67,7 @@ export class Sky {
         vec4 wp = modelMatrix * vec4(position, 1.0);
         float dd = length(position.xz);
         float amp = 0.35 * (1.0 - smoothstep(300.0, 1400.0, dd));
+        amp *= mix(0.22, 1.0, smoothstep(4200.0, 6000.0, length(wp.xz))); // lakes and rivers inland are calm
         transformed.y += (sin(wp.x * 0.11 + uTime * 1.3) * cos(wp.z * 0.13 + uTime * 1.1) + sin((wp.x + wp.z) * 0.05 + uTime * 0.7) * 0.6) * amp;`);
     };
     this.water = new THREE.Mesh(wg, wm);

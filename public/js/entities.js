@@ -94,6 +94,11 @@ export class Entities {
           p.model.position.copy(_v); p.model.quaternion.copy(v.q);
         }
         poseHumanoid(ud, { mode: p.seat === 0 ? 'drive' : 'sit', pitch: p.pitch, turn: v ? v.steer * 4 : 0, t: p.t }, dt);
+      } else if (p.flags & 64) {
+        // swimming: stroke rate follows speed
+        p.walk += (0.8 + p.sv.s * 0.9) * dt * 1.6;
+        p.amt = (p.amt || 0) + (Math.min(1, p.sv.s / 2.2) - (p.amt || 0)) * Math.min(1, dt * 4);
+        poseHumanoid(ud, { mode: 'swim', walk: p.walk, amt: p.amt, pitch: p.pitch, under: p.pos.y + 1.5 < -0.1, t: p.t }, dt);
       } else {
         const run = !!(p.flags & 16), air = !!(p.flags & 8);
         if (p.wasAir && !air) p.land = 1;

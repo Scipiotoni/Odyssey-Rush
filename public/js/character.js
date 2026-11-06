@@ -384,6 +384,27 @@ export function poseHumanoid(ud, st, dt) {
     T.legL = [0.75, 0, 0]; T.legR = [0.55, 0, 0]; T.kneeL = [-1.1, 0, 0]; T.kneeR = [-0.9, 0, 0];
     T.armL = [0.9, 0, 0.25]; T.armR = [0.7, 0, -0.1]; T.elbowL = [1.3, 0, 0]; T.elbowR = [1.1, 0, 0];
     T.spine = [-0.25 + Math.sin(t * 0.9) * 0.02, 0, 0]; T.neck = [-0.2, 0, 0]; T.ankleL = T.ankleR = [0.4, 0, 0];
+  } else if (st.mode === 'swim') {
+    // moving: breaststroke arms with a flutter kick, body flat in the water (tilted with the dive);
+    // idle: upright treading water, sculling hands and slow bicycle legs
+    const w = st.walk || 0, a = Math.min(1, st.amt || 0), s = Math.sin(w), c = Math.cos(w);
+    const under = !!st.under, pitch2 = under ? Math.max(-1.1, Math.min(1.1, pitch)) : 0;
+    const lay = -1.32 + pitch2 * 0.85;
+    hipY = 1.12 - a * 0.05;
+    T.hips = [lay * a - 0.18 * (1 - a), 0, Math.sin(t * 0.8) * 0.04];
+    T.spine = [0.08 * a, 0, 0]; T.chest = [0, s * 0.05 * a, 0];
+    T.neck = [(under ? 0.55 : 1.05) * a + 0.05, 0, 0]; T.head = [(under ? 0.2 : 0.3) * a, 0, 0];
+    const sweep = Math.max(0, -s);
+    T.armL = [(2.3 + s * 0.55) * a + (0.55 + Math.sin(t * 2.4) * 0.12) * (1 - a), 0, -(0.25 + sweep * 0.95) * a - 0.85 * (1 - a)];
+    T.armR = [(2.3 + s * 0.55) * a + (0.55 + Math.sin(t * 2.4 + 1) * 0.12) * (1 - a), 0, (0.25 + sweep * 0.95) * a + 0.85 * (1 - a)];
+    T.elbowL = T.elbowR = [(0.2 + sweep * 1.1) * a + 0.5 * (1 - a), 0, 0];
+    const k2 = Math.sin(w * 2.2);
+    T.legL = [k2 * 0.32 * a + (0.4 + Math.sin(t * 1.6) * 0.35) * (1 - a), 0, -0.06];
+    T.legR = [-k2 * 0.32 * a + (0.4 - Math.sin(t * 1.6) * 0.35) * (1 - a), 0, 0.06];
+    T.kneeL = [-(0.25 + Math.max(0, k2) * 0.35) * a - (0.7 + Math.sin(t * 1.6 + 1.2) * 0.4) * (1 - a), 0, 0];
+    T.kneeR = [-(0.25 + Math.max(0, -k2) * 0.35) * a - (0.7 - Math.sin(t * 1.6 + 1.2) * 0.4) * (1 - a), 0, 0];
+    T.ankleL = T.ankleR = [0.7 * a, 0, 0];
+    void c;
   } else if (st.mode === 'sit' || st.mode === 'drive') {
     hipY = 0.45;
     T.legL = T.legR = [1.45, 0, 0]; T.kneeL = T.kneeR = [-1.35, 0, 0]; T.ankleL = T.ankleR = [0.1, 0, 0];

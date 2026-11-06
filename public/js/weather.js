@@ -266,5 +266,7 @@ export class Weather {
     if (g.nature) g.nature.windBoost = 1 + cur.w * 1.6 + cur.st * 0.8;
     if (g.terrain?.setWet) g.terrain.setWet(cave || snowing ? 0 : Math.min(1, cur.r * 1.4));
     this.audio.update(dt, { rain: cave || snowing ? 0 : cur.r, storm: cur.st, wind: cave ? 0 : Math.min(1, cur.w + (snowing ? cur.st * 0.4 : 0)), cover: this.cover, cave: cave ? 1 : 0 });
+    if (this.hidden) { this.rain.visible = false; this.snow.visible = false; this.splash.count = 0; } // head under water
   }
+  setHidden(h) { this.hidden = h; }
 }

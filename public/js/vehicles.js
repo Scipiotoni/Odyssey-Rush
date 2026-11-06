@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { VEHICLES } from '/shared/vehicles.js';
 import { SURFACE_BUILT } from '/shared/worldgen.js';
+import { ICE_SURF } from './physics.js';
+const SURFACE_ICE = { name: 'ice', grip: 0.2, roll: 0.006, dust: [0.85, 0.9, 0.97] };
 import { invRotY, rotY } from '/shared/building.js';
 import { makeVehicle } from './models.js';
 import { applyDecals, PAINT_COLORS } from './paint.js';
@@ -146,7 +148,8 @@ export class VehicleSim {
       const surfBox = this.physics.lastSurf;
       this.world.groundNormal(P.x, P.z, _n);
       const n = surfBox ? up.clone().set(0, 1, 0) : new V3(_n[0], _n[1], _n[2]);
-      const surf = surfBox ? SURFACE_BUILT : this.world.surface(P.x, P.z);
+      const onIce = surfBox === ICE_SURF;
+      const surf = onIce ? SURFACE_ICE : surfBox ? SURFACE_BUILT : this.world.surface(P.x, P.z);
       wh.surf = surf;
       wh.water = P.y < -0.05;
       const compVel = (wh.comp - wh.prev) / dt;
@@ -162,7 +165,7 @@ export class VehicleSim {
       const vp = this.pointVel(P, comW, new V3());
       const vLong = vp.dot(fwd), vLat = vp.dot(side);
       const N = Fs;
-      let grip = surf.grip * (wh.water ? 0.6 : 1) * (surfBox ? 1 : def.offroad || 1);
+      let grip = surf.grip * (wh.water ? 0.6 : 1) * (surfBox && !onIce ? 1 : def.offroad || 1);
       if (input.handbrake && !wh.steer) grip *= 0.45;
       let Fx = 0;
       if (wh.drive && canDrive) Fx += (thr * def.engine * curve) / this.nDrive;
