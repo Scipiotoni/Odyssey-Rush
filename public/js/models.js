@@ -402,6 +402,42 @@ export function deployGeometry(kind) {
         return merge([part(box(1.0, 1.7, 0.55), W, { y: 0.85 }), part(box(0.8, 0.7, 0.05), D, { y: 0.95, z: 0.26 }), part(box(0.7, 0.05, 0.4), 0x40e0ff, { y: 0.65, z: 0.05 }),
           part(box(0.06, 0.06, 0.4), 0x9aa2aa, { x: -0.25, y: 1.2, z: 0.05 }), part(box(0.06, 0.06, 0.4), 0x9aa2aa, { x: 0.25, y: 1.2, z: 0.05 }), part(box(0.4, 0.22, 0.04), 0x1a6a8a, { y: 1.5, z: 0.28 }), part(box(1.04, 0.08, 0.6), 0xe07a20, { y: 0.06 })]);
       }
+      // ---- machines (front faces +z; wall-mounted ones are centred on their depth, the building code pushes them flush)
+      case 'portable_refiner': {
+        const O = 0xd8862a, D = 0x3a3e44, M = 0x9aa2aa;
+        return merge([part(box(0.8, 0.12, 0.6), D, { y: 0.06 }), part(cyl(0.26, 0.3, 0.6, 10), O, { x: -0.15, y: 0.42 }), part(cyl(0.27, 0.27, 0.06, 10), D, { x: -0.15, y: 0.74 }),
+          part(box(0.3, 0.45, 0.4), M, { x: 0.22, y: 0.35 }), part(box(0.2, 0.12, 0.02), 0x40e070, { x: 0.22, y: 0.45, z: 0.21 }), part(cyl(0.04, 0.04, 0.5, 6), M, { x: -0.15, y: 1.0 }),
+          part(cyl(0.035, 0.035, 0.35, 6), M, { x: 0.05, y: 0.62, rz: Math.PI / 2 })]);
+      }
+      case 'refinery': {
+        const W = 0x8a9096, D = 0x2e3236, O = 0xe07a20;
+        return merge([part(box(1.5, 1.6, 0.7), W, { y: 0.8 }), part(box(1.3, 0.5, 0.04), D, { y: 1.15, z: 0.36 }), part(box(0.5, 0.3, 0.03), 0x2ad0ff, { x: -0.35, y: 1.15, z: 0.38 }),
+          part(cyl(0.22, 0.22, 0.55, 12), O, { x: 0.35, y: 0.45, z: 0.25 }), part(cyl(0.22, 0.22, 0.55, 12), O, { x: -0.35, y: 0.45, z: 0.25 }), part(box(1.52, 0.08, 0.72), O, { y: 1.62 }),
+          part(cyl(0.05, 0.05, 1.4, 6), 0xb8bcc0, { y: 0.9, z: 0.37, rz: Math.PI / 2 }), part(box(0.12, 0.12, 0.03), 0x40e070, { x: 0.55, y: 1.42, z: 0.37 })]);
+      }
+      case 'desalinator': {
+        const W = 0xdfe6ea, B = 0x2a7ab8, D = 0x2e3236;
+        return merge([part(box(1.1, 1.4, 0.55), W, { y: 0.7 }), part(cyl(0.18, 0.18, 1.0, 12), B, { x: -0.3, y: 0.75, z: 0.22 }), part(cyl(0.18, 0.18, 1.0, 12), B, { x: 0.05, y: 0.75, z: 0.22 }),
+          part(box(0.3, 0.5, 0.04), D, { x: 0.38, y: 0.95, z: 0.29 }), part(box(0.2, 0.12, 0.03), 0x40c0ff, { x: 0.38, y: 1.05, z: 0.31 }), part(cyl(0.06, 0.06, 0.6, 6), 0x9aa2aa, { x: 0.38, y: 0.25, z: 0.2 }),
+          part(box(1.12, 0.07, 0.57), B, { y: 1.42 })]);
+      }
+      case 'solar_panel': {
+        const parts = [part(cyl(0.05, 0.06, 0.9, 6), 0x9aa2aa, { y: 0.45 }), part(box(0.5, 0.06, 0.5), 0x3a3e44, { y: 0.03 }), part(box(1.6, 0.05, 1.0), 0xb8bcc0, { y: 1.0, rx: -0.45 })];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) parts.push(part(box(0.48, 0.02, 0.42), 0x16306a, { x: -0.52 + i * 0.52, y: 1.03 + (j - 0.5) * 0.44 * Math.sin(0.45), z: (j - 0.5) * 0.44 * Math.cos(0.45), rx: -0.45 }));
+        return merge(parts);
+      }
+      case 'fuel_generator': {
+        const Y = 0xd8b020, D = 0x2e3236;
+        return merge([part(box(1.1, 0.7, 0.7), Y, { y: 0.45 }), part(box(1.2, 0.1, 0.8), D, { y: 0.05 }), part(box(0.5, 0.4, 0.05), D, { x: -0.2, y: 0.5, z: 0.36 }),
+          part(cyl(0.16, 0.16, 0.3, 10), 0x9aa2aa, { x: 0.35, y: 0.95 }), part(cyl(0.05, 0.05, 0.4, 6), 0x5a5e64, { x: -0.4, y: 0.95 }), part(box(0.1, 0.1, 0.03), 0xff4020, { x: 0.35, y: 0.55, z: 0.36 })]);
+      }
+      case 'battery_bank': {
+        const parts = [part(box(1.0, 1.2, 0.4), 0x3a3e44, { y: 0.6 })];
+        for (let i = 0; i < 4; i++) parts.push(part(box(0.2, 0.9, 0.06), 0x40c060, { x: -0.33 + i * 0.22, y: 0.6, z: 0.2 }), part(box(0.08, 0.06, 0.06), 0xb8bcc0, { x: -0.33 + i * 0.22, y: 1.1, z: 0.2 }));
+        return merge(parts);
+      }
+      case 'charger': return merge([part(box(0.5, 0.7, 0.3), 0x2e3236, { y: 0.35 }), part(box(0.36, 0.25, 0.04), 0x40c0ff, { y: 0.5, z: 0.16 }), part(box(0.4, 0.06, 0.2), 0xe07a20, { y: 0.12, z: 0.1 }), part(box(0.06, 0.12, 0.03), 0x40e070, { x: 0.15, y: 0.25, z: 0.16 })]);
+      case 'wall_light': return merge([part(box(0.3, 0.12, 0.15), 0x3a3e44, { y: 0.15 }), part(box(0.26, 0.06, 0.12), 0xfff2c8, { y: 0.07, z: 0.01 })]);
       case 'wall_locker': {
         const W = 0xd8dcd8, D = 0x4a4e54;
         return merge([part(box(0.9, 1.9, 0.5), W, { y: 0.95 }), part(box(0.02, 1.8, 0.02), D, { y: 0.95, z: 0.26 }), part(box(0.06, 0.25, 0.04), 0x9aa2aa, { x: 0.12, y: 1.0, z: 0.27 }), part(box(0.06, 0.25, 0.04), 0x9aa2aa, { x: -0.12, y: 1.0, z: 0.27 }),

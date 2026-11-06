@@ -62,6 +62,7 @@ export class UI {
     const d = ITEMS[st.id] || { icon: '?', name: st.id };
     let n = st.n > 1 ? `<span class="n">${st.n}</span>` : '';
     if (d.gun) n = `<span class="n">${st.a || 0}</span>`;
+    if (d.flashlight) n = `<span class="n">${st.on ? '💡' : ''}${Math.round(st.c ?? 50)}%</span>`;
     return `${key ? `<span class="k">${key}</span>` : ''}${iconHTML(st.id)}${n}`;
   }
   renderHotbar() {
@@ -245,6 +246,7 @@ export class UI {
     if (c) {
       $('conttitle').innerHTML = (c.station ? `${c.title} — output (finished items stay here until you take them)` : c.title) + (c.station === 'gunsmith' ? ' <button id="gsopen" class="gsbtn">🔧 Customize weapons</button>' : '');
       if (c.station === 'gunsmith') $('gsopen').onclick = () => this.game.gunsmith.open(c.id);
+      $('continfo').innerHTML = c.info || ''; $('continfo').classList.toggle('hidden', !c.info);
       const grid = $('contgrid');
       if (this.contEls.length !== c.slots.length) {
         grid.innerHTML = ''; this.contEls = [];
@@ -436,72 +438,65 @@ export class UI {
     $('controls').innerHTML = ctl; $('menucontrols').innerHTML = ctl;
   }
   // Radial build wheel: centre = material, middle ring = category, outer ring = pieces / furniture
-  renderBuildMenu(hover = null) {
-    if (!hover) this._wheelHover = null;
+  // No Man's Sky-style build menu: a tab per building material, then Furniture, Base Items and Large Electronics.
+  // Cards show what each costs (red where you're short); Q / E switch tabs, click a card to build it.
+  buildTabs() {
+    return [...TIERS.map((t, i) => ({ k: 't' + i, label: t.name, sw: t.color })), { k: 'furniture', label: '🪑 Furniture' }, { k: 'base', label: '🧰 Base Items' }, { k: 'tech', label: '⚡ Large Electronics' }];
+  }
+  renderBuildMenu(hoverKey = null) {
     const g = this.game, b = g.building;
-    const C = 300, TAU = Math.PI * 2;
-    const pt = (r, a) => [C + Math.sin(a) * r, C - Math.cos(a) * r];
-    const sector = (r0, r1, a0, a1) => {
-      const [x0, y0] = pt(r1, a0), [x1, y1] = pt(r1, a1), [x2, y2] = pt(r0, a1), [x3, y3] = pt(r0, a0);
-      const large = a1 - a0 > Math.PI ? 1 : 0;
-      if (r0 <= 0) return `M${C},${C} L${x0},${y0} A${r1},${r1} 0 ${large} 1 ${x1},${y1} Z`;
-      return `M${x0},${y0} A${r1},${r1} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${r0},${r0} 0 ${large} 0 ${x3},${y3} Z`;
-    };
+    if (!b.tab) b.tab = b.cat === 'construction' ? 't' + (b.tier || 0) : 'furniture';
     const hex = (n) => '#' + n.toString(16).padStart(6, '0');
-    const costTxt = (c) => Object.entries(c).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ');
-    let svg = `<svg viewBox="0 0 600 600">`;
-    // outer ring
-    const furnIds = Object.keys(ITEMS).filter((id) => ITEMS[id].deploy || ITEMS[id].door);
-    const items = b.cat === 'construction' ? PIECE_ORDER.map((t) => ({ key: t, label: PIECES[t].name, icon: PIECES[t].icon, ok: true, sel: !b.furn && b.piece === t }))
-      : furnIds.map((id) => { const n = countItem(g.inv, id); return { key: id, label: ITEMS[id].name.replace('Workbench Level', 'Workbench'), img: icons.get(id), icon: ITEMS[id].icon, n, ok: n > 0, sel: b.furn === id }; });
-    const n = items.length, gap = 0.012;
-    items.forEach((it, i) => {
-      const a0 = (i / n) * TAU + gap, a1 = ((i + 1) / n) * TAU - gap, am = (a0 + a1) / 2;
-      const fill = it.sel ? '#a8582e' : hover === 'o' + i ? '#5a4a3a' : 'rgba(30,30,30,.88)';
-      svg += `<path class="seg ${it.ok ? '' : 'dis'}" data-o="${i}" d="${sector(178, 292, a0, a1)}" fill="${fill}" stroke="rgba(255,255,255,.15)"/>`;
-      const [ix, iy] = pt(254, am), [tx, ty] = pt(200, am);
-      if (it.img) svg += `<image href="${it.img}" x="${ix - 21}" y="${iy - 21}" width="42" height="42" opacity="${it.ok ? 1 : 0.4}"/>`;
-      else svg += `<text x="${ix}" y="${iy}" font-size="30">${it.icon}</text>`;
-      svg += `<text x="${tx}" y="${ty}" font-size="${n > 10 ? 10 : 12}">${esc(it.label)}${it.n !== undefined ? ` (${it.n})` : ''}</text>`;
-    });
-    // middle ring: categories
-    const cats = [['construction', 'Construction', '🧱'], ['furniture', 'Furniture', '🪑']];
-    cats.forEach(([k, label, ic], i) => {
-      const a0 = i * Math.PI + 0.02, a1 = (i + 1) * Math.PI - 0.02, am = (a0 + a1) / 2;
-      svg += `<path class="seg" data-c="${k}" d="${sector(112, 172, a0, a1)}" fill="${b.cat === k ? '#3d5a3a' : 'rgba(45,45,45,.92)'}" stroke="rgba(255,255,255,.15)"/>`;
-      const [x, y] = pt(142, am);
-      svg += `<text x="${x}" y="${y}" font-size="15" font-weight="700">${ic} ${label}</text>`;
-    });
-    // centre: material toggle
-    TIERS.forEach((t, i) => {
-      const a0 = (i / TIERS.length) * TAU + 0.02, a1 = ((i + 1) / TIERS.length) * TAU - 0.02, am = (a0 + a1) / 2;
-      const on = b.tier === i;
-      svg += `<path class="seg" data-t="${i}" d="${sector(36, 106, a0, a1)}" fill="${hex(t.color)}" opacity="${on ? 1 : 0.55}" stroke="${on ? '#fff' : 'rgba(0,0,0,.4)'}" stroke-width="${on ? 3 : 1}"/>`;
-      const [x, y] = pt(74, am);
-      svg += `<text x="${x}" y="${y}" font-size="10.5" font-weight="700" style="paint-order:stroke;stroke:#000;stroke-width:2px">${t.name.replace('Sheet ', '').replace(' Steel', '')}</text>`;
-    });
-    svg += `<circle cx="${C}" cy="${C}" r="33" fill="rgba(15,15,15,.95)" stroke="rgba(255,255,255,.2)"/>`;
-    // centre info
-    const hv = hover && hover[0] === 'o' ? items[+hover.slice(1)] : items.find((x) => x.sel);
+    const have = (id) => countItem(g.inv, id);
+    const costHTML = (c) => Object.entries(c).map(([k, v]) => `<span class="${have(k) >= v ? 'ok' : 'short'}">${iconHTML(k, 'cico')}${v} ${esc(ITEMS[k].name)} <small>(${have(k)})</small></span>`).join('');
+    const tabs = this.buildTabs();
+    let cards = [];
+    const matTab = /^t\d+$/.test(b.tab);
+    if (matTab) {
+      const tier = +b.tab.slice(1);
+      cards = PIECE_ORDER.map((t) => { const c = pieceCost(t, tier); return { key: t, piece: true, name: PIECES[t].name, icon: PIECES[t].icon, ok: Object.entries(c).every(([k, v]) => have(k) >= v), cost: c, sel: !b.furn && b.piece === t && b.tier === tier, desc: `${TIERS[tier].name} ${PIECES[t].name}` }; });
+    } else {
+      const ids = Object.keys(ITEMS).filter((id) => { const d = ITEMS[id], dp = d.deploy; if (!dp && !d.door) return false; if (b.tab === 'tech') return !!dp?.tech; if (b.tab === 'furniture') return !!dp?.furniture; return !dp?.tech && !dp?.furniture; });
+      cards = ids.map((id) => { const n = have(id), r = RECIPES.find((x) => x.out === id); return { key: id, name: ITEMS[id].name, img: icons.get(id), icon: ITEMS[id].icon, n, ok: n > 0, recipe: r, sel: b.furn === id }; });
+    }
+    const hv = cards.find((c) => c.key === hoverKey) || cards.find((c) => c.sel) || cards[0];
+    const tech = (id) => {
+      const M = { portable_refiner: 'Refines anywhere. Burns Low Grade Fuel, Batteries or Power Cells from its storage.', refinery: 'Mount on a wall of your base. Refines ores, quartz, wood, scrap and salt water twice as fast. Uses 60 W of base power.', desalinator: 'Mount on a wall of a base by the sea: pumps sea water and makes Water Bottles and Salt. Also takes Salt Water bottles. Uses 40 W.', solar_panel: 'Makes up to 50 W in daylight for every machine in this base. Place it on a floor, roof or foundation.', fuel_generator: 'Burns Low Grade Fuel for 150 W when the sun can\'t keep up. Place it in your base.', battery_bank: 'Mount on a wall. Stores spare power for the night (≈110 Wh).', charger: 'Mount on a wall. Recharges Flashlights you put in it. Uses 25 W.', wall_light: 'Mount on a wall. Bright electric light while the base has power. Uses 5 W.' };
+      return M[id] || '';
+    };
     let info = '';
-    if (b.cat === 'construction' && hv) info = costTxt(pieceCost(hv.key, b.tier));
-    else if (hv && b.cat === 'furniture') info = hv.ok ? `You have ${hv.n}` : 'Craft it first';
-    svg += `<text x="${C}" y="${C - 7}" font-size="11" font-weight="700">${esc(hv ? hv.label : '')}</text><text x="${C}" y="${C + 9}" font-size="8.5" opacity=".8">${esc(info).slice(0, 40)}</text>`;
-    svg += `</svg>`;
+    if (hv) {
+      if (hv.piece) info = `<h3>${esc(hv.desc)}</h3><div class="bcost">${costHTML(hv.cost)}</div>`;
+      else {
+        const r = hv.recipe;
+        info = `<h3>${esc(hv.name)}</h3><p>${hv.n > 0 ? `You have <b>${hv.n}</b> — click to place it.` : 'Craft it first.'}</p>${tech(hv.key) ? `<p class="bdesc">${tech(hv.key)}</p>` : ''}${r ? `<div class="bcap">Recipe${r.station ? ` <small>(at the ${STATION_NAMES[r.station]})</small>` : ''}:</div><div class="bcost">${costHTML(r.cost)}</div>` : ''}`;
+      }
+    }
+    $('buildwheel').innerHTML = `<div class="nmsbuild">
+      <div class="btabs">${tabs.map((t) => `<button data-tab="${t.k}" class="${b.tab === t.k ? 'on' : ''}">${t.sw !== undefined ? `<i style="background:${hex(t.sw)}"></i>` : ''}${esc(t.label)}</button>`).join('')}</div>
+      <div class="bbody"><div class="bgrid">${cards.map((c) => `<button class="bcard${c.sel ? ' sel' : ''}${c.ok ? '' : ' dis'}" data-k="${c.key}">${c.img ? `<img src="${c.img}" alt="">` : `<span class="emo">${c.icon}</span>`}<span class="bn">${esc(c.name)}</span>${c.n !== undefined ? `<span class="bq">${c.n}</span>` : ''}</button>`).join('') || '<p>Nothing here yet.</p>'}</div>
+      <div class="binfo">${info}</div></div>
+      <div class="hint"><kbd>Q</kbd> / <kbd>E</kbd> switch tabs · click to build · right-click or Esc to close</div></div>`;
     const box = $('buildwheel');
-    box.innerHTML = svg;
-    box.querySelectorAll('[data-o]').forEach((el) => {
-      const it = items[+el.dataset.o];
-      el.addEventListener('mouseenter', () => { if (this._wheelHover !== 'o' + el.dataset.o) { this._wheelHover = 'o' + el.dataset.o; this.renderBuildMenu(this._wheelHover); } });
+    box.querySelectorAll('[data-tab]').forEach((el) => el.addEventListener('click', () => { b.tab = el.dataset.tab; audio.click(); this.renderBuildMenu(); }));
+    box.querySelectorAll('[data-k]').forEach((el) => {
+      const c = cards.find((x) => x.key === el.dataset.k);
+      el.addEventListener('mouseenter', () => { if (this._bHover !== c.key) { this._bHover = c.key; this.renderBuildMenu(c.key); } });
       el.addEventListener('click', () => {
-        if (!it.ok) return;
+        if (!c.piece && !c.ok) { this.toast(`Craft a ${c.name} first`); return; }
         audio.click();
-        if (b.cat === 'construction') { b.piece = it.key; b.furn = null; } else b.furn = it.key;
+        if (c.piece) { b.piece = c.key; b.tier = +b.tab.slice(1); b.furn = null; b.cat = 'construction'; } else { b.furn = c.key; b.cat = 'furniture'; }
         this.close();
       });
     });
-    box.querySelectorAll('[data-c]').forEach((el) => el.addEventListener('click', () => { b.cat = el.dataset.c; audio.click(); this.renderBuildMenu(); }));
-    box.querySelectorAll('[data-t]').forEach((el) => el.addEventListener('click', () => { b.tier = +el.dataset.t; b.furn = null; b.cat = 'construction'; audio.click(); this.renderBuildMenu(); }));
+    if (!this._bKeys) {
+      this._bKeys = true;
+      document.addEventListener('keydown', (e) => {
+        if (this.open !== 'build' || (e.code !== 'KeyQ' && e.code !== 'KeyE')) return;
+        const t = this.buildTabs(), i = t.findIndex((x) => x.k === b.tab);
+        b.tab = t[(i + (e.code === 'KeyE' ? 1 : t.length - 1)) % t.length].k; audio.click(); this.renderBuildMenu(); e.preventDefault();
+      });
+    }
   }
 
   // ------------------------------------------------------------------ spray paint palette
@@ -687,6 +682,10 @@ export function itemDesc(st, short) {
   let s = short ? '' : `<div class="bigico">${iconHTML(st.id, 'bico')}</div><b>${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
   if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
   else if (d.dig) s += 'LMB dig the ground (finds stone, sometimes ore) · RMB pile up dirt. Everyone sees your holes and mounds.';
+  else if (d.flashlight) s += 'LMB switch on/off · R put in a Battery (+50%) or Power Cell (+100%) · or charge it in a Charging Station. A full charge lasts 15 minutes.';
+  else if (d.bottle) s += 'Hold it and LMB while standing in water: the sea gives Salt Water, lakes and rivers fresh water.';
+  else if (st.id === 'salt_water') s += "Too salty to drink — refine it (Portable Refiner, Refinery or Salt Water Refiner) into a Water Bottle and Salt.";
+  else if (d.deploy?.tech) s += 'Large electronics — place it from the build menu (⚡ tab). Base machines share the power of their base.';
   else if (d.spray) s += 'Paint vehicles, walls, doors and furniture. LMB paints the colour · RMB sprays a decal · X cleans · R opens the palette (16 colours, 16 decals, 3 sizes).';
   else if (d.tool && d.tool.hammer) s += 'LMB upgrade material · R reinforce (+50% HP, twice) · RMB repair · X demolish';
   else if (d.tool) s += `Damage ${d.tool.dmg} · tree ${d.tool.tree} · ore ${d.tool.ore}`;

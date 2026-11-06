@@ -67,7 +67,8 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | In water | Swim where you look (look down + W to dive) · **Space** up · **Ctrl/C** down · **Shift** swim fast · swim into a ledge or ice edge to climb out |
 | Mouse | Look · **LMB** use / attack / place · **RMB** aim, build menu, repair |
 | 1–6, wheel | Belt slots |
-| E | Interact: pick up, loot, open doors/boxes, authorize at a tool cupboard, enter / repair vehicles |
+| E | Interact: pick up, loot, open doors/boxes/machines, authorize at a tool cupboard, enter / repair vehicles |
+| G | Put out / light a camp fire or furnace · switch a base machine on/off |
 | Tab or Q | Inventory & crafting (drag items, Shift-click quick move, right-click use/equip, drag out to drop) |
 | R | Reload · rotate building piece · flip a vehicle back on its wheels |
 | F | Drink (standing in a river or lake — the ocean is salty) |
@@ -101,13 +102,14 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
    Basic items are crafted by hand (Tab). Everything else is made **at the station**: walk up to a **Camp Fire**
    (cooking, charcoal, fuel), **Furnace** (smelting) or **Workbench Lv1 → Lv2 → Lv3** and press E. Each station
    only makes its own items, keeps working while you're away, and finished items wait in its output slots.
-3. **Build.** Equip the building plan and right-click for the **build wheel**: the outer ring has the pieces
-   (foundations, walls, doorways, windows, low walls, floors, roofs, stairs) or your furniture, the middle ring
-   switches Construction / Furniture, and the centre picks the material (Twig, Wood, Stone, Sheet Metal, Armored).
+3. **Build.** Equip the building plan and right-click for the **build menu** (No Man's Sky style): a tab for each
+   material (Twig, Wood, Stone, Sheet Metal, Armored, Watertight Steel) with its pieces (foundations, walls, doorways,
+   windows, low walls, floors, roofs, stairs), plus **Furniture**, **Base Items** and **Large Electronics** tabs.
+   Each card shows what it costs (red where you're short) or how many you own; **Q / E** switch tabs.
    Pieces snap to a 3 m grid. With the **hammer**: LMB upgrades the material, **R reinforces** (Braced, then Plated —
    each +50% max HP), RMB repairs. You can also use the hammer to upgrade to **Wood → Stone → Sheet Metal → Armored**.
    Furnish it: chairs, tables, rugs, plants, paintings, lamps (real light), a sofa, bookshelf / wardrobe / fridge
-   storage and a bed you can respawn in (workbench 1-2, placed from the wheel's Furniture ring).
+   storage and a bed you can respawn in (workbench 1-2, placed from the menu's Furniture tab).
    Put a door in the doorway and a **Tool Cupboard** inside: it locks your doors to authorized players and stops
    anyone else building within 30 m. Pieces need support — blow out a wall and the floor above can collapse.
 4. **Hide.** Bases are only streamed to players within ~300 m, and the map shows no other players. The island is
@@ -292,6 +294,27 @@ gusts. Lightning forks down with real flashes of light, and its thunder arrives 
 The rain sound is synthesised from thousands of individual drops (including the "plink" of drops on water), a pink-noise
 wash and gusting wind; under a roof it turns into a muffled patter on the roof, and underground it's almost silent.
 Admins can force it with `/weather clear|overcast|rain|storm [now]`.
+
+### Flashlight, refiners and base power
+
+- **Flashlight** (Workbench 1): a bright beam. **LMB** switches it on and off, **R** puts in a Battery (+50%) or a Power
+  Cell (+100%). A full charge lasts 15 minutes; the charge shows on its slot. A **Charging Station** recharges it too.
+- **Bottles and salt**: hold an **Empty Bottle** and LMB in water. The sea gives **Salt Water**, lakes and rivers fresh
+  water. Drinking a Water Bottle gives the empty bottle back. Refining Salt Water gives a **Water Bottle and Salt**. Salt
+  cures meat into **Salted Jerky** at a camp fire.
+- **Portable Refiner** (Workbench 1): place it anywhere. Put fuel (Low Grade Fuel, a Battery or a Power Cell) and
+  something to refine in its storage: Salt Water, metal / sulfur / copper / lithium ore, quartz → glass, wood → charcoal,
+  animal fat + cloth → fuel. Finished goods appear in the same storage.
+- **Large electronics** (⚡ tab of the build menu, mostly Workbench 2). These need a base:
+  - **Refinery**: mounts on a wall. It refines twice as fast, also does titanium ore and scrap. Uses 60 W.
+  - **Salt Water Refiner**: mounts on a wall. In a base by (or under) the sea it **pumps sea water** on its own and fills
+    its storage with Water Bottles and Salt (fresh water only, by a lake). It also takes Salt Water bottles. Uses 40 W.
+  - **Charging Station** (25 W) and **Electric Wall Lights** (5 W) mount on walls.
+  - **Power**: every machine in the same building shares one grid. **Solar Panels** make up to 50 W in daylight,
+    **Fuel Generators** burn Low Grade Fuel for 150 W when the sun can't keep up, and wall-mounted **Battery Banks**
+    store the surplus for the night. When power is short, the smallest loads (lights, chargers) keep running and the
+    big machines wait. Open a machine (E) to see what it's doing and the base's power; **G** switches it off and on.
+- **Camp fires and furnaces** can be put out with **G** and lit again. A cold fire doesn't cook, smelt or warm you.
 
 ### Survival
 

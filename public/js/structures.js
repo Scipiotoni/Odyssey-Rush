@@ -83,6 +83,8 @@ export class Structures {
       const dg = deployGeometry(s.type);
       obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(dg, 'd_' + s.type, s.pa) : dg, MAT);
       if (s.type === 'wall_torch') this.fires.push({ id: s.id, light: null, s, obj, torch: true });
+      if (s.type === 'wall_light') this.fires.push({ id: s.id, light: null, s, obj, torch: true, elec: true });
+      if (['portable_refiner', 'refinery', 'desalinator', 'fuel_generator'].includes(s.type)) this.fires.push({ id: s.id, light: null, s, obj, machine: true });
       if (s.type === 'lamp') { const light = new THREE.PointLight(0xffe2a8, 5, 16, 1.4); light.position.y = 1.5; obj.add(light); }
       if (s.type === 'campfire' || s.type === 'furnace') {
         const light = new THREE.PointLight(0xff9040, 6, 14, 1.6);
@@ -185,16 +187,27 @@ export class Structures {
 
   update(dt, cam) {
     if (cam) {
-      const ts = this.fires.filter((f) => f.torch).map((f) => [f, (f.s.x - cam.x) ** 2 + (f.s.y - cam.y) ** 2 + (f.s.z - cam.z) ** 2]).filter((a) => a[1] < 60 * 60).sort((a, b) => a[1] - b[1]);
+      // torches always burn; electric wall lights only with base power and switched on
+      const cur = (f) => this.map.get(f.id)?.s || f.s;
+      const ts = this.fires.filter((f) => f.torch && (!f.elec || (cur(f).pw && !cur(f).off))).map((f) => [f, (f.s.x - cam.x) ** 2 + (f.s.y - cam.y) ** 2 + (f.s.z - cam.z) ** 2]).filter((a) => a[1] < 60 * 60).sort((a, b) => a[1] - b[1]);
       this.torchPool.forEach((l, i) => {
         const f = ts[i]?.[0];
         if (!f) { l.intensity = 0; return; }
-        const p = new THREE.Vector3(0, 0.6, 0.12).applyMatrix4(f.obj.matrixWorld);
-        l.position.copy(p); l.intensity = 3.2 + Math.random() * 1.2;
+        const p = new THREE.Vector3(0, f.elec ? 0.0 : 0.6, f.elec ? 0.25 : 0.12).applyMatrix4(f.obj.matrixWorld);
+        l.position.copy(p);
+        if (f.elec) { l.color.setHex(0xfff2dc); l.intensity = 4.5; l.distance = 18; } else { l.color.setHex(0xffa850); l.intensity = 3.2 + Math.random() * 1.2; l.distance = 14; }
       });
     }
     for (const f of this.fires) {
-      if (!f.light) continue;
+      const s = this.map.get(f.id)?.s || f.s;
+      if (f.machine) {
+        // working machines puff steam / exhaust
+        if (s.pw && Math.random() < dt * (s.type === 'fuel_generator' ? 6 : 3)) this.effects.burst({ x: s.x, y: s.y + (s.type === 'refinery' ? 1.7 : s.type === 'portable_refiner' ? 1.25 : s.type === 'fuel_generator' ? 1.1 : 1.5), z: s.z }, { count: 1, color: s.type === 'fuel_generator' ? 0x4a4a4a : 0xdedede, speed: 0.4, up: 1.6, size: 0.18, life: 1.4, gravity: -1, drag: 1, jitter: 0.2 });
+        continue;
+      }
+      if (f.torch && f.elec) continue;
+      if (s.off) { if (f.light) f.light.intensity = 0; continue; } // put out
+      if (!f.light) { if (Math.random() < dt * 10) this.effects.burst({ x: f.s.x, y: f.s.y + 0.55, z: f.s.z }, { count: 1, color: Math.random() < 0.5 ? 0xffa030 : 0xff5010, speed: 0.6, up: 2, size: 0.12, life: 0.7, gravity: -2, drag: 1, glow: true, jitter: 0.3 }); continue; }
       f.light.intensity = 5 + Math.random() * 2.5;
       if (Math.random() < dt * (f.torch ? 10 : 25)) this.effects.burst({ x: f.s.x, y: f.s.y + (f.s.type === 'campfire' ? 0.3 : f.torch ? 0.55 : 1.6), z: f.s.z }, { count: 1, color: Math.random() < 0.5 ? 0xffa030 : 0xff5010, speed: 0.6, up: 2, size: 0.12, life: 0.7, gravity: -2, drag: 1, glow: true, jitter: 0.3 });
     }

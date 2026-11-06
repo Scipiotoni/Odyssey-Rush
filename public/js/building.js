@@ -190,9 +190,11 @@ export class Builder {
         plan = { t: { x: p.x, y: gy, z: p.z, yaw: g.player.yaw } };
         if (d.deploy?.wall) {
           // mounted on whatever you aim at: torches where you point, ladders standing on the floor against the wall
-          const dir = g.held.dir(), bx = p.x - dir.x * 0.12, bz = p.z - dir.z * 0.12;
-          const fy = d.deploy.kind === 'ladder' ? g.physics.groundAt(bx - dir.x * 0.2, bz - dir.z * 0.2, p.y + 0.3, 0.6) : p.y - 0.35;
-          plan = { t: { x: bx, y: fy > p.y - 4 ? fy : p.y - 1, z: bz, yaw: g.player.yaw } };
+          // machines sit flush with their back to the wall, centred on where you aim (h, depth from the item)
+          const dir = g.held.dir(), back = d.deploy.depth ? d.deploy.depth / 2 + 0.11 : 0.12, bx = p.x - dir.x * back, bz = p.z - dir.z * back;
+          const fy = d.deploy.kind === 'ladder' ? g.physics.groundAt(bx - dir.x * 0.2, bz - dir.z * 0.2, p.y + 0.3, 0.6) : p.y - (d.deploy.h || 0.7) / 2;
+          plan = { t: { x: bx, y: fy > p.y - 4 ? fy : p.y - 1, z: bz, yaw: Math.atan2(dir.x, dir.z) + Math.PI } };
+          if (d.deploy.tech && hit.kind !== 's') err = 'Mount it on a wall of your base';
         }
       }
       this.setGhost('d:' + d.deploy.kind, () => deployGeometry(d.deploy.kind));

@@ -7,6 +7,7 @@ import { G, LEVEL_H, slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECE
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw, subStats } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
+import { MACHINES, REFINE, PUMP, refinesAt, FLASH, sunFactor } from '../shared/machines.js';
 import { seasonInfo, SEASON_DAYS, SEASONS, SEASON_NAMES, FOOTPRINT_LIFE } from '../shared/season.js';
 import { Caves, CAVE_ZONE, CAVE_ARRIVE, CAVE_TOP, LAVA_Y, LAYERS, layerAt } from '../shared/caves.js';
 import { dryCells, cellAt, sealedRooms, hullIntegrity, roomOfCell, HULL_BASE } from '../shared/sealed.js';
@@ -280,6 +281,8 @@ export class Game {
       case 'move': return this.onMove(p, m);
       case 'drop': return this.onDrop(p, m);
       case 'eat': return this.onEat(p, m);
+      case 'flash': return this.onFlash(p, m);
+      case 'fillbottle': return this.onFillBottle(p, m);
       case 'drink': return this.onDrink(p);
       case 'throw': return this.onThrow(p, m);
       case 'respawn': return this.onRespawn(p, m);
@@ -587,6 +590,9 @@ export class Game {
     if (s.kind === 'piece') { o.tier = s.tier; o.rf = s.reinf || 0; o.bid = s.bid; o.gx = s.gx; o.gz = s.gz; o.level = s.level; o.rot = s.rot || 0; const b = this.buildings.get(s.bid); if (b) o.b = [b.x, b.y, b.z, b.yaw]; }
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
+    if (s.off) o.off = 1;
+    if (s.pw) o.pw = 1;
+    if (MACHINES[s.type]?.store) o.ch = Math.round(((s.charge || 0) / MACHINES[s.type].store) * 100);
     if (s.paint !== undefined) o.pa = s.paint;
     if (s.decals?.length) o.dc = s.decals;
     if (s.veh) { o.veh = s.veh; o.l = [r2(s.local.x), r2(s.local.y), r2(s.local.z), s.local.yaw || 0]; }
@@ -647,7 +653,7 @@ export class Game {
     if (!station) return true;
     const kinds = STATION_PROVIDERS[station];
     for (const s of this.structsNear(p.x, p.z)) {
-      if (s.kind === 'deploy' && kinds.includes(s.type) && dist3(s, p) < STATION_RANGE + 1) return true;
+      if (s.kind === 'deploy' && !s.off && kinds.includes(s.type) && dist3(s, p) < STATION_RANGE + 1) return true;
     }
     return false;
   }
@@ -959,6 +965,8 @@ export class Game {
     for (const id of [...this.activeStations]) {
       const st = this.structs.get(id);
       if (!st || !st.queue || !st.queue.length) { this.activeStations.delete(id); continue; }
+      const pt = st._pt || t; st._pt = t;
+      if (st.off) { for (const e of st.queue) e.end += t - pt; continue; } // put out: cooking pauses
       let changed = false;
       while (st.queue.length && st.queue[0].end <= t) {
         const r = RECIPES[st.queue[0].r];
@@ -1135,6 +1143,7 @@ export class Game {
       const l = { x: num(m.lx), y: num(m.ly), z: num(m.lz), yaw: num(m.lyaw) };
       const zs = vd.deck.cells.map((c) => vd.deck.z + c * 1.5);
       if (Math.abs(l.x) > 1.5 || l.z < Math.min(...zs) - 1.5 || l.z > Math.max(...zs) + 1.5 || l.y < vd.deck.y - 0.2 || l.y > vd.deck.y + vd.deck.levels * 3 + 0.3) return this.toast(p, 'Place it on the deck');
+      if (MACHINES[def.deploy.kind] && !MACHINES[def.deploy.kind].portable) return this.toast(p, 'Base machines need a base — only the Portable Refiner works on vehicles');
       if (def.deploy.kind === 'tool_cupboard') return this.toast(p, "Tool cupboards can't go on vehicles — the hauler's owner and clan already control it");
       Inv.remove(p.inv, st.id, 1);
       if (!v.owner) v.owner = p.pid;
@@ -1149,6 +1158,12 @@ export class Game {
     if (this.inPOI(x, z)) return this.toast(p, "Can't deploy in monuments");
     const kind = def.deploy.kind;
     if (kind !== 'sleeping_bag' && kind !== 'campfire' && this.privBlocked(p, x, z)) return this.toast(p, 'Building blocked');
+    const MD = MACHINES[kind];
+    let mBase = null;
+    if (MD?.mount) {
+      mBase = this.machineBase(kind, x, y, z);
+      if (!mBase) return this.toast(p, MD.mount === 'wall' ? `Mount the ${MD.name} on a wall of your base` : `Place the ${MD.name} in or right next to your base (on a floor, roof or foundation)`);
+    }
     if (kind === 'tool_cupboard') {
       for (const s of this.structsNear(x, z)) if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < (PRIV_RADIUS * 1.4) ** 2) return this.toast(p, 'Another tool cupboard is too close');
     }
@@ -1156,7 +1171,10 @@ export class Game {
     const s = { id: this.id('S'), kind: 'deploy', type: kind, hp: def.deploy.hp, mhp: def.deploy.hp, owner: p.pid, x, y, z, yaw: num(m.yaw), created: now() };
     if (def.deploy.slots) s.slots = Inv.emptySlots(def.deploy.slots);
     if (kind === 'tool_cupboard') s.auth = [p.pid];
+    if (mBase) s.bid = mBase.bid;
+    if (MD?.pump) s.pump = this.pumpSource(x, y, z);
     this.addStruct(s);
+    if (MD) this.toast(p, MD.portable ? `⚗️ ${MD.name} placed — put fuel (Low Grade Fuel, a Battery or a Power Cell) and things to refine in it` : MD.gen ? `⚡ ${MD.name} placed — it powers every machine in this base` : MD.store ? '🔋 Battery Bank placed — it stores spare power for the night' : `🔌 ${MD.name} placed${MD.pump ? (s.pump ? ` — it can pump ${s.pump === 'sea' ? 'sea' : 'fresh'} water here` : ' — no water to pump here, feed it Salt Water') : ''} · needs power from a Solar Panel or Fuel Generator in this base`);
     this.sendInv(p);
     if (kind === 'sleeping_bag' || kind === 'bed') this.toast(p, `${def.name} placed — you can respawn here`);
     if (kind === 'tool_cupboard') this.toast(p, 'Tool cupboard placed — this area is now yours. Others cannot build within 30m.');
@@ -1304,6 +1322,16 @@ export class Game {
       this.toNear(s.x, s.z, 40, { t: 'fx', k: 'door', p: [s.x, s.y, s.z] });
       return;
     }
+    if (m.a === 'fire' && (s.type === 'campfire' || s.type === 'furnace')) {
+      s.off = !s.off;
+      this.updStruct(s);
+      this.toNear(s.x, s.z, 30, { t: 'fx', k: s.off ? 'douse' : 'ignite', p: [s.x, s.y, s.z] });
+      return this.toast(p, s.off ? `💨 ${ITEMS[s.type].name} put out` : `🔥 ${ITEMS[s.type].name} lit`);
+    }
+    if (m.a === 'power' && MACHINES[s.type] && !MACHINES[s.type].portable) {
+      s.off = !s.off; this.updStruct(s); this._mRev = -1;
+      return this.toast(p, `${MACHINES[s.type].name} switched ${s.off ? 'off' : 'on'}`);
+    }
     if (s.type === 'tool_cupboard') {
       if (m.a === 'clear') { if (s.auth.includes(p.pid)) { s.auth = [p.pid]; this.toast(p, 'Authorization list cleared'); } }
       else if (s.auth.includes(p.pid)) { s.auth = s.auth.filter((x) => x !== p.pid); this.toast(p, 'You deauthorized yourself'); }
@@ -1325,7 +1353,7 @@ export class Game {
     }
     const s = this.structs.get(id);
     if (s && STATION_KINDS.includes(s.type)) { this.ensureStation(s); return { obj: s, title: ITEMS[s.type].name, slots: s.slots, station: s.type }; }
-    if (s && s.slots) return { obj: s, title: ITEMS[s.type]?.name || 'Box', slots: s.slots };
+    if (s && s.slots) return { obj: s, title: ITEMS[s.type]?.name || 'Box', slots: s.slots, info: this.machineInfo(s) };
     const l = this.loot.get(id);
     if (l) return { obj: l, title: l.kind === 'crate' ? ['', 'Supply Crate', 'Military Crate', 'Elite Crate'][l.tier] : l.kind === 'corpse' ? `${ANIMALS[l.an]?.name || 'Animal'} Corpse` : 'Backpack', slots: l.slots };
     return null;
@@ -1335,7 +1363,7 @@ export class Game {
     const c = this.getContainer(id);
     if (!c || !p.alive || dist3(c.obj, p) > (c.range || 4.5)) return;
     p.openCont = id;
-    this.send(p, { t: 'cont', id, title: c.title, slots: c.slots, station: c.station, queue: c.station ? this.stationQueue(c.obj) : undefined });
+    this.send(p, { t: 'cont', id, title: c.title, slots: c.slots, station: c.station, info: c.info, queue: c.station ? this.stationQueue(c.obj) : undefined });
   }
   // pick up everything from a dropped bag / item
   onTake(p, m) {
@@ -1354,7 +1382,7 @@ export class Game {
   }
   pushContainer(id) {
     const c = this.getContainer(id);
-    for (const p of this.players.values()) if (p.online && p.openCont === id) this.send(p, { t: 'cont', id, title: c ? c.title : '', slots: c ? c.slots : null, station: c?.station, queue: c?.station ? this.stationQueue(c.obj) : undefined });
+    for (const p of this.players.values()) if (p.online && p.openCont === id) this.send(p, { t: 'cont', id, title: c ? c.title : '', slots: c ? c.slots : null, station: c?.station, info: c?.info, queue: c?.station ? this.stationQueue(c.obj) : undefined });
   }
   afterContainerChange(id) {
     const l = this.loot.get(id);
@@ -1494,8 +1522,198 @@ export class Game {
     if (d.water) p.water = Math.min(100, p.water + d.water);
     if (d.heal) p.hp = Math.max(1, Math.min(this.maxHp(p), p.hp + d.heal));
     st.n -= 1; if (st.n <= 0) p.inv[i] = null;
+    if (d.empties) this.give(p, d.empties, 1, false);
     this.sendInv(p); this.sendStats(p);
   }
+  // handheld flashlight: LMB switches it on/off, R puts in a Battery (+50%) or Power Cell (+100%)
+  onFlash(p, m) {
+    const st = p.inv[p.sel];
+    if (!p.alive || !st || !ITEMS[st.id]?.flashlight) return;
+    if (st.c === undefined) st.c = FLASH.start;
+    if (m.a === 'charge') {
+      if (st.c >= 99) return this.toast(p, '🔦 The flashlight is already fully charged');
+      const cell = Inv.count(p.inv, 'battery') ? 'battery' : Inv.count(p.inv, 'power_cell') ? 'power_cell' : null;
+      if (!cell) return this.toast(p, '🔦 You need a Battery or a Power Cell to recharge it (or put it in a Charging Station)');
+      Inv.remove(p.inv, cell, 1);
+      st.c = Math.min(100, st.c + FLASH[cell]);
+      this.toast(p, `🔋 Flashlight charged to ${Math.round(st.c)}%`);
+    } else {
+      if (st.c <= 0) { st.on = false; this.sendInv(p); return this.toast(p, '🔦 The battery is flat — press R to put in a Battery'); }
+      st.on = !st.on;
+    }
+    this.sendInv(p);
+  }
+  tickFlashlights(dt) {
+    for (const p of this.players.values()) {
+      if (!p.online || !p.alive) continue;
+      const st = p.inv[p.sel];
+      if (!st || !st.on || !ITEMS[st.id]?.flashlight) continue;
+      const before = Math.ceil(st.c ?? FLASH.start);
+      st.c = Math.max(0, (st.c ?? FLASH.start) - FLASH.drain * dt);
+      if (st.c <= 0) { st.on = false; this.toast(p, '🔦 The flashlight battery is flat — press R to put in a Battery'); this.sendInv(p); }
+      else if (Math.ceil(st.c) !== before && Math.ceil(st.c) % 5 === 0) this.sendInv(p);
+    }
+  }
+  // fill an Empty Bottle where you stand in water: the sea gives Salt Water, lakes and rivers fresh water
+  onFillBottle(p, m) {
+    const st = p.inv[p.sel];
+    if (!p.alive || !st || st.id !== 'empty_bottle' || now() - (p.lastFill || 0) < 0.6) return;
+    const g = this.world.ground(p.x, p.z);
+    if (g > 0.2 || p.y > 1.8) return this.toast(p, 'Stand in the water to fill the bottle');
+    p.lastFill = now();
+    const sea = Math.hypot(p.x, p.z) > HALF * 0.8 && !this.ice.inland(p.x, p.z);
+    Inv.remove(p.inv, 'empty_bottle', 1);
+    this.give(p, sea ? 'salt_water' : 'water_bottle', 1);
+    this.toast(p, sea ? '🌊 Filled a bottle with Salt Water — refine it into drinking water and salt' : '💧 Filled a bottle with fresh water');
+    this.sendInv(p);
+  }
+
+  // ------------------------------------------------------------ machines: refiners and the base power grid
+  // the building a base machine belongs to: a wall right where it's mounted, or any piece close by
+  machineBase(kind, x, y, z) {
+    const M = MACHINES[kind];
+    let best = null, bd = Infinity;
+    for (const s of this.structsNear(x, z)) {
+      if (s.kind !== 'piece' || s.veh) continue;
+      const wallish = ['wall', 'half_wall', 'doorway', 'window'].includes(s.type);
+      if (M.mount === 'wall' && !wallish) continue;
+      const cy = s.y + (wallish ? 1.5 : 0);
+      const d = Math.hypot(s.x - x, (cy - y) * (wallish ? 0.6 : 1), s.z - z);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best && bd < (M.mount === 'wall' ? 2.4 : 5) ? best : null;
+  }
+  // does a Salt Water Refiner here reach water? 'sea' | 'fresh' | null
+  pumpSource(x, y, z) {
+    for (const [dx, dz] of [[0, 0], [6, 0], [-6, 0], [0, 6], [0, -6], [10, 10], [-10, 10], [10, -10], [-10, -10]]) {
+      const gx = x + dx, gz = z + dz;
+      if (this.world.ground(gx, gz) < -0.6 && y < 6) return Math.hypot(gx, gz) > HALF * 0.8 && !this.ice.inland(gx, gz) ? 'sea' : 'fresh';
+    }
+    return null;
+  }
+  machineJob(s, M) {
+    if (!s.slots) return null;
+    for (let i = 0; i < REFINE.length; i++) { const r = REFINE[i]; if (refinesAt(r, M.refine) && Inv.hasAll(s.slots, r.in)) return i; }
+    if (M.pump && s.pump) return -1;
+    return null;
+  }
+  recipeOut(s, i) { return i === -1 ? (s.pump === 'sea' ? { water_bottle: 1, salt: 1 } : { water_bottle: 1 }) : REFINE[i].out; }
+  // one step of refining; returns true while working
+  runRefiner(s, M, dt) {
+    if (!s.job || (s.job.r !== -1 && !Inv.hasAll(s.slots, REFINE[s.job.r].in))) { const j = this.machineJob(s, M); s.job = j === null ? null : { r: j, t: 0 }; }
+    if (!s.job) { s.st = 'idle'; return false; }
+    const time = s.job.r === -1 ? PUMP.time : REFINE[s.job.r].time;
+    s.job.t += dt * M.speed;
+    if (s.job.t < time) { s.st = 'work'; return true; }
+    const out = this.recipeOut(s, s.job.r), probe = s.slots.map((x) => (x ? { ...x } : null));
+    for (const [id, n] of Object.entries(out)) if (Inv.add(probe, id, n) > 0) { s.job.t = time; s.st = 'full'; return false; }
+    if (s.job.r !== -1) Inv.removeAll(s.slots, REFINE[s.job.r].in);
+    for (const [id, n] of Object.entries(out)) Inv.add(s.slots, id, n);
+    s.job = null; s.st = 'work'; s.dirty = true;
+    return true;
+  }
+  tickMachines(dt) {
+    if (this._mRev !== this.structRev) { this._mRev = this.structRev; this.machineIds = [...this.structs.values()].filter((s) => s.kind === 'deploy' && MACHINES[s.type]).map((s) => s.id); }
+    const grids = new Map(), sun = sunFactor(this.day);
+    for (const id of this.machineIds || []) {
+      const s = this.structs.get(id);
+      if (!s) continue;
+      const M = MACHINES[s.type];
+      if (M.portable) {
+        // burns its own fuel while it has work
+        let on = false;
+        if (this.machineJob(s, M) !== null || s.job) {
+          if (!(s.burn > 0)) for (const [fid, secs] of Object.entries(M.burn)) if (Inv.count(s.slots, fid)) { Inv.remove(s.slots, fid, 1); s.burn = secs; s.dirty = true; break; }
+          if (s.burn > 0) { s.burn -= dt; on = this.runRefiner(s, M, dt); } else s.st = 'nofuel';
+        } else s.st = 'idle';
+        if (!!s.pw !== on) { s.pw = on; this.updStruct(s); }
+        continue;
+      }
+      if (!s.bid) continue;
+      let g = grids.get(s.bid);
+      if (!g) grids.set(s.bid, (g = []));
+      g.push(s);
+    }
+    for (const list of grids.values()) {
+      let demand = 0, gen = 0, stored = 0, cap = 0;
+      for (const s of list) {
+        const M = MACHINES[s.type];
+        if (M.store) { s.charge = s.charge || 0; stored += s.charge; cap += M.store; }
+        if (M.solar) gen += M.gen * sun;
+        if (!M.draw) continue;
+        s._want = !s.off && (M.light ? true : M.charge ? (s.slots || []).some((x) => x && ITEMS[x.id]?.flashlight && (x.c ?? FLASH.start) < 100) : this.machineJob(s, M) !== null || !!s.job);
+        if (s._want) demand += M.draw;
+      }
+      // fuel generators kick in when the sun can't cover it or the batteries aren't full
+      for (const s of list) {
+        const M = MACHINES[s.type];
+        if (!M.burn) continue;
+        let run = false;
+        if (!s.off && (gen < demand || stored < cap - 1)) {
+          if (!(s.burn > 0)) for (const [fid, secs] of Object.entries(M.burn)) if (Inv.count(s.slots, fid)) { Inv.remove(s.slots, fid, 1); s.burn = secs; s.dirty = true; break; }
+          if (s.burn > 0) { s.burn -= dt; gen += M.gen; run = true; }
+        }
+        s.st = run ? 'work' : s.off ? 'off' : (s.burn > 0 || Inv.count(s.slots || [], 'fuel')) ? 'idle' : 'nofuel';
+        if (!!s.pw !== run) { s.pw = run; this.updStruct(s); }
+      }
+      // not enough power: the smallest loads (lights, chargers) keep running, the big ones wait
+      const banks = list.filter((s) => MACHINES[s.type].store);
+      let powered = true;
+      if (demand > gen + stored / dt) {
+        powered = false;
+        let avail = gen + stored / dt, used = 0;
+        for (const s of list.filter((x) => x._want).sort((a, b) => MACHINES[a.type].draw - MACHINES[b.type].draw)) {
+          if (used + MACHINES[s.type].draw <= avail) used += MACHINES[s.type].draw; else s._want = false;
+        }
+        demand = used;
+      }
+      let net = (gen - demand) * dt;
+      if (net >= 0) { for (const b of banks) { const room = MACHINES[b.type].store - b.charge, put = Math.min(room, net); b.charge += put; net -= put; } }
+      else { let need = -net; for (const b of banks) { const take = Math.min(b.charge, need); b.charge -= take; need -= take; } }
+      stored = banks.reduce((a, b) => a + b.charge, 0);
+      const grid = { gen: Math.round(gen), demand: Math.round(demand), stored, cap, powered };
+      for (const s of list) {
+        const M = MACHINES[s.type];
+        s._grid = grid;
+        if (M.solar) { const on = sun > 0.05; if (!!s.pw !== on) { s.pw = on; this.updStruct(s); } continue; }
+        if (M.store) { const pc = cap ? Math.round((s.charge / M.store) * 10) : 0; if (s._pc !== pc) { s._pc = pc; this.updStruct(s); } continue; }
+        if (!M.draw) continue;
+        let on = !!s._want;
+        if (on && M.refine) on = this.runRefiner(s, M, dt) || on;
+        else if (M.refine) s.st = s.off ? 'off' : !powered && this.machineJob(s, M) !== null ? 'nopower' : 'idle';
+        if (on && M.charge) { for (const x of s.slots) if (x && ITEMS[x.id]?.flashlight) { x.c = Math.min(100, (x.c ?? FLASH.start) + dt * 100 / 120); s.dirty = true; } s.st = 'work'; }
+        else if (M.charge) s.st = s.off ? 'off' : !powered && (s.slots || []).some((x) => x && ITEMS[x.id]?.flashlight && (x.c ?? FLASH.start) < 100) ? 'nopower' : 'idle';
+        if (M.light) s.st = s.off ? 'off' : on ? 'work' : 'nopower';
+        if (!!s.pw !== on) { s.pw = on; this.updStruct(s); }
+      }
+    }
+    // live status for anyone looking into a machine
+    for (const p of this.players.values()) {
+      if (!p.online || !p.openCont) continue;
+      const s = this.structs.get(p.openCont);
+      if (s && MACHINES[s.type]) { this.pushContainer(s.id); s.dirty = false; }
+    }
+  }
+  machineInfo(s) {
+    const M = MACHINES[s.type];
+    if (!M) return undefined;
+    const ST = { work: '🟢 Working', idle: '⚪ Idle — nothing to do', full: '🟠 Output full — take things out', nofuel: '🔴 Out of fuel', nopower: '🔴 No power', off: '⚫ Switched off' };
+    const lines = [];
+    if (M.refine) {
+      const j = s.job, time = j ? (j.r === -1 ? PUMP.time : REFINE[j.r].time) : 0;
+      const nm = (o) => Object.entries(o).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(' + ');
+      lines.push(`<b>${ST[s.st] || ST.idle}</b>${j ? ` · ${j.r === -1 ? `pumping ${s.pump === 'sea' ? 'sea' : 'fresh'} water` : nm(REFINE[j.r].in)} → ${nm(this.recipeOut(s, j.r))} · ${Math.min(100, Math.round((j.t / time) * 100))}%` : ''}`);
+      if (M.pump) lines.push(s.pump ? `🌊 Pump: ${s.pump === 'sea' ? 'sea water → Water Bottles + Salt' : 'fresh water → Water Bottles'} (or put Salt Water in)` : '🌊 No water to pump here — build it by the sea, or put Salt Water in');
+      lines.push(`Refines: ${REFINE.filter((r) => refinesAt(r, M.refine)).map((r) => `${Object.keys(r.in).map((k) => ITEMS[k].name).join('+')}→${Object.keys(r.out).map((k) => ITEMS[k].name).join('+')}`).join(' · ')}`);
+    }
+    if (M.portable) lines.push(`🔥 Burns Low Grade Fuel, Batteries or Power Cells from its storage${s.burn > 0 ? ` (${Math.ceil(s.burn)} s left)` : ''}`);
+    if (M.burn && !M.portable) lines.push(`<b>${ST[s.st] || ST.idle}</b> · makes ${M.gen} W from Low Grade Fuel${s.burn > 0 ? ` (${Math.ceil(s.burn)} s left on this can)` : ''}`);
+    if (M.charge) lines.push(`<b>${ST[s.st] || ST.idle}</b> · put Flashlights in to charge them (${s.slots.filter((x) => x && ITEMS[x.id]?.flashlight).map((x) => Math.round(x.c ?? FLASH.start) + '%').join(', ') || 'empty'})`);
+    const g = s._grid;
+    if (!M.portable) lines.push(g ? `⚡ Base power: ${g.gen} W made · ${g.demand} W used · batteries ${Math.round(g.stored / 3600)}/${Math.round(g.cap / 3600)} Wh${g.powered ? '' : ' · <span style="color:#ff8a7a">not enough power</span>'}` : '⚡ Not connected to a base');
+    return lines.join('<br>');
+  }
+
   onDrink(p) {
     if (!p.alive || now() - (p.lastDrink || 0) < 0.7) return;
     const g = this.world.ground(p.x, p.z);
@@ -2709,7 +2927,7 @@ export class Game {
     this.tickAnimals(dt);
     this.tickWeather(dt);
     this.acc.stats += dt; this.acc.save += dt; this.acc.slow += dt;
-    if (this.acc.stats >= 1) { this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
+    if (this.acc.stats >= 1) { this.tickMachines(this.acc.stats); this.tickFlashlights(this.acc.stats); this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }
     if (this.acc.save >= 60 && this.onSave) { this.acc.save = 0; this.onSave(); }
     this.flushPrints();
@@ -2736,7 +2954,7 @@ export class Game {
       if (p.y < 0.1 && this.world.ground(p.x, p.z) < 0) cold += 0.3 + (this.ice.frozen && this.ice.lakeAt(p.x, p.z) ? 0.6 : 0); // icy water bites hard
       let warmth = 0;
       for (const s of ARMOR_SLOTS) if (p.armor[s]) warmth += ITEMS[p.armor[s].id].armor.cold;
-      for (const s of this.structsNear(p.x, p.z, 0)) if ((s.type === 'campfire' || s.type === 'furnace') && dist3(s, p) < 5) warmth += 1;
+      for (const s of this.structsNear(p.x, p.z, 0)) if ((s.type === 'campfire' || s.type === 'furnace') && !s.off && dist3(s, p) < 5) warmth += 1;
       p.cold = Math.max(0, cold - warmth);
       if (p.cold > 0.5) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }
       // breath: holding it underwater, drowning when it runs out

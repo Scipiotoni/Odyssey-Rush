@@ -41,6 +41,10 @@ export class Held {
     this.torchLight = new THREE.PointLight(0xffa050, 0, 18, 1.5);
     this.torchLight.position.set(0.1, 0.6, -1.4);
     game.camera.add(this.torchLight);
+    // the handheld flashlight's beam (always in the scene, so switching it never recompiles shaders)
+    this.flash = new THREE.SpotLight(0xf4f0ff, 0, 55, 0.38, 0.5, 1.2);
+    this.flash.position.set(0.25, -0.15, -0.3); this.flash.target.position.set(0.05, -0.2, -10);
+    game.camera.add(this.flash); game.camera.add(this.flash.target);
   }
   item() { const st = this.game.inv[this.game.sel]; return st ? { st, d: ITEMS[st.id] } : null; }
 
@@ -181,6 +185,7 @@ export class Held {
     this.updateProjectiles(dt);
     const it = this.item();
     this.torchLight.intensity = it && ITEMS[it.st.id].light ? 7 + Math.random() * 1.5 : 0;
+    this.flash.intensity = it && ITEMS[it.st.id].flashlight && it.st.on && (it.st.c ?? 50) > 0 ? 55 : 0;
     if (this.vmItem?.userData.flame) this.vmItem.userData.flame.scale.setScalar(0.9 + Math.random() * 0.3);
     if (this.equip < 0.6) return; // still raising the item
     if (!it && active) {
@@ -203,6 +208,19 @@ export class Held {
       return;
     }
     const L = input.mouse.left, LP = input.mouse.leftPressed;
+    if (d.flashlight) {
+      const c = Math.round(st.c ?? 50);
+      g.ui.prompt(`🔦 ${st.on && c > 0 ? 'On' : 'Off'} · ${c}% <small><kbd>LMB</kbd> switch ${st.on ? 'off' : 'on'} · <kbd>R</kbd> put in a Battery (+50%)</small>`);
+      if (LP) { g.net.send({ t: 'flash' }); audio.click(); }
+      if (input.hit('KeyR')) g.net.send({ t: 'flash', a: 'charge' });
+      return;
+    }
+    if (d.bottle) {
+      const p = g.player.pos, wet = g.world.ground(p.x, p.z) < 0.2 && p.y < 1.8;
+      g.ui.prompt(wet ? '<kbd>LMB</kbd> Fill the bottle <small>(the sea gives Salt Water, lakes and rivers fresh water)</small>' : '<small>Stand in water to fill the bottle</small>');
+      if (LP && wet) { g.net.send({ t: 'fillbottle' }); audio.splash?.(0.3); }
+      return;
+    }
     if (d.plan) {
       const b = g.builder;
       if (b.furn && countItem(g.inv, b.furn) <= 0) b.furn = null; // ran out of that furniture

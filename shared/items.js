@@ -68,7 +68,7 @@ export const ITEMS = {
   raw_big_fish: { name: 'Big Raw Fish', cat: 'food', stack: 10, icon: '🐠', food: 8, water: 2, heal: -3 },
   cooked_big_fish: { name: 'Grilled Big Fish', cat: 'food', stack: 10, icon: '🍱', food: 42, water: 6, heal: 10 },
   pearl: { name: 'Pearl', cat: 'resource', stack: 50, icon: '🦪' },
-  water_bottle: { name: 'Water Bottle', cat: 'food', stack: 5, icon: '💧', food: 0, water: 45, heal: 0 },
+  water_bottle: { name: 'Water Bottle', cat: 'food', stack: 5, icon: '💧', food: 0, water: 45, heal: 0, empties: 'empty_bottle' },
   bandage: { name: 'Bandage', cat: 'medical', stack: 10, icon: '🩹', heal: 15, useTime: 1.5 },
   medkit: { name: 'Medkit', cat: 'medical', stack: 5, icon: '💉', heal: 50, useTime: 3 },
   // --- tools ---
@@ -160,6 +160,21 @@ export const ITEMS = {
   hull_reinforcement: { name: 'Hull Reinforcement Frame', cat: 'deployable', stack: 4, icon: '🧱', deploy: { kind: 'hull_reinforcement', hp: 800, hull: 6 } },
   repair_tool: { name: 'Repair Tool', cat: 'tool', stack: 1, icon: '🔧', repair: true },
   sealed_door: { name: 'Watertight Hatch', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 1100, tier: 'sealed' } },
+  // ---- flashlight, bottles, salt
+  hand_flashlight: { name: 'Flashlight', cat: 'tool', stack: 1, icon: '🔦', flashlight: true },
+  empty_bottle: { name: 'Empty Bottle', cat: 'resource', stack: 5, icon: '🫙', bottle: true },
+  salt_water: { name: 'Salt Water', cat: 'resource', stack: 5, icon: '🌊' },
+  salt: { name: 'Salt', cat: 'resource', stack: 100, icon: '🧂' },
+  jerky: { name: 'Salted Jerky', cat: 'food', stack: 20, icon: '🥓', food: 34, water: -3, heal: 4 },
+  // ---- machines (shared/machines.js): refiners and the base power grid. tech: shown in the build menu's Large Electronics tab
+  portable_refiner: { name: 'Portable Refiner', cat: 'deployable', stack: 1, icon: '⚗️', deploy: { kind: 'portable_refiner', hp: 300, slots: 8, tech: true } },
+  refinery: { name: 'Refinery', cat: 'deployable', stack: 1, icon: '🏭', deploy: { kind: 'refinery', hp: 700, slots: 18, tech: true, wall: true, h: 1.6, depth: 0.7 } },
+  desalinator: { name: 'Salt Water Refiner', cat: 'deployable', stack: 1, icon: '🚰', deploy: { kind: 'desalinator', hp: 600, slots: 12, tech: true, wall: true, h: 1.4, depth: 0.55 } },
+  solar_panel: { name: 'Solar Panel', cat: 'deployable', stack: 4, icon: '☀️', deploy: { kind: 'solar_panel', hp: 250, tech: true } },
+  fuel_generator: { name: 'Fuel Generator', cat: 'deployable', stack: 1, icon: '⛽', deploy: { kind: 'fuel_generator', hp: 500, slots: 4, tech: true } },
+  battery_bank: { name: 'Battery Bank', cat: 'deployable', stack: 2, icon: '🔋', deploy: { kind: 'battery_bank', hp: 400, tech: true, wall: true, h: 1.2, depth: 0.4 } },
+  charger: { name: 'Charging Station', cat: 'deployable', stack: 2, icon: '🔌', deploy: { kind: 'charger', hp: 300, slots: 4, tech: true, wall: true, h: 0.7, depth: 0.3 } },
+  wall_light: { name: 'Electric Wall Light', cat: 'deployable', stack: 10, icon: '💡', deploy: { kind: 'wall_light', hp: 60, tech: true, wall: true, light: true, h: 0.3, depth: 0.15 } },
 };
 
 // Station requirement strings: null | 'wb1' | 'wb2' | 'wb3' | 'campfire' | 'furnace'
@@ -303,6 +318,18 @@ RECIPES.push({ out: 'steel_shovel', n: 1, time: 8, station: 'wb1', cost: { metal
 RECIPES.push({ out: 'power_drill', n: 1, time: 20, station: 'wb2', cost: { titanium: 4, battery: 2, gears: 2, metal_frags: 200 } });
 RECIPES.push({ out: 'ladder', n: 1, time: 3, cost: { wood: 60 } });
 RECIPES.push({ out: 'wall_torch', n: 2, time: 2, cost: { wood: 10, cloth: 2 } });
+// ---- flashlight, refiners and power (appended: recipe ids are positional)
+RECIPES.push({ out: 'hand_flashlight', n: 1, time: 6, station: 'wb1', cost: { copper: 3, glass: 1, metal_frags: 40, battery: 1 } });
+RECIPES.push({ out: 'empty_bottle', n: 2, time: 2, cost: { metal_frags: 15 } });
+RECIPES.push({ out: 'jerky', n: 2, time: 6, station: 'campfire', cost: { raw_meat: 2, salt: 1 } });
+RECIPES.push({ out: 'portable_refiner', n: 1, time: 12, station: 'wb1', cost: { metal_frags: 150, copper: 4, gears: 1, pipe: 1 } });
+RECIPES.push({ out: 'refinery', n: 1, time: 25, station: 'wb2', cost: { metal_frags: 400, copper: 10, gears: 3, pipe: 2, titanium: 2 } });
+RECIPES.push({ out: 'desalinator', n: 1, time: 20, station: 'wb2', cost: { metal_frags: 300, copper: 8, pipe: 3, glass: 2 } });
+RECIPES.push({ out: 'solar_panel', n: 1, time: 10, station: 'wb2', cost: { glass: 4, copper: 6, metal_frags: 120 } });
+RECIPES.push({ out: 'fuel_generator', n: 1, time: 15, station: 'wb1', cost: { metal_frags: 250, gears: 2, pipe: 2, copper: 6 } });
+RECIPES.push({ out: 'battery_bank', n: 1, time: 15, station: 'wb2', cost: { battery: 4, copper: 6, metal_frags: 150 } });
+RECIPES.push({ out: 'charger', n: 1, time: 8, station: 'wb1', cost: { copper: 6, battery: 1, metal_frags: 80 } });
+RECIPES.push({ out: 'wall_light', n: 2, time: 4, station: 'wb1', cost: { copper: 2, glass: 1, metal_frags: 20 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench', fabricator: 'Fabricator' };
@@ -364,14 +391,14 @@ export function itemMaxStack(id) { return ITEMS[id]?.stack || 1; }
 const SIZES = {
   // 2x2: long guns, big tools of war, bulky gear
   rifle: [2, 2], bolt_rifle: [2, 2], lmg: [2, 2], rocket_launcher: [2, 2], shotgun: [2, 2], double_barrel: [2, 2], crossbow: [2, 2],
-  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], steel_shovel: [1, 2], power_drill: [2, 1], ladder: [1, 2], o2_tank: [1, 2], minisub_kit: [2, 2], cyclops_kit: [2, 2], rowboat_kit: [2, 2], power_cell: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
+  metal_chest: [2, 2], leather_vest: [2, 1], cloth_shirt: [2, 1], wheel: [2, 2], large_backpack: [2, 2], backpack: [2, 2], small_bag: [1, 2], steel_shovel: [1, 2], power_drill: [2, 1], hand_flashlight: [1, 1], ladder: [1, 2], o2_tank: [1, 2], minisub_kit: [2, 2], cyclops_kit: [2, 2], rowboat_kit: [2, 2], power_cell: [1, 2], o2_tank_large: [2, 2], fishing_rod: [1, 2], raw_big_fish: [2, 1], cooked_big_fish: [2, 1],
   // long handles: 1 wide, 2 tall
   wooden_spear: [1, 2], stone_hatchet: [1, 2], stone_pickaxe: [1, 2], metal_hatchet: [1, 2], metal_pickaxe: [1, 2], shovel: [1, 2],
   machete: [1, 2], sword: [1, 2], battle_axe: [1, 2], bow: [1, 2], torch: [1, 2], cloth_pants: [1, 2], leather_pants: [1, 2], metal_legs: [1, 2], rocket: [1, 2],
   // wide
   smg: [2, 1], engine_parts: [2, 1], pipe: [2, 1], sleeping_bag: [2, 1], campfire: [2, 1], rug: [2, 1], painting: [2, 1], satchel: [1, 1],
 };
-const DEPLOY_SIZES = { furnace: [2, 2], workbench1: [2, 2], workbench2: [2, 2], workbench3: [2, 2], small_box: [2, 1], large_box: [2, 2], tool_cupboard: [1, 2],
+const DEPLOY_SIZES = { furnace: [2, 2], workbench1: [2, 2], workbench2: [2, 2], workbench3: [2, 2], small_box: [2, 1], large_box: [2, 2], tool_cupboard: [1, 2], portable_refiner: [2, 2], refinery: [2, 2], desalinator: [2, 2], solar_panel: [2, 2], fuel_generator: [2, 2], battery_bank: [2, 1], charger: [1, 1], wall_light: [1, 1],
   chair: [1, 2], table: [2, 2], bed: [2, 2], sofa: [2, 2], bookshelf: [2, 2], wardrobe: [2, 2], fridge: [2, 2], lamp: [1, 2], plant_pot: [1, 1] };
 export function itemSize(id) {
   if (SIZES[id]) return SIZES[id];

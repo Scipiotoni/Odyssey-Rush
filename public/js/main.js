@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { World, BIOME_NAMES, chunkKey, CHUNK } from '/shared/worldgen.js';
 import { ITEMS, NODES, ANIMALS, INV_SIZE } from '/shared/items.js';
+import { MACHINES } from '/shared/machines.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE } from '/shared/vehicles.js';
 import { PIECES, TIERS, rotY } from '/shared/building.js';
 import { Physics } from './physics.js';
@@ -288,7 +289,7 @@ class Game {
     n.on('shit', (m) => { this.lastStructHit = { ...m, t: performance.now() }; this.ui.hitmarker(false); });
     n.on('cont', (m) => {
       if (!m.slots) { this.container = null; if (this.ui.open === 'inv') this.ui.renderInventory(); return; }
-      this.container = { id: m.id, title: m.title, slots: m.slots, station: m.station, queue: m.queue, recv: performance.now() };
+      this.container = { id: m.id, title: m.title, slots: m.slots, station: m.station, info: m.info, queue: m.queue, recv: performance.now() };
       if (this.ui.open !== 'inv') this.ui.show('inv'); else this.ui.renderInventory();
     });
     n.on('hurt', (m) => {
@@ -421,6 +422,7 @@ class Game {
       if (d < 120) { audio.iceCrack(true, d); if (d < 60) { this.effects.burst(pos, { count: 40, color: 0xe4f0f8, speed: 4.5, size: 0.11, life: 1.1, gravity: 9 }); this.effects.burst(pos, { count: 18, color: 0xbfdcec, speed: 2.5, size: 0.06, life: 0.8 }); } }
       return;
     }
+    if (m.k === 'douse' || m.k === 'ignite') { const pos = new THREE.Vector3(...m.p); pos.y += 0.4; this.effects.burst(pos, m.k === 'douse' ? { count: 16, color: 0xcfcfcf, speed: 1.2, up: 2.5, size: 0.25, life: 1.6, gravity: -1.5, drag: 1 } : { count: 18, color: 0xffa030, speed: 2.5, up: 2, size: 0.1, life: 0.7, glow: true, gravity: -1 }); if (cam.distanceTo(pos) < 30) audio.click(); return; }
     if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: m.ore ? [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff, 0x3aa080, 0xe890b0, 0xd8dce0, 0xf4f4ff, 0x3a70ff][m.ore] : [0x5c4530, 0x8c5c38, 0x75706a, 0x484a52][m.layer || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
     if (m.k === 'gunmod') { audio.click(); return; }
     if (m.k === 'throw') { this.held.showThrown(m.a, m.v, m.dur); return; }
@@ -663,7 +665,21 @@ class Game {
       } else if (hit.kind === 's') {
         const s = this.structures.map.get(hit.id)?.s;
         if (s) {
+          const G = active && this.input.hit('KeyG'), M = MACHINES[s.type];
           if (s.k === 'door') { text = `<kbd>E</kbd> ${s.open ? 'Close' : 'Open'} door`; if (E) this.net.send({ t: 'use', id: s.id }); }
+          else if (M) {
+            // machines: open the storage (refiners, generator, charger), switch base machines on/off, see their state
+            const st = M.solar ? (s.pw ? '☀️ making power' : '🌙 no sun right now') : M.store ? `🔋 ${s.ch || 0}% charged` : s.off ? '⚫ switched off' : s.pw ? '🟢 running' : M.portable ? '' : M.gen ? '⚪ idle' : '⚪ idle / no power';
+            const parts = [];
+            if (ITEMS[s.type].deploy.slots) { parts.push(`<kbd>E</kbd> Open ${M.name}`); if (E) this.net.send({ t: 'open', id: s.id }); } else parts.push(M.name);
+            if (!M.portable && !M.solar && !M.store) { parts.push(`<kbd>G</kbd> Switch ${s.off ? 'on' : 'off'}`); if (G) this.net.send({ t: 'use', id: s.id, a: 'power' }); }
+            text = parts.join(' · ') + (st ? ` <small>(${st})</small>` : '');
+          }
+          else if (s.type === 'campfire' || s.type === 'furnace') {
+            text = s.off ? `<kbd>G</kbd> Light the ${ITEMS[s.type].name} <small>(put out)</small>` : `<kbd>E</kbd> Use ${ITEMS[s.type].name} · <kbd>G</kbd> Put it out`;
+            if (E && !s.off) this.net.send({ t: 'open', id: s.id });
+            if (G) this.net.send({ t: 'use', id: s.id, a: 'fire' });
+          }
           else if (ITEMS[s.type]?.deploy?.slots && !['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith', 'fabricator'].includes(s.type)) { text = `<kbd>E</kbd> Open ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.type === 'tool_cupboard') { const authed = s.auth?.includes(this.pid); text = `<kbd>E</kbd> ${authed ? 'Deauthorize' : 'Authorize'} at Tool Cupboard <small>(${s.auth?.length || 0} authorized)</small>`; if (E) this.net.send({ t: 'use', id: s.id }); }
           else if (s.type === 'sleeping_bag' || s.type === 'bed') { const nm = s.type === 'bed' ? 'bed' : 'sleeping bag'; text = s.o === this.pid ? `Your ${nm} (respawn point)` : `<kbd>E</kbd> Claim ${nm}`; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
