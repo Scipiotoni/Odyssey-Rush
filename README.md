@@ -77,7 +77,8 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | LMB / RMB with Shovel or Drill | Dig anywhere — the ground scoops away smoothly, deeper layers are harder (stone, ores and buried finds) / fill a hole back in (3 stone) |
 | Z | Fly (server owner, Creative servers) |
 | X | Demolish your own piece (hammer, within 10 min of placing) |
-| G / H | Refuel / patch up a vehicle you're looking at |
+| E on a fuel cap / battery hatch | Open the vehicle's fuel tank or battery compartment |
+| H | Patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
 | RMB with a rock | Throw it (hurts players & animals, pick it up again with E) |
 | T or Enter | Chat (`/help` lists commands) · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume) |
@@ -255,18 +256,24 @@ they have a pickaxe and enough breath to hack their way out.
   under the sea. Lithium is richer down there too. The furnace turns them into Copper Wire, Lithium, Titanium Ingots and
   Toughened Glass.
 - **Power**: Batteries (lithium + copper, Workbench 1) and Power Cells (2 batteries + titanium + glass, Workbench 2).
-  Submarines run on charge. Insert batteries with **G**, and using power cells gives more charge.
-- **Mini Sub** (kit at Workbench 2): a one-seat bubble-canopy sub. Hold the kit and click to launch it into deep enough
+  Submarines run on charge. Like in Subnautica, you put the batteries in yourself: on the Mini Sub, look at the
+  **battery hatch** on top at the back and press **E**. On the Pacific, use the **power cell rack** in the engine room.
+  Drop Batteries (25) or Power Cells (120) into the slots; when the one in use runs flat the next one is used.
+- **Fuel**: cars, the Atlas Hauler and the motorboat have a **fuel cap** (yellow ring: the left side of the jeeps, on
+  top of the ATV's tank, on the boat's motor). Look at it, press **E** and put Low Grade Fuel in the tank.
+- **Mini Sub** (kit at Workbench 2): a one-seat bubble-canopy sub with twin ducted thrusters. Hold the kit and click to launch it into deep enough
   water. **W/S** thrust, **A/D** turn, **Space** rise, **Ctrl** dive. It noses down to dive and banks into turns.
-- **Pacific** (kit at Workbench 3, or `/spawn pacific`): a big walk-in submarine. Swim underneath and climb in through
+- **Pacific** (kit at Workbench 3, or `/spawn pacific`): a 37 m walk-in submarine, 8 m wide and 4 m tall inside, with
+  a glass bow dome, a dorsal sail, lit portholes, sponsons and twin ducted screws. Swim underneath and climb in through
   the **floor hatch** with **E**. Inside it's dry and breathable, with no sea water in the hull even far below the surface.
   - **Bridge** (bow): the helm and captain's chair under a big glass dome, with side stations and a sonar screen.
-  - **Corridor**: panelled, with pipes overhead, a built-in **Fabricator** (crafts everything a Workbench 2 can) and two
-    **wall lockers**. The rest of the deck is buildable and furnishable with the Building Plan.
+  - **Crew quarters**: bunk beds, a mess table, a built-in **Fabricator** (crafts everything a Workbench 2 can) and two
+    **wall lockers**.
+  - **The hall** amidships: a big buildable deck (marked in yellow) you can build and furnish with the Building Plan.
   - **Docking bay** (amidships): a **Mini Sub** comes docked under the hull. At the bay console press **E** to drop into
     it and launch. To dock again, drive the Mini Sub up under the bay and you climb back into the Pacific. A docked Mini
     Sub recharges from the Pacific's power.
-  - **Engine room** (stern): the drive, the **upgrade console** (**U**, modules) and the power cell rack (**G**).
+  - **Engine room** (stern): the drive, the **upgrade console** (**E**, modules) and the **power cell rack** (**E**).
   - **Flooding**: below its crush depth the Pacific springs **leaks** that fill it with water. Seal them with a Repair
     Tool and the water drains away. A wrecked Pacific floods completely.
 - **Crush depth**: every sub has one, shown on the HUD with your depth. Below it the hull groans, shakes and takes damage.
@@ -299,6 +306,7 @@ Admins can force it with `/weather clear|overcast|rain|storm [now]`.
 
 - **Flashlight** (Workbench 1): a bright beam. **LMB** switches it on and off, **R** puts in a Battery (+50%) or a Power
   Cell (+100%). A full charge lasts 15 minutes; the charge shows on its slot. A **Charging Station** recharges it too.
+  Other players see your flashlight beam (and a torch you carry) light up the night.
 - **Bottles and salt**: hold an **Empty Bottle** and LMB in water. The sea gives **Salt Water**, lakes and rivers fresh
   water. Drinking a Water Bottle gives the empty bottle back. Refining Salt Water gives a **Water Bottle and Salt**. Salt
   cures meat into **Salted Jerky** at a camp fire.

@@ -138,6 +138,19 @@ export class Game {
       for (const l of d.loot || []) { this.loot.set(l.id, l); this.region(rkey(l.x, l.z)).l.add(l.id); }
       for (const v of d.vehicles || []) { if (!VEHICLES[v.type]) continue; v.seats = new Array(VEHICLES[v.type].seats.length).fill(0); v.attached = new Set(); if (v.var === undefined) v.var = Math.floor(hash3(v.id.length, v.x | 0, v.z | 0, 3) * 1000); this.vehicles.set(v.id, v); }
       for (const s of this.structs.values()) if (s.veh) { const v = this.vehicles.get(s.veh); if (v) v.attached.add(s.id); else this.structs.delete(s.id); }
+      // the Pacific got bigger: move what was inside an old one to the same spots in the new layout
+      for (const v of this.vehicles.values()) {
+        if (v.type !== 'cyclops' || v.layout === 2) continue;
+        v.layout = 2;
+        const I = VEHICLES.cyclops.interior;
+        for (const id of v.attached) {
+          const s = this.structs.get(id);
+          if (!s?.local) continue;
+          s.local.y += I.y0 - -1.7;
+          if (s.kind === 'piece') s.local.z += VEHICLES.cyclops.deck.z - 0.5;
+          else { s.local.x = Math.max(-I.hx + 0.3, Math.min(I.hx - 0.3, s.local.x * (I.hx / 2.75))); s.local.z = s.local.z * (I.hz / 12.2); }
+        }
+      }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
       for (const k of d.spawned || []) this.spawned.add(k);
       for (const c of d.clans || []) this.clans.set(c.id, c);
@@ -290,7 +303,6 @@ export class Game {
       case 'v_enter': return this.onVehicleEnter(p, m);
       case 'v_exit': return this.exitVehicle(p, m.p);
       case 'v_state': return this.onVehicleState(p, m);
-      case 'v_fuel': return this.onVehicleFuel(p, m);
       case 'v_repair': return this.onVehicleRepair(p, m);
       case 'v_crash': return this.onVehicleCrash(p, m);
       case 'v_hit': return this.onVehicleHit(p, m);
@@ -1345,6 +1357,15 @@ export class Game {
   }
 
   getContainer(id) {
+    if (id.startsWith('vf:')) {
+      // a vehicle's fuel tank / battery compartment: what's in it is used up one can / battery at a time
+      const v = this.vehicles.get(id.slice(3)), def = v && VEHICLES[v.type];
+      if (!def?.cells) return null;
+      if (!v.cells) v.cells = Inv.emptySlots(def.cells);
+      const E = this.vEnergy(v), unit = def.power ? '🔋' : '⛽';
+      const info = `${unit} <b>${Math.floor(E)}</b> / ${def.fuelCap} · in use: ${Math.floor(v.fuel || 0)}${def.power ? ' (Battery = 25 · Power Cell = 120)' : ' (1 per can of Low Grade Fuel)'}<br><small>${def.power ? 'Put Batteries or Power Cells in. When the one in use runs flat the next one is used.' : 'Put Low Grade Fuel in. The engine burns it as you drive.'}</small>`;
+      return { obj: v, title: `${def.name} — ${def.power ? 'Battery compartment' : 'Fuel tank'}`, slots: v.cells, cells: def.power ? 'power' : 'fuel', info, range: Math.max(def.half[0], def.half[2]) + 4 };
+    }
     if (id.startsWith('vm:')) {
       const v = this.vehicles.get(id.slice(3)), def = v && VEHICLES[v.type];
       if (!def?.moduleSlots) return null;
@@ -1435,7 +1456,7 @@ export class Game {
       if (r.c === 'c' && p.openCont) {
         const c = this.getContainer(p.openCont);
         if (!c || dist3(c.obj, p) > (c.range || 5)) return null;
-        return { arr: c.slots, i: num(r.i, -1) | 0, cont: p.openCont, modules: !!c.modules };
+        return { arr: c.slots, i: num(r.i, -1) | 0, cont: p.openCont, modules: !!c.modules, cells: c.cells };
       }
       return null;
     };
@@ -1446,6 +1467,7 @@ export class Game {
     if (!src) return;
     let ok = false;
     if (B.modules && !ITEMS[src.id]?.module) return this.toast(p, 'Only submarine modules fit in the module bay');
+    if (B.cells && !(B.cells === 'power' ? ['battery', 'power_cell'] : ['fuel']).includes(src.id)) return this.toast(p, B.cells === 'power' ? 'Only Batteries and Power Cells fit in here' : 'Only Low Grade Fuel goes in the tank');
     if (A.armor && B.armor) return;
     if (A.armor) ok = this.unequip(p, A.i, B);
     else if (B.armor) ok = this.equip(p, A, B.i);
@@ -2562,32 +2584,25 @@ export class Game {
     const vd = VEHICLES[v.type];
     if (vd.power) v.fuel = Math.max(0, v.fuel - vd.fuelUse * dt * (0.12 + Math.abs(v.thr) + Math.abs(num(m.vt)) * 0.5) * (1 - subStats(vd, v.modules, ITEMS).eff));
     else if (Math.abs(v.thr) > 0.05) { v.fuel = Math.max(0, v.fuel - vd.fuelUse * dt * Math.abs(v.thr)); }
+    if (v.fuel <= 0.001) this.drawCells(v);
     for (const pid of v.seats) { const o = this.byPid.get(pid); if (o) { o.x = v.x; o.y = v.y; o.z = v.z; this.updateRegions(o); } }
     this.refreshAttached(v);
     if (v.docked) this.refreshDocked(v);
     this.tyreTracks(v);
   }
-  onVehicleFuel(p, m) {
-    const v = this.vehicles.get(String(m.id));
-    if (!v || dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 + Math.max(0, VEHICLES[v.type].half[2] - 2)) return;
-    const def = VEHICLES[v.type];
-    if (def.power) {
-      // swap in batteries / power cells (the old ones are used up)
-      let added = 0;
-      for (const id of ['power_cell', 'battery']) {
-        while (v.fuel + ITEMS[id].power * 0.5 <= def.fuelCap && Inv.count(p.inv, id) > 0) { Inv.remove(p.inv, id, 1); v.fuel = Math.min(def.fuelCap, v.fuel + ITEMS[id].power); added++; }
-      }
-      if (!added) return this.toast(p, v.fuel >= def.fuelCap - 5 ? 'Fully charged' : 'You have no Batteries or Power Cells');
-      this.sendInv(p);
-      return this.toast(p, `🔋 Charged to ${Math.floor(v.fuel)}/${def.fuelCap}`);
+  // vehicle energy: what's left in the battery / can in use (v.fuel) plus everything waiting in the compartment
+  cellEnergy(id) { return id === 'fuel' ? 1 : ITEMS[id]?.power || 0; }
+  vEnergy(v) { let e = v.fuel || 0; for (const st of v.cells || []) if (st) e += this.cellEnergy(st.id) * st.n; return e; }
+  drawCells(v) {
+    if ((v.fuel || 0) > 0.001 || !v.cells) return;
+    for (let i = 0; i < v.cells.length; i++) {
+      const st = v.cells[i];
+      if (!st) continue;
+      st.n -= 1; v.fuel = (v.fuel || 0) + this.cellEnergy(st.id);
+      if (st.n <= 0) v.cells[i] = null;
+      this.pushContainer('vf:' + v.id);
+      return;
     }
-    const room = Math.floor(def.fuelCap - v.fuel);
-    const n = Math.min(room, Inv.count(p.inv, 'fuel'));
-    if (n <= 0) return this.toast(p, room <= 0 ? 'Tank is full' : 'You have no Low Grade Fuel');
-    Inv.remove(p.inv, 'fuel', n);
-    v.fuel += n;
-    this.sendInv(p);
-    this.toast(p, `⛽ Added ${n} fuel (${Math.floor(v.fuel)}/${def.fuelCap})`);
   }
   onVehicleRepair(p, m) {
     const v = this.vehicles.get(String(m.id));
@@ -2635,7 +2650,7 @@ export class Game {
     if (m.k === 'p') { const o = this.byPid.get(num(m.id)); if (o && o !== p && dist3(o, v) < 6 && !o.vehicle) this.damagePlayer(o, spd * 4, p); }
     if (m.k === 'a') { const a = this.animals.get(String(m.id)); if (a && dist3(a, v) < 6) this.damageAnimal(a, spd * 6, p); }
   }
-  sVehicleFull(v) { return { id: v.id, type: v.type, var: v.var || 0, p: [v.x, v.y, v.z], q: v.q, vel: v.vel, hp: v.hp, fuel: v.fuel, broken: v.broken, needs: v.needs, sub: VEHICLES[v.type].sub ? this.subInfo(v) : undefined }; }
+  sVehicleFull(v) { return { id: v.id, type: v.type, var: v.var || 0, p: [v.x, v.y, v.z], q: v.q, vel: v.vel, hp: v.hp, fuel: this.vEnergy(v), broken: v.broken, needs: v.needs, sub: VEHICLES[v.type].sub ? this.subInfo(v) : undefined }; }
   // ------------------------------------------------------------ submarines
   subInfo(v) { const st = subStats(VEHICLES[v.type], v.modules, ITEMS); return [st.crush, r2(st.thrust), r2(st.eff), r2(st.hull)]; }
   inSubInterior(v, o) {
@@ -2674,6 +2689,7 @@ export class Game {
   // the Pacific comes fitted out: a fabricator and lockers inside, and a Mini Sub in its docking bay
   outfitPacific(v) {
     const def = VEHICLES[v.type];
+    v.layout = 2;
     for (const [kind, lx, lz, yaw] of def.outfit) {
       const d = ITEMS[kind].deploy;
       const s2 = { id: this.id('S'), kind: 'deploy', type: kind, hp: d.hp, mhp: d.hp, owner: v.owner || 0, veh: v.id, local: { x: lx, y: def.interior.y0, z: lz, yaw }, x: 0, y: 0, z: 0, yaw: 0, created: now() };
@@ -3013,12 +3029,12 @@ export class Game {
       for (const o of all) {
         if (o === p || !o.alive || dist2(o, p) > R2) continue;
         const hs = o.inv[o.sel], held = hs ? hs.id + (hs.mods ? '|' + modsKey(hs.mods) : '') : '';
-        const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0) | (o.air ? 8 : 0) | (o.spr ? 16 : 0) | (this.sameClan(o, p) ? 32 : 0) | (o.sw && !o.vehicle ? 64 : 0);
+        const flags = (o.cr ? 1 : 0) | (!o.online ? 2 : 0) | (o.vehicle ? 4 : 0) | (o.air ? 8 : 0) | (o.spr ? 16 : 0) | (this.sameClan(o, p) ? 32 : 0) | (o.sw && !o.vehicle ? 64 : 0) | (hs && o.online && !o.vehicle && ((ITEMS[hs.id]?.flashlight && hs.on && (hs.c ?? 50) > 0) || ITEMS[hs.id]?.light) ? 128 : 0);
         pl.push([o.pid, r2(o.x), r2(o.y), r2(o.z), r2(o.yaw), r2(o.pitch), flags, held, ARMOR_SLOTS.map((s) => o.armor[s]?.id || '').join(','), o.name, o.vehicle ? o.vehicle.id : '', o.vehicle ? o.vehicle.seat : -1, o.lookStr || '', this.clans.get(o.clan)?.tag || '']);
       }
       for (const v of this.vehicles.values()) {
         if (dist2(v, p) > R2) continue;
-        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(v.fuel), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0, v.decRev || 0, VEHICLES[v.type].sub ? this.subInfo(v) : 0, v.dockedIn || 0, VEHICLES[v.type].interior ? [r2(v.flood || 0), v.leaks || []] : 0]);
+        ve.push([v.id, v.type, r2(v.x), r2(v.y), r2(v.z), v.q.map((x) => Math.round(x * 1e4) / 1e4), Math.ceil(v.hp), v.broken ? 1 : 0, r2(v.steer || 0), r2(v.rpm || 0), v.seats[0] || 0, Math.floor(this.vEnergy(v)), v.broken ? v.needs : 0, v.vel ? v.vel.map(r2) : [0, 0, 0], v.var || 0, v.attached ? v.attached.size : 0, v.decRev || 0, VEHICLES[v.type].sub ? this.subInfo(v) : 0, v.dockedIn || 0, VEHICLES[v.type].interior ? [r2(v.flood || 0), v.leaks || []] : 0]);
       }
       for (const a of this.animals.values()) {
         if (dist2(a, p) > R2) continue;

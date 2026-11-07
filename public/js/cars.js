@@ -465,9 +465,19 @@ function hauler(g, def, ud, paint) {
   B(g, W - 0.3, 0.25, 0.4, J.panel, 0, 1.15, 6.25); B(g, 0.6, 0.02, 0.25, J.cyan, 0, 1.3, 6.2, -0.4);
 }
 
+// the fuel cap where you open the tank (shared/vehicles.js service point): facing out of the side it sits on
+export function fuelCap(def) {
+  const [x, y, z] = def.service, g = new THREE.Group();
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 14), new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.5, metalness: 0.7 }));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.018, 6, 18), new THREE.MeshStandardMaterial({ color: 0xf0b020, emissive: 0x6a4000, roughness: 0.4 }));
+  ring.rotation.x = Math.PI / 2; g.add(cap, ring);
+  g.position.set(x, y, z);
+  if (Math.abs(x) > 0.5) g.rotation.z = Math.sign(x) * -Math.PI / 2; // on the side
+  return g;
+}
 export function makeVehicle(type, variant = 0) {
   const def = VEHICLES[type];
-  if (def.boat) return makeBoat(type);
+  if (def.boat) { const b = makeBoat(type); if (def.service) (b.userData.body || b).add(fuelCap(def)); return b; }
   if (def.sub) return makeSub(type);
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
@@ -496,6 +506,7 @@ export function makeVehicle(type, variant = 0) {
   headlight.position.set(0, 0, def.half[2]); headlight.target.position.set(0, -1.2, def.half[2] + 12);
   body.add(headlight); body.add(headlight.target);
   Object.assign(ud, { wheels, headlight });
+  if (def.service) body.add(fuelCap(def));
   g.userData = ud;
   return g;
 }

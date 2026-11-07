@@ -24,9 +24,15 @@ function nameSprite(name, tag = '', mate = false) {
   return s;
 }
 
+const BEAM_MAT = new THREE.MeshBasicMaterial({ color: 0xfff6dc, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+
 export class Entities {
   constructor(scene, effects) {
     this.scene = scene; this.effects = effects;
+    // other players' flashlights and torches: a few shared lights follow the nearest ones (always in the scene, so
+    // they never force a shader recompile), plus a faint visible beam on every lit flashlight
+    this.rSpots = Array.from({ length: 3 }, () => { const l = new THREE.SpotLight(0xf4f0ff, 0, 45, 0.38, 0.5, 1.2); scene.add(l); scene.add(l.target); return l; });
+    this.rPoints = Array.from({ length: 3 }, () => { const l = new THREE.PointLight(0xffa050, 0, 16, 1.5); scene.add(l); return l; });
     this.players = new Map();
     this.animals = new Map();
     this.loot = new Map();
@@ -60,6 +66,12 @@ export class Entities {
         p.heldItem = hid || '';
         p.held = hid ? makeItemModel(hid, parseModsKey(hmods)) : null;
         if (p.held) { p.held.rotation.x = -Math.PI / 2; p.model.userData.hand.add(p.held); }
+        p.beam = null;
+        if (p.held && ITEMDEFS[hid]?.flashlight) {
+          // a soft light cone out of the lens (the held item points along +Y)
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(1.6, 9, 16, 1, true).translate(0, -4.5, 0).rotateX(Math.PI), BEAM_MAT);
+          cone.position.y = 0.27; cone.renderOrder = 5; cone.visible = false; p.held.add(cone); p.beam = cone;
+        }
       }
     }
     for (const [pid, p] of this.players) if (!seen.has(pid)) { this.scene.remove(p.model); this.players.delete(pid); }
@@ -116,7 +128,27 @@ export class Entities {
       p.tag.visible = !sleeping && (dist < 22 || (mate && dist < 400));
       const sc = mate ? Math.max(1, dist / 18) : 1;
       p.tag.scale.set(1.6 * sc, 0.3 * sc, 1);
+      const lit = !!(p.flags & 128) && !sleeping;
+      if (p.beam) p.beam.visible = lit;
+      if (p.held?.userData.flame) p.held.userData.flame.visible = lit || !ITEMDEFS[p.heldItem]?.light;
     }
+    // hand the shared lights to the nearest lit flashlights / torches
+    const lit = [...this.players.values()].filter((p) => p.flags & 128 && !(p.flags & 2) && p.held).map((p) => [p, camPos.distanceTo(p.pos)]).filter((a) => a[1] < 80).sort((a, b) => a[1] - b[1]);
+    const spots = lit.filter(([p]) => ITEMDEFS[p.heldItem]?.flashlight), pts = lit.filter(([p]) => ITEMDEFS[p.heldItem]?.light);
+    const hp = new THREE.Vector3();
+    this.rSpots.forEach((l, i) => {
+      const p = spots[i]?.[0];
+      if (!p) { l.intensity = 0; return; }
+      p.held.getWorldPosition(hp);
+      const cp = Math.cos(p.pitch || 0);
+      l.position.copy(hp); l.target.position.set(hp.x - Math.sin(p.yaw) * cp * 10, hp.y + Math.sin(p.pitch || 0) * 10, hp.z - Math.cos(p.yaw) * cp * 10);
+      l.intensity = 50;
+    });
+    this.rPoints.forEach((l, i) => {
+      const p = pts[i]?.[0];
+      if (!p) { l.intensity = 0; return; }
+      p.held.getWorldPosition(hp); l.position.set(hp.x, hp.y + 0.4, hp.z); l.intensity = 6 + Math.random() * 1.5;
+    });
   }
   playerTargets() {
     const out = [];

@@ -700,22 +700,32 @@ class Game {
             text = kid ? `<b>Docking bay</b> — Mini Sub 🔋 ${kid.fuel}/${VEHICLES.minisub.fuelCap} · 🔧 ${kid.hp}/${VEHICLES.minisub.hp}<br><kbd>E</kbd> Climb in and launch it` : '<b>Docking bay</b> — empty. Drive a Mini Sub up under the hull here to dock it.';
             if (kid && E) this.net.send({ t: 'undock', id: v.id });
           } else if (def.interior && hit.col.role === 'engine') {
-            text = `<b>${def.name} engine room</b> 🔋 ${v.fuel}/${def.fuelCap} · crush depth ${v.subInfo?.crush ?? def.depths[0]} m<br><kbd>U</kbd> Upgrade console (modules) · <kbd>G</kbd> Swap in power cells/batteries (${countItem(this.inv, 'power_cell')} cells, ${countItem(this.inv, 'battery')} 🔋)`;
-            if (active && this.input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
-            if (active && this.input.hit('KeyG')) this.net.send({ t: 'v_fuel', id: v.id });
+            text = `<b>Upgrade console</b> · crush depth ${v.subInfo?.crush ?? def.depths[0]} m<br><kbd>E</kbd> Module bay (depth, thrust and efficiency modules)`;
+            if (E) this.net.send({ t: 'open', id: 'vm:' + v.id });
+          } else if (def.interior && hit.col.role === 'cells') {
+            text = `<b>Power cell rack</b> 🔋 ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open — put Power Cells and Batteries in`;
+            if (E) this.net.send({ t: 'open', id: 'vf:' + v.id });
           } else if (def.interior && hit.col.role !== 'helm') {
             const inside = this.inSubInterior(this.player.pos);
             target = `${def.name}${inside ? (v.leaks?.length ? ` — ⚠️ ${v.leaks.length} hull leak${v.leaks.length > 1 ? 's' : ''}! Seal them with a Repair Tool` : ' — helm at the bow, docking bay amidships, engine room at the stern') : ' — swim under it to the hatch to climb in'}`;
           } else if (def.deck && !def.interior && hit.col !== v.colliders[1]) {
             target = `${def.name} deck${v.nAttached ? '' : ' — build on it with the Building Plan'}`;
           } else {
-            text = def.power
-              ? `<b>${def.name}</b> 🔋 ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp} · crush depth ${v.subInfo?.crush ?? def.depths[0]} m<br><kbd>E</kbd> ${def.interior ? 'Take the helm' : v.driver ? 'Ride along' : 'Pilot'} · <kbd>G</kbd> Insert batteries (${countItem(this.inv, 'battery')} 🔋 ${countItem(this.inv, 'power_cell')} cells) · <kbd>U</kbd> Module bay${v.hp < def.hp ? ' · <kbd>H</kbd> Patch' : ''}`
-              : `<b>${def.name}</b> ⛽ ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp}<br><kbd>E</kbd> ${v.driver ? 'Ride as passenger' : 'Drive'} · <kbd>G</kbd> Refuel (${countItem(this.inv, 'fuel')} fuel)${v.hp < def.hp ? ' · <kbd>H</kbd> Patch with metal' : ''}`;
-            if (def.power && active && this.input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
-            if (E) this.net.send({ t: 'v_enter', id: v.id });
-            if (active && this.input.hit('KeyG')) this.net.send({ t: 'v_fuel', id: v.id });
-            if (active && this.input.hit('KeyH')) this.net.send({ t: 'v_repair', id: v.id });
+            // aiming at the fuel cap / battery hatch opens it; anywhere else gets you in
+            const lp = cam.clone().addScaledVector(dir, hit.t).sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
+            const sv = def.service && !def.interior ? Math.hypot(lp.x - def.service[0], lp.y - def.service[1], lp.z - def.service[2]) : 99;
+            if (sv < (def.half[2] > 4 ? 1.3 : 0.75)) {
+              text = def.power ? `<b>${def.name} — battery hatch</b> 🔋 ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open — put Batteries or Power Cells in` : `<b>${def.name} — fuel cap</b> ⛽ ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open the tank — put Low Grade Fuel in <small>(you have ${countItem(this.inv, 'fuel')})</small>`;
+              if (E) this.net.send({ t: 'open', id: 'vf:' + v.id });
+            } else {
+              const where = def.service ? (def.power ? ' · battery hatch on top at the back' : def.boat ? ' · fuel cap on the motor' : ' · fuel cap on the left side') : '';
+              text = def.power
+                ? `<b>${def.name}</b> 🔋 ${v.fuel}/${def.fuelCap} · 🔧 ${v.hp}/${def.hp} · crush depth ${v.subInfo?.crush ?? def.depths[0]} m${where}<br><kbd>E</kbd> ${def.interior ? 'Take the helm' : v.driver ? 'Ride along' : 'Pilot'} · <kbd>U</kbd> Module bay${v.hp < def.hp ? ' · <kbd>H</kbd> Patch' : ''}`
+                : `<b>${def.name}</b> ${def.fuelCap ? `⛽ ${v.fuel}/${def.fuelCap}` : '🚣'} · 🔧 ${v.hp}/${def.hp}${where}<br><kbd>E</kbd> ${v.driver ? 'Ride as passenger' : 'Drive'}${v.hp < def.hp ? ' · <kbd>H</kbd> Patch with metal' : ''}`;
+              if (def.power && active && this.input.hit('KeyU')) this.net.send({ t: 'open', id: 'vm:' + v.id });
+              if (E) this.net.send({ t: 'v_enter', id: v.id });
+              if (active && this.input.hit('KeyH')) this.net.send({ t: 'v_repair', id: v.id });
+            }
           }
         }
       } else if (hit.kind === 'p') {

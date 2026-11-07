@@ -699,7 +699,7 @@ export function itemDesc(st, short) {
   else if (d.deploy) s += { campfire: 'Press E on it to cook food and make charcoal & fuel. Keeps you warm.', furnace: 'Press E on it to smelt ore into metal & sulfur.', workbench1: 'Press E on it to craft tier 1 items.', workbench2: 'Press E on it to craft tier 1-2 items.', workbench3: 'Press E on it to craft tier 1-3 items.', small_box: 'Store 12 stacks.', large_box: 'Store 30 stacks.', sleeping_bag: 'Respawn point.', tool_cupboard: 'Claim a 30m building privilege. Authorize friends. Locks doors to authorized players.' }[d.deploy.kind] || '';
   else if (d.door) s += `Place in a doorway. ${d.door.hp} HP. Locked to tool cupboard authorized players.`;
   else if (st.id === 'wheel' || st.id === 'engine_parts') s += 'Used to repair broken vehicles.';
-  else if (st.id === 'fuel') s += 'Fuel for vehicles. Press E on a vehicle while holding fuel in inventory to refuel.';
+  else if (st.id === 'fuel') s += 'Fuel for vehicles: open the fuel cap (look at it and press E) and put it in the tank. Also burns in Fuel Generators and the Portable Refiner.';
   else s += d.cat;
   return s;
 }
