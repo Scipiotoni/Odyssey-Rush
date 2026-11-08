@@ -32,7 +32,12 @@ export class Player {
   update(dt, input, active) {
     const g = this.game, ph = g.physics, w = g.world;
     const k = (c) => active && input.down(c);
-    this.crouch = k('ControlLeft') || k('KeyC');
+    const crouchKey = k('ControlLeft') || k('KeyC');
+    this.crouch = crouchKey;
+    // what you wear: heavy armour slows you a little (never more than 8%), a wetsuit makes you swim faster
+    let wt = 0, swimMul = 1;
+    for (const s of ['head', 'chest', 'legs', 'back']) { const a = g.armor?.[s] && ITEMS[g.armor[s].id]?.armor; if (a) { wt += a.weight || 0; swimMul = Math.max(swimMul, a.swim || 1); } }
+    const armorMul = 1 - Math.min(0.08, wt);
     let fx = (k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0);
     let sx = (k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0);
     const len = Math.hypot(fx, sx) || 1; fx /= len; sx /= len;
@@ -53,7 +58,19 @@ export class Player {
     // in the air of a sealed room or a sub (walking, maybe wading)
     this.dry = this.inside && headY > wTop;
     this.sprinting = k('ShiftLeft') && fx > 0 && !this.crouch && !this.swimming;
-    let speed = this.swimming ? (k('ShiftLeft') ? SWIM_FAST : SWIM) : this.crouch ? CROUCH : this.sprinting ? SPRINT : WALK;
+    let speed = (this.swimming ? (k('ShiftLeft') ? SWIM_FAST : SWIM) * swimMul : this.crouch ? CROUCH : this.sprinting ? SPRINT : WALK) * (this.swimming ? 1 : armorMul);
+    // slide: crouch while sprinting to drop into a fast slide (keeps fights moving); jump out of it to keep the speed
+    this.slideCD = Math.max(0, (this.slideCD || 0) - dt);
+    if (crouchKey && !this.wasCrouchKey && this.wasSprinting && this.onGround && !this.swimming && this.slideCD <= 0 && Math.hypot(this.vel.x, this.vel.z) > WALK) {
+      this.slideT = 0.7; this.slideCD = 1.1; const hv = Math.hypot(this.vel.x, this.vel.z); this.slideDir = [this.vel.x / hv, this.vel.z / hv]; audio.slide?.();
+    }
+    this.wasCrouchKey = crouchKey; this.wasSprinting = this.sprinting;
+    if (this.slideT > 0) {
+      this.slideT -= dt;
+      if (!this.onGround || this.swimming || !crouchKey) this.slideT = Math.min(this.slideT, 0);
+      else { const sp = CROUCH + (SPRINT * 1.4 - CROUCH) * Math.max(0, this.slideT / 0.7) ** 0.7; this.slideSpeed = sp; }
+    }
+    this.sliding = this.slideT > 0;
     if (waterDepth > 0.4 && !this.swimming) speed *= 0.7; // wading
     if (g.encumbered) speed *= 0.85;
     // creative flight (server owner / admins): Z toggles it
@@ -95,9 +112,10 @@ export class Player {
         }
       }
     } else {
-      const tx = (fwd[0] * fx + right[0] * sx) * speed, tz = (fwd[1] * fx + right[1] * sx) * speed;
+      let tx = (fwd[0] * fx + right[0] * sx) * speed, tz = (fwd[1] * fx + right[1] * sx) * speed;
+      if (this.sliding) { tx = this.slideDir[0] * this.slideSpeed + (right[0] * sx) * 1.2; tz = this.slideDir[1] * this.slideSpeed + (right[1] * sx) * 1.2; }
       // ice is slippery: you keep sliding and take a while to get going
-      const accel = this.onGround ? (onIce ? 1.6 : 12) : 2.5;
+      const accel = this.sliding ? 30 : this.onGround ? (onIce ? 1.6 : 12) : 2.5;
       const a = 1 - Math.exp(-accel * dt);
       this.vel.x += (tx - this.vel.x) * a;
       this.vel.z += (tz - this.vel.z) * a;
@@ -106,7 +124,7 @@ export class Player {
       if (lad && (fx > 0 || k('Space'))) { this.vel.y = 3.2; this.vel.x *= 0.6; this.vel.z *= 0.6; this.fallStart = null; }
       else if (lad && !this.onGround) { this.vel.y = Math.max(this.vel.y - GRAV * dt, -2); this.fallStart = null; }
       else this.vel.y -= GRAV * dt;
-      if (k('Space') && this.onGround && !lad) { this.vel.y = JUMP; this.onGround = false; }
+      if (k('Space') && this.onGround && !lad) { this.vel.y = JUMP; this.onGround = false; if (this.sliding) { this.slideT = 0; this.vel.x *= 1.05; this.vel.z *= 1.05; } } // slide-jump keeps your momentum
     }
     const wasGround = this.onGround;
     const preVy = this.vel.y;
@@ -165,7 +183,14 @@ export class Player {
   applyCamera(cam) {
     const swim = this.swimming;
     const bobY = Math.sin(this.bob * 2) * (swim ? 0.05 : 0.04), bobX = Math.cos(this.bob) * 0.03;
-    cam.position.set(this.pos.x + bobX * Math.cos(this.yaw), this.pos.y + this.eye + bobY, this.pos.z - bobX * Math.sin(this.yaw));
+    // step smoothing: small sudden height changes on the ground (ledges, dug bowls) ease in instead of snapping the view
+    const tNow = performance.now() / 1000, dt = Math.min(0.1, tNow - (this._camT ?? tNow)); this._camT = tNow;
+    const dyStep = this.pos.y - (this._lastY ?? this.pos.y);
+    if (this.onGround && Math.abs(dyStep) > 0.06 && Math.abs(dyStep) < 0.8) this._camOff = (this._camOff || 0) - dyStep;
+    this._lastY = this.pos.y;
+    this._camOff = (this._camOff || 0) * Math.exp(-dt * 14);
+    if (Math.abs(this._camOff) > 0.8) this._camOff = 0;
+    cam.position.set(this.pos.x + bobX * Math.cos(this.yaw), this.pos.y + this.eye + bobY + this._camOff, this.pos.z - bobX * Math.sin(this.yaw));
     cam.rotation.set(this.pitch + this.recoil, this.yaw, swim ? Math.sin(this.bob) * 0.025 : 0, 'YXZ');
   }
 }

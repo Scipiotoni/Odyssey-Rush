@@ -61,9 +61,12 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 
 ## Controls
 
+Every key can be changed: **Esc → ⌨️ Controls**, click a key and press the new one (clashes show in red, *Reset to
+defaults* puts everything back). The on-screen hints follow your keys. The table lists the defaults.
+
 | Key | Action |
 |---|---|
-| WASD / Shift / Ctrl or C / Space | Move / sprint / crouch / jump |
+| WASD / Shift / Ctrl or C / Space | Move / sprint / crouch / jump · **crouch while sprinting to slide** (jump out of a slide to keep the speed) |
 | In water | Swim where you look (look down + W to dive) · **Space** up · **Ctrl/C** down · **Shift** swim fast · swim into a ledge or ice edge to climb out |
 | Mouse | Look · **LMB** use / attack / place · **RMB** aim, build menu, repair |
 | 1–6, wheel | Belt slots |
@@ -81,7 +84,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | H | Patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
 | RMB with a rock | Throw it (hurts players & animals, pick it up again with E) |
-| T or Enter | Chat (`/help` lists commands) · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume) |
+| T or Enter | Chat (`/help` lists commands). While it's open, scroll back through the last 200 messages with the mouse wheel or PgUp / PgDn · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume, controls) |
 
 ## How to play
 
@@ -186,6 +189,7 @@ Deploys to any host that runs Node 18+ and allows WebSockets (Render, Railway, F
 | `/cave` | Drop into the caves right below you |
 | `/season spring\|summer\|autumn\|winter [late]` | Jump to a season |
 | `/weather clear\|overcast\|rain\|storm [now]` | Change the weather (rolls in, or instantly with `now`) |
+| `/time 14:30` · `/time 7am` · `/time dawn\|noon\|dusk\|night\|midnight` | Set the time of day for everyone (admins and the server's owner) |
 | `/tp x z [y]` · `/tppoi [type]` · `/kit` · `/heal` · `/day 0-1` | Teleport, monument teleport, starter kit, full heal, time of day |
 
 ### Vehicle physics
@@ -324,6 +328,24 @@ Admins can force it with `/weather clear|overcast|rain|storm [now]`.
     store the surplus for the night. When power is short, the smallest loads (lights, chargers) keep running and the
     big machines wait. Open a machine (E) to see what it's doing and the base's power; **G** switches it off and on.
 - **Camp fires and furnaces** can be put out with **G** and lit again. A cold fire doesn't cook, smelt or warm you.
+
+### Armour and fighting
+
+Armour is a trade-off, and fights stay quick: no combination stops more than **60%** of a hit, and the heaviest kit
+slows you by at most 8%. Hover a piece in your inventory to see its numbers.
+
+| Armour | Slot | What it's for |
+|---|---|---|
+| Burlap / Hide | head, chest, legs | cheap, warm-ish |
+| Metal Facemask, Chest Plate, Roadsign Kilt | head, chest, legs | strong against everything, a little heavy |
+| **Bulletproof Vest** (WB2) | chest | 50% vs bullets, weak vs melee |
+| **Riot Helmet** (WB2) | head | 45% vs melee, 38% vs bullets, tinted visor |
+| **Combat Trousers** (WB1) | legs | light all-rounders with knee pads |
+| **Ghillie Suit & Hood** (WB1) | chest, head | barely any protection, but you look like a bush and your name tag can't be seen beyond 8 m |
+| **Diving Wetsuit** (WB1) | chest | swim 40% faster and stay warm in cold water |
+| **Arctic Parka** (WB1) | chest | very warm for winter and the snow |
+
+Movement: sprint, **slide** (crouch while sprinting), slide-jump, and armour that never bogs you down.
 
 ### Survival
 

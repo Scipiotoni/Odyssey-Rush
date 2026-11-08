@@ -38,7 +38,7 @@ function checkPassword(pass, a) {
   return h.length === w.length && crypto.timingSafeEqual(h, w);
 }
 const WEATHER_TARGETS = { clear: { cloud: 0.12, rain: 0, storm: 0, wind: 0.3 }, overcast: { cloud: 0.75, rain: 0, storm: 0, wind: 0.5 }, rain: { cloud: 0.9, rain: 0.65, storm: 0.05, wind: 0.65 }, storm: { cloud: 1, rain: 1, storm: 1, wind: 1 } };
-const ADMIN_HELP = 'Admin: /season spring|summer|autumn|winter [late] · /weather clear|overcast|rain|storm · /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
+const ADMIN_HELP = 'Admin: /season spring|summer|autumn|winter [late] · /weather clear|overcast|rain|storm · /cave — drop into the caves below you · /resetserver — wipe the world (asks for confirmation) · /items [search] — item spawner (click to get items) · /give <item> [amount] (item id or name, e.g. /give assault_rifle or /give c4 10) · /tpdeath — teleport to where you last died · /time 14:30 | dawn | noon | dusk | night — set the time of day · /tp x z [y] · /tppoi [type] · /kit · /heal · /day 0-1';
 const regionOf = (x, z) => [Math.floor(x / CHUNK), Math.floor(z / CHUNK)];
 const rkey = (x, z) => { const [a, b] = regionOf(x, z); return chunkKey(a, b); };
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
@@ -363,9 +363,10 @@ export class Game {
     if (left > 0) { this.dropBag(p.x, p.y, p.z, [newStack(id, left)]); if (notify) this.toast(p, `🎒 Inventory full — ${ITEMS[id].name} dropped at your feet`); }
     if (notify && n - left > 0) this.send(p, { t: 'gain', id, n: n - left });
   }
-  armorProt(p, hs) {
-    const pr = (s) => (p.armor[s] ? ITEMS[p.armor[s].id].armor.prot : 0);
-    return hs ? pr('head') : pr('chest') * 0.6 + pr('legs') * 0.4;
+  // armour: each piece protects against bullets / melee / everything else; never more than 60% so fights stay quick
+  armorProt(p, hs, kind) {
+    const pr = (s) => { const a = p.armor[s] && ITEMS[p.armor[s].id].armor; return a ? (a[kind] ?? a.prot) : 0; };
+    return Math.min(0.6, hs ? pr('head') : pr('chest') * 0.6 + pr('legs') * 0.4);
   }
 
   onState(p, m) {
@@ -706,7 +707,7 @@ export class Game {
     if (!m.k) return;
     const reach = tool.range + 2.5;
     if (m.k === 'n') return this.gatherNode(p, String(m.id), tool, reach);
-    if (m.k === 'p') { const o = this.byPid.get(num(m.id)); if (o && o.alive && dist3(o, p) < reach + 1) this.damagePlayer(o, tool.dmg * (m.hs ? 1.5 : 1), p, !!m.hs); return; }
+    if (m.k === 'p') { const o = this.byPid.get(num(m.id)); if (o && o.alive && dist3(o, p) < reach + 1) this.damagePlayer(o, tool.dmg * (m.hs ? 1.5 : 1), p, !!m.hs, 'melee'); return; }
     if (m.k === 'a') { const a = this.animals.get(String(m.id)); if (a && dist3(a, p) < reach + 1.5) this.damageAnimal(a, tool.dmg, p); return; }
     if (m.k === 's') {
       const s = this.structs.get(String(m.id));
@@ -747,7 +748,7 @@ export class Game {
       if (dist > g.range * 1.1) continue;
       const fall = dist > g.range * 0.5 ? 1 - (dist - g.range * 0.5) / g.range : 1;
       const dmg = g.dmg * fall;
-      if (hit.k === 'p') { const o2 = this.byPid.get(num(hit.id)); if (o2 && o2 !== p && o2.alive && dist3(o2, p) < g.range + 5) this.damagePlayer(o2, dmg * (hit.hs ? 1.8 : 1), p, !!hit.hs); }
+      if (hit.k === 'p') { const o2 = this.byPid.get(num(hit.id)); if (o2 && o2 !== p && o2.alive && dist3(o2, p) < g.range + 5) this.damagePlayer(o2, dmg * (hit.hs ? 1.8 : 1), p, !!hit.hs, 'bullet'); }
       else if (hit.k === 'a') { const a = this.animals.get(String(hit.id)); if (a) this.damageAnimal(a, dmg * (hit.hs ? 1.5 : 1), p); }
       else if (hit.k === 's') { const s = this.structs.get(String(hit.id)); if (s) this.damageStruct(s, dmg, 'bullet', p); }
       else if (hit.k === 'v') { const v = this.vehicles.get(String(hit.id)); if (v) this.damageVehicle(v, dmg * 0.25); }
@@ -768,13 +769,13 @@ export class Game {
     this.sendInv(p);
   }
 
-  damagePlayer(o, amt, src, hs = false) {
+  damagePlayer(o, amt, src, hs = false, kind = '') {
     if (!o.alive) return;
     if (src && src.pid && src !== o && this.sameClan(src, o)) return; // no friendly fire
     if (src && src.pid && src !== o && !this.settings.pvp) return; // PvP off on this server
     if (this.settings.difficulty === 'peaceful' && typeof src === 'string' && /^a /.test(src)) return; // animals don't hurt you
     if (o.vehicle) amt *= 0.6;
-    const dmg = amt * (1 - this.armorProt(o, hs));
+    const dmg = amt * (1 - this.armorProt(o, hs, kind));
     o.hp -= dmg;
     this.send(o, { t: 'hurt', dmg: r2(dmg), from: src && src.x !== undefined ? [src.x, src.z] : null });
     if (src && src.pid) this.send(src, { t: 'hitmark', hs, kill: o.hp <= 0 });
@@ -2215,7 +2216,7 @@ export class Game {
     const pt = Array.isArray(m.pt) ? m.pt.slice(0, 3).map((v) => num(v)) : null;
     if (!pt || Math.hypot(pt[0] - p.x, pt[2] - p.z) > 45) return;
     const h = m.hit;
-    if (h && h.k === 'p') { const o = this.byPid.get(num(h.id)); if (o && o !== p && o.alive && Math.hypot(o.x - pt[0], o.z - pt[2]) < 3) this.damagePlayer(o, h.hs ? 22 : 12, p, !!h.hs); }
+    if (h && h.k === 'p') { const o = this.byPid.get(num(h.id)); if (o && o !== p && o.alive && Math.hypot(o.x - pt[0], o.z - pt[2]) < 3) this.damagePlayer(o, h.hs ? 22 : 12, p, !!h.hs, 'melee'); }
     else if (h && h.k === 'a') { const a = this.animals.get(String(h.id)); if (a && Math.hypot(a.x - pt[0], a.z - pt[2]) < 4) this.damageAnimal(a, h.hs ? 30 : 18, p); }
     const gy = this.world.ground(pt[0], pt[2]);
     this.dropBag(pt[0], Math.max(gy, pt[1] - 0.05), pt[2], [newStack('rock', 1)]);
@@ -2488,6 +2489,17 @@ export class Game {
       for (const [id, n] of [['wood', 2000], ['stone', 2000], ['metal_frags', 1000], ['hqm', 100], ['cloth', 300], ['leather', 200], ['scrap', 500], ['fuel', 200], ['building_plan', 1], ['hammer', 1], ['rifle', 1], ['rifle_ammo', 120], ['c4', 4], ['satchel', 6], ['wheel', 4], ['engine_parts', 2], ['tool_cupboard', 1], ['wood_door', 2], ['workbench3', 1], ['furnace', 1], ['metal_chest', 1], ['metal_mask', 1], ['metal_legs', 1]]) this.give(p, id, n, false);
       this.sendInv(p);
     } else if (cmd === 'day') { this.day = Math.max(0, Math.min(0.999, num(a, 0.5))); this.toAll({ t: 'time', day: this.day }); }
+    else if (cmd === 'time') {
+      // /time 14:30 · /time 7am · /time dawn|morning|noon|afternoon|dusk|evening|night|midnight
+      const NAMED = { dawn: 6, sunrise: 6, morning: 8, day: 10, noon: 12, midday: 12, afternoon: 15, dusk: 18.5, sunset: 18.5, evening: 20, night: 22, midnight: 0 };
+      const w = [a, b].filter(Boolean).join(' ').toLowerCase().trim(), mt = w.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?$/);
+      let h = NAMED[w];
+      if (h === undefined && mt) { h = (+mt[1] % 24) + Math.min(59, +(mt[2] || 0)) / 60; if (mt[3] === 'pm' && h < 12) h += 12; if (mt[3] === 'am' && h >= 12) h -= 12; }
+      if (h === undefined || !(h >= 0 && h < 24)) return this.toast(p, 'Usage: /time 14:30 · /time 7am · /time dawn | noon | dusk | night | midnight');
+      this.day = (h / 24) % 1; this.toAll({ t: 'time', day: this.day });
+      const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+      this.toAll({ t: 'chat', from: '', m: `🕐 ${p.name} set the time to ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}` });
+    }
     else if (cmd === 'heal') { p.hp = this.maxHp(p); p.food = 100; p.water = 100; p.breath = BREATH_MAX; this.sendStats(p); }
     else this.toast(p, ADMIN_HELP);
   }
@@ -2667,7 +2679,7 @@ export class Game {
     const [qx, qy, qz, qw] = v.q, l = quatRotate([-qx, -qy, -qz, qw], [o.x - v.x, o.y - v.y, o.z - v.z]);
     return Math.abs(l[0]) < I.hx && Math.abs(l[2]) < I.hz && l[1] > I.y0 - 0.3 && l[1] < I.y1;
   }
-  subAround(o) { for (const v of this.vehicles.values()) if (VEHICLES[v.type].interior && Math.abs(v.x - o.x) < 16 && Math.abs(v.z - o.z) < 16 && this.inSubInterior(v, o)) return v; return null; }
+  subAround(o) { for (const v of this.vehicles.values()) if (VEHICLES[v.type].interior && Math.abs(v.x - o.x) < 24 && Math.abs(v.z - o.z) < 24 && this.inSubInterior(v, o)) return v; return null; }
   // pressure on the hull below crush depth, a second at a time
   tickSubs(dt) {
     for (const v of this.vehicles.values()) {
@@ -2824,7 +2836,7 @@ export class Game {
         tx = nearest.x; tz = nearest.z; speed = def.speed; a.st = 1;
         if (nd < 2 + def.size && Math.abs(nearest.y - a.y) < 2.5) {
           speed = 0; a.st = 2;
-          if (t - a.lastAtk > 1.3) { a.lastAtk = t; this.damagePlayer(nearest, def.dmg, `a ${def.name.toLowerCase()}`); this.toNear(a.x, a.z, 60, { t: 'fx', k: 'bite', id: a.id }); }
+          if (t - a.lastAtk > 1.3) { a.lastAtk = t; this.damagePlayer(nearest, def.dmg, `a ${def.name.toLowerCase()}`, false, 'melee'); this.toNear(a.x, a.z, 60, { t: 'fx', k: 'bite', id: a.id }); }
         }
       } else if (mode === 'flee') {
         tx = a.x + (a.x - nearest.x); tz = a.z + (a.z - nearest.z); speed = def.speed; a.st = 1;
@@ -2867,7 +2879,7 @@ export class Game {
     // spiders: creep along cave floors (and up slopes), rush you when close
     let tx = a.tx, tz = a.tz, speed;
     const hunting = nearest && nd < 22 && this.settings.difficulty !== 'peaceful';
-    if (hunting) { tx = nearest.x; tz = nearest.z; speed = def.speed; a.st = 1; if (nd < 1.7 + def.size && t - a.lastAtk > 1.1) { a.lastAtk = t; a.st = 2; this.damagePlayer(nearest, def.dmg, `a ${def.name.toLowerCase()}`); this.toNear(a.x, a.z, 40, { t: 'fx', k: 'bite', id: a.id }); } }
+    if (hunting) { tx = nearest.x; tz = nearest.z; speed = def.speed; a.st = 1; if (nd < 1.7 + def.size && t - a.lastAtk > 1.1) { a.lastAtk = t; a.st = 2; this.damagePlayer(nearest, def.dmg, `a ${def.name.toLowerCase()}`, false, 'melee'); this.toNear(a.x, a.z, 40, { t: 'fx', k: 'bite', id: a.id }); } }
     else { a.st = 0; speed = def.speed * 0.3; if (t > a.until || Math.hypot(a.tx - a.x, a.tz - a.z) < 1) { a.tx = a.x + (Math.random() - 0.5) * 16; a.tz = a.z + (Math.random() - 0.5) * 16; a.until = t + 3 + Math.random() * 5; } }
     const dx = tx - a.x, dz = tz - a.z;
     let dyaw = Math.atan2(dx, dz) - a.yaw; while (dyaw > Math.PI) dyaw -= 2 * Math.PI; while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
@@ -2965,7 +2977,8 @@ export class Game {
       if (night) cold += 0.25;
       if (p.y < 0.1 && this.world.ground(p.x, p.z) < 0) cold += 0.3 + (this.ice.frozen && this.ice.lakeAt(p.x, p.z) ? 0.6 : 0); // icy water bites hard
       let warmth = 0;
-      for (const s of ARMOR_SLOTS) if (p.armor[s]) warmth += ITEMS[p.armor[s].id].armor.cold;
+      const wet = p.y < 0.1 && this.world.ground(p.x, p.z) < 0;
+      for (const s of ARMOR_SLOTS) if (p.armor[s]) { const a = ITEMS[p.armor[s].id].armor; warmth += a.cold + (a.swim && wet ? 0.6 : 0); }
       for (const s of this.structsNear(p.x, p.z, 0)) if ((s.type === 'campfire' || s.type === 'furnace') && !s.off && dist3(s, p) < 5) warmth += 1;
       p.cold = Math.max(0, cold - warmth);
       if (p.cold > 0.5) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }

@@ -145,6 +145,7 @@ class Game {
     });
     $('resume').onclick = () => this.ui.close();
     $('spawnveh').onclick = () => this.ui.showSpawn();
+    $('keysbtn').onclick = () => this.ui.showKeys();
   }
 
   // Detail level 0-3: dense grass, ground cover, wildlife, tree distance and render resolution
@@ -821,6 +822,8 @@ class Game {
       const I = def.interior, half = I ? [I.hx, (I.y1 - I.y0) / 2 + 0.1, I.hz] : [def.half[0] * 0.85, def.half[1] * 0.85, def.half[2] * 0.85];
       const c = I ? new THREE.Vector3(0, (I.y0 + I.y1) / 2, 0).applyQuaternion(v.q).add(v.pos) : v.pos.clone();
       list.push({ pos: c, quat: v.q, half, d: c.distanceTo(cam) });
+      // the glass bow dome sticks out past the interior box: keep the sea out of it too
+      if (I && def.big) { const dc = new THREE.Vector3(0, (I.y0 + I.y1) / 2, I.hz + 1.7).applyQuaternion(v.q).add(v.pos); list.push({ pos: dc, quat: v.q, half: [I.hx, half[1], 1.75], d: dc.distanceTo(cam) - 0.01 }); }
     }
     for (const b of this.structures.buildings.values()) {
       if (Math.abs(b.x - cam.x) > 60 || Math.abs(b.z - cam.z) > 60 || b.y > 3) continue;
@@ -840,7 +843,7 @@ class Game {
   inSubInterior(pos) {
     for (const v of this.vehicleViews.values()) {
       const I = VEHICLES[v.type].interior;
-      if (!I || Math.abs(v.pos.x - pos.x) > 12 || Math.abs(v.pos.z - pos.z) > 12) continue;
+      if (!I || Math.abs(v.pos.x - pos.x) > 24 || Math.abs(v.pos.z - pos.z) > 24) continue; // (the Pacific is 37 m long)
       const l = _rv.copy(pos).sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
       if (Math.abs(l.x) < I.hx && Math.abs(l.z) < I.hz && l.y > I.y0 - 0.3 && l.y < I.y1) return v;
     }

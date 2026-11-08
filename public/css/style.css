@@ -109,6 +109,9 @@ kbd { background: #333; border: 1px solid #555; border-bottom-width: 2px; border
 .qi { background: rgba(0,0,0,.55); padding: 3px 8px; display: flex; gap: 8px; align-items: center; }
 #chat { position: absolute; left: 16px; bottom: 110px; width: 420px; pointer-events: auto; }
 #chatlog { display: flex; flex-direction: column; gap: 2px; font-size: 13px; max-height: 200px; overflow: hidden; }
+#chat:not(.open) #chatlog div.old { display: none; }
+#chat.open #chatlog { max-height: 300px; overflow-y: auto; background: rgba(0,0,0,.35); border-radius: 6px; padding: 4px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent; }
+#chat.open::before { content: '⇅ scroll with the mouse wheel or PgUp / PgDn'; display: block; font-size: 11px; opacity: .6; margin-bottom: 2px; }
 #chatlog div { background: rgba(0,0,0,.35); padding: 2px 8px; text-shadow: 0 1px 1px #000; animation: chatfade 14s forwards; }
 #chatlog div b { color: #f0a070; }
 #chatlog div.sys { color: #c8c8a0; font-style: italic; }
@@ -440,3 +443,13 @@ body.dragging .gtile { pointer-events: none; opacity: .55; }
 .gsbtn { margin-left: 10px; padding: 5px 12px; border-radius: 14px; border: none; background: linear-gradient(#ffe08a, #e0a83a); color: #2a1a00; font-weight: 800; cursor: pointer; font-family: inherit; font-size: 12px; }
 @media (max-width: 1100px) { .gsrow { flex-wrap: wrap; } .gscenter, #gsprev { width: 100%; } }
 .continfo { font-size: 12px; line-height: 1.45; background: rgba(0,0,0,.28); border-radius: 6px; padding: 6px 8px; margin: 4px 0 6px; max-width: 420px; color: #e8e4dc; }
+
+/* controls (key bindings) */
+#keysbox { max-width: 640px; }
+#keysbox .keyrows { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; max-height: 56vh; overflow-y: auto; margin: 8px 0; }
+#keysbox .keyrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+#keysbox .keyrow button { min-width: 74px; padding: 4px 8px; font: inherit; font-weight: 700; background: #2c3034; color: #f2ece0; border: 1px solid rgba(255,255,255,.18); border-radius: 6px; cursor: pointer; }
+#keysbox .keyrow button.wait { background: #a8582e; }
+#keysbox .keyrow button.clash { border-color: #ff7a6a; color: #ffb0a0; }
+#keysbox .keyrow button.changed { border-color: #f0a030; }
+@media (max-width: 600px) { #keysbox .keyrows { grid-template-columns: 1fr; } }

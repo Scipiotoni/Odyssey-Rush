@@ -142,13 +142,14 @@ function build(id) {
     case 'c4': return [P(rb(0.22, 0.07, 0.14, 0.01), 0xa8a070, { y: 0.035 }), P(rb(0.09, 0.03, 0.06, 0.006), C.black, { y: 0.085 }), P(box(0.06, 0.004, 0.035), 0x2aff60, { y: 0.1 }), P(box(0.012, 0.012, 0.012), 0xff2020, { x: 0.035, y: 0.1, z: -0.02 }), ...[-0.06, 0.06].map((x) => P(box(0.01, 0.075, 0.15), 0x333333, { x, y: 0.035 })), P(tor(0.04, 0.004, Math.PI, 8), 0xd02020, { x: -0.08, y: 0.08, rx: Math.PI / 2 })];
     case 'grenade': return [P(jit(ico(0.04, 1), 0.08, 3), 0x4a5a30, { y: 0.045, sy: 1.2 }), P(cyl(0.015, 0.018, 0.025, 8), C.dmetal, { y: 0.1 }), P(box(0.012, 0.06, 0.01), C.steel, { x: 0.02, y: 0.08, rz: -0.2 }), P(tor(0.012, 0.003, Math.PI * 2, 8), C.steel, { x: -0.02, y: 0.11 })];
     // ---------------- armour
-    case 'cloth_hood': case 'leather_hat': case 'metal_mask': {
+    case 'cloth_hood': case 'leather_hat': case 'metal_mask': case 'riot_helmet': case 'ghillie_hood': {
       const c = d.armor.color;
       if (id === 'metal_mask') return [P(rb(0.2, 0.24, 0.2, 0.05), c, { y: 0.12 }), P(box(0.14, 0.022, 0.01), C.black, { y: 0.14, z: -0.1 }), ...[-1, 1].map((s) => P(cyl(0.008, 0.008, 0.01, 6), 0xcccccc, { x: s * 0.08, y: 0.2, z: -0.1, rx: Math.PI / 2 }))];
+      if (id === 'riot_helmet') return [P(new THREE.SphereGeometry(0.12, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), c, { y: 0.04, sz: 1.1 }), P(rb(0.2, 0.09, 0.03, 0.01), 0x30485a, { y: 0.08, z: -0.115, rx: 0.2 }), P(cyl(0.125, 0.13, 0.03, 14), 0x111418, { y: 0.03 })];
       if (id === 'leather_hat') return [P(cyl(0.09, 0.1, 0.1, 12), c, { y: 0.05 }), P(cyl(0.16, 0.16, 0.012, 16), c, { y: 0.005 }), P(cyl(0.101, 0.101, 0.02, 12), 0x3a2414, { y: 0.02 })];
       return [P(ico(0.11, 1), c, { y: 0.11, sy: 1.15 }, 0.06), ...[-1, 1].map((s) => P(box(0.03, 0.02, 0.01), C.black, { x: s * 0.04, y: 0.13, z: -0.105 })), P(tor(0.08, 0.008, Math.PI * 2, 12), C.rope, { y: 0.03, rx: Math.PI / 2 })];
     }
-    case 'cloth_shirt': case 'leather_vest': case 'metal_chest': {
+    case 'cloth_shirt': case 'leather_vest': case 'metal_chest': case 'kevlar_vest': case 'ghillie_suit': case 'wetsuit': case 'parka': {
       const c = d.armor.color;
       const parts = [P(rb(0.24, 0.28, 0.08, 0.03), c, { y: 0.14 })];
       if (id !== 'metal_chest') parts.push(...[-1, 1].map((s) => P(rb(0.08, 0.14, 0.07, 0.02), c, { x: s * 0.14, y: 0.22, rz: s * 0.5 })));
@@ -196,7 +197,7 @@ function build(id) {
       const c = { minisub_kit: 0xe8c43a, cyclops_kit: 0xd8dcd8, rowboat_kit: 0x7a5232 }[id];
       return [P(box(0.3, 0.2, 0.22), 0x8a6a42, { y: 0.1 }), P(box(0.31, 0.04, 0.23), c, { y: 0.14 }), P(box(0.32, 0.02, 0.05), 0x2a2018, { y: 0.2 })];
     }
-    case 'cloth_pants': case 'leather_pants': case 'metal_legs': {
+    case 'cloth_pants': case 'leather_pants': case 'metal_legs': case 'combat_pants': {
       const c = d.armor.color;
       if (id === 'metal_legs') return [P(rb(0.26, 0.04, 0.08, 0.01), C.leather, { y: 0.3 }), ...[-1, 0, 1].map((s) => P(rb(0.09, 0.22, 0.012, 0.004), c, { x: s * 0.085, y: 0.17, rz: s * 0.05 }))];
       return [P(rb(0.22, 0.06, 0.08, 0.02), c, { y: 0.3 }), ...[-1, 1].map((s) => P(rb(0.09, 0.28, 0.075, 0.02), c, { x: s * 0.06, y: 0.14, rz: s * 0.04 }))];

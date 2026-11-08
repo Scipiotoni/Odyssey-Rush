@@ -119,14 +119,14 @@ export const ITEMS = {
   leather_hat: { name: 'Hide Hood', cat: 'armor', stack: 1, icon: '🎩', armor: { slot: 'head', prot: 0.18, cold: 0.25, color: 0x7a5233 } },
   leather_vest: { name: 'Hide Vest', cat: 'armor', stack: 1, icon: '🦺', armor: { slot: 'chest', prot: 0.2, cold: 0.3, color: 0x7a5233 } },
   leather_pants: { name: 'Hide Pants', cat: 'armor', stack: 1, icon: '👖', armor: { slot: 'legs', prot: 0.18, cold: 0.25, color: 0x6a4428 } },
-  metal_mask: { name: 'Metal Facemask', cat: 'armor', stack: 1, icon: '🪖', armor: { slot: 'head', prot: 0.45, cold: 0.05, color: 0x8b949b } },
-  metal_chest: { name: 'Metal Chest Plate', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'chest', prot: 0.45, cold: 0.05, color: 0x8b949b } },
+  metal_mask: { name: 'Metal Facemask', cat: 'armor', stack: 1, icon: '🪖', armor: { slot: 'head', prot: 0.45, cold: 0.05, weight: 0.01, color: 0x8b949b } },
+  metal_chest: { name: 'Metal Chest Plate', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'chest', prot: 0.45, cold: 0.05, weight: 0.04, color: 0x8b949b } },
   small_bag: { name: 'Small Bag', cat: 'armor', stack: 1, icon: '👝', armor: { slot: 'back', prot: 0, cold: 0, rows: 1, color: 0xb9a57a } },
   backpack: { name: 'Backpack', cat: 'armor', stack: 1, icon: '🎒', armor: { slot: 'back', prot: 0, cold: 0.05, rows: 2, color: 0x7a5233 } },
   large_backpack: { name: 'Expedition Pack', cat: 'armor', stack: 1, icon: '🧳', armor: { slot: 'back', prot: 0.02, cold: 0.1, rows: 4, color: 0x3f5a3a } },
   o2_tank: { name: 'Diving Tank', cat: 'armor', stack: 1, icon: '🤿', armor: { slot: 'back', prot: 0, cold: 0, rows: 0, color: 0xd8a820, air: 90 } },
   o2_tank_large: { name: 'Twin Diving Tanks', cat: 'armor', stack: 1, icon: '🤿', armor: { slot: 'back', prot: 0.02, cold: 0, rows: 0, color: 0x2a6aa0, air: 210 } },
-  metal_legs: { name: 'Roadsign Kilt', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'legs', prot: 0.35, cold: 0.05, color: 0x9b8b5b } },
+  metal_legs: { name: 'Roadsign Kilt', cat: 'armor', stack: 1, icon: '🛡️', armor: { slot: 'legs', prot: 0.35, cold: 0.05, weight: 0.03, color: 0x9b8b5b } },
   // --- deployables ---
   campfire: { name: 'Camp Fire', cat: 'deployable', stack: 1, icon: '🔥', deploy: { kind: 'campfire', hp: 150 } },
   furnace: { name: 'Furnace', cat: 'deployable', stack: 1, icon: '🏭', deploy: { kind: 'furnace', hp: 500 } },
@@ -160,6 +160,15 @@ export const ITEMS = {
   hull_reinforcement: { name: 'Hull Reinforcement Frame', cat: 'deployable', stack: 4, icon: '🧱', deploy: { kind: 'hull_reinforcement', hp: 800, hull: 6 } },
   repair_tool: { name: 'Repair Tool', cat: 'tool', stack: 1, icon: '🔧', repair: true },
   sealed_door: { name: 'Watertight Hatch', cat: 'deployable', stack: 1, icon: '🚪', door: { hp: 1100, tier: 'sealed' } },
+  // ---- more armour. prot: protection from anything; bullet / melee override it for those; weight: slower movement
+  // (fraction); camo: hides your name tag beyond a few metres and makes you look like a bush; swim: swim speed
+  kevlar_vest: { name: 'Bulletproof Vest', cat: 'armor', stack: 1, icon: '🦺', armor: { slot: 'chest', prot: 0.2, bullet: 0.5, melee: 0.15, cold: 0.1, weight: 0.03, color: 0x353d2c } },
+  riot_helmet: { name: 'Riot Helmet', cat: 'armor', stack: 1, icon: '⛑️', armor: { slot: 'head', prot: 0.3, bullet: 0.38, melee: 0.45, cold: 0.1, weight: 0.01, color: 0x1e2226 } },
+  combat_pants: { name: 'Combat Trousers', cat: 'armor', stack: 1, icon: '👖', armor: { slot: 'legs', prot: 0.15, bullet: 0.25, melee: 0.2, cold: 0.2, color: 0x4a5238 } },
+  ghillie_suit: { name: 'Ghillie Suit', cat: 'armor', stack: 1, icon: '🌿', armor: { slot: 'chest', prot: 0.06, cold: 0.25, camo: true, color: 0x4f6a32 } },
+  ghillie_hood: { name: 'Ghillie Hood', cat: 'armor', stack: 1, icon: '🌿', armor: { slot: 'head', prot: 0.04, cold: 0.15, camo: true, color: 0x4f6a32 } },
+  wetsuit: { name: 'Diving Wetsuit', cat: 'armor', stack: 1, icon: '🤿', armor: { slot: 'chest', prot: 0.05, cold: 0.35, swim: 1.4, color: 0x1a1c20 } },
+  parka: { name: 'Arctic Parka', cat: 'armor', stack: 1, icon: '🧥', armor: { slot: 'chest', prot: 0.12, cold: 0.8, weight: 0.02, color: 0xc85a2a } },
   // ---- flashlight, bottles, salt
   hand_flashlight: { name: 'Flashlight', cat: 'tool', stack: 1, icon: '🔦', flashlight: true },
   empty_bottle: { name: 'Empty Bottle', cat: 'resource', stack: 5, icon: '🫙', bottle: true },
@@ -330,6 +339,14 @@ RECIPES.push({ out: 'fuel_generator', n: 1, time: 15, station: 'wb1', cost: { me
 RECIPES.push({ out: 'battery_bank', n: 1, time: 15, station: 'wb2', cost: { battery: 4, copper: 6, metal_frags: 150 } });
 RECIPES.push({ out: 'charger', n: 1, time: 8, station: 'wb1', cost: { copper: 6, battery: 1, metal_frags: 80 } });
 RECIPES.push({ out: 'wall_light', n: 2, time: 4, station: 'wb1', cost: { copper: 2, glass: 1, metal_frags: 20 } });
+// ---- armour (appended: recipe ids are positional)
+RECIPES.push({ out: 'kevlar_vest', n: 1, time: 15, station: 'wb2', cost: { cloth: 40, metal_frags: 150, hqm: 3 } });
+RECIPES.push({ out: 'riot_helmet', n: 1, time: 12, station: 'wb2', cost: { metal_frags: 100, glass: 1, hqm: 2, leather: 5 } });
+RECIPES.push({ out: 'combat_pants', n: 1, time: 8, station: 'wb1', cost: { cloth: 30, leather: 10, metal_frags: 30 } });
+RECIPES.push({ out: 'ghillie_suit', n: 1, time: 10, station: 'wb1', cost: { cloth: 50, rope: 2 } });
+RECIPES.push({ out: 'ghillie_hood', n: 1, time: 5, station: 'wb1', cost: { cloth: 20, rope: 1 } });
+RECIPES.push({ out: 'wetsuit', n: 1, time: 8, station: 'wb1', cost: { cloth: 25, animal_fat: 15, leather: 5 } });
+RECIPES.push({ out: 'parka', n: 1, time: 8, station: 'wb1', cost: { cloth: 30, leather: 20, animal_fat: 5 } });
 RECIPES.forEach((r, i) => (r.id = i));
 
 export const STATION_NAMES = { wb1: 'Workbench Lv1', wb2: 'Workbench Lv2', wb3: 'Workbench Lv3', campfire: 'Camp Fire', furnace: 'Furnace', gunsmith: 'Gunsmith Bench', fabricator: 'Fabricator' };
@@ -374,8 +391,8 @@ export const DIG = { step: 0.45, min: -6, max: 4, raiseCost: { stone: 5 }, reach
 export const LOOT = {
   barrel: [['scrap', 2, 6, 1], ['metal_frags', 10, 30, 0.4], ['fuel', 2, 6, 0.3], ['rope', 1, 1, 0.15], ['pipe', 1, 1, 0.1], ['gears', 1, 1, 0.08], ['spring', 1, 1, 0.06], ['pistol_ammo', 4, 10, 0.1], ['bandage', 1, 2, 0.15], ['cloth', 5, 15, 0.2]],
   1: [['scrap', 5, 12, 1], ['metal_frags', 20, 60, 0.6], ['fuel', 5, 15, 0.5], ['rope', 1, 2, 0.3], ['pipe', 1, 2, 0.25], ['gears', 1, 1, 0.2], ['spring', 1, 1, 0.15], ['wheel', 1, 1, 0.12], ['engine_parts', 1, 1, 0.08], ['bandage', 1, 3, 0.3], ['pistol_ammo', 8, 16, 0.2], ['cloth_shirt', 1, 1, 0.05], ['metal_hatchet', 1, 1, 0.05], ['revolver', 1, 1, 0.03], ['pistol', 1, 1, 0.02], ['crossbow', 1, 1, 0.02], ['water_bottle', 1, 1, 0.2], ['fishing_rod', 1, 1, 0.06]],
-  2: [['scrap', 15, 30, 1], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1], ['o2_tank', 1, 1, 0.06], ['pearl', 1, 2, 0.05], ['battery', 1, 1, 0.08], ['copper', 3, 8, 0.12]],
-  3: [['scrap', 30, 60, 1], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08], ['o2_tank_large', 1, 1, 0.05], ['pearl', 1, 3, 0.15], ['power_cell', 1, 1, 0.06], ['titanium', 2, 5, 0.15], ['depth_mk1', 1, 1, 0.04]],
+  2: [['scrap', 15, 30, 1], ['combat_pants', 1, 1, 0.05], ['ghillie_hood', 1, 1, 0.04], ['wetsuit', 1, 1, 0.04], ['metal_frags', 50, 120, 0.6], ['hqm', 2, 6, 0.4], ['fuel', 10, 25, 0.5], ['gears', 1, 2, 0.35], ['spring', 1, 2, 0.35], ['pipe', 1, 2, 0.3], ['tech_trash', 1, 1, 0.25], ['wheel', 1, 2, 0.3], ['engine_parts', 1, 1, 0.25], ['medkit', 1, 1, 0.25], ['pistol_ammo', 12, 24, 0.3], ['shells', 4, 10, 0.25], ['revolver', 1, 1, 0.1], ['shotgun', 1, 1, 0.06], ['leather_vest', 1, 1, 0.08], ['metal_mask', 1, 1, 0.03], ['satchel', 1, 1, 0.05], ['pistol', 1, 1, 0.08], ['double_barrel', 1, 1, 0.06], ['sword', 1, 1, 0.06], ['grenade', 1, 2, 0.1], ['o2_tank', 1, 1, 0.06], ['pearl', 1, 2, 0.05], ['battery', 1, 1, 0.08], ['copper', 3, 8, 0.12]],
+  3: [['scrap', 30, 60, 1], ['kevlar_vest', 1, 1, 0.12], ['riot_helmet', 1, 1, 0.1], ['ghillie_suit', 1, 1, 0.06], ['hqm', 6, 15, 0.7], ['tech_trash', 1, 2, 0.5], ['explosives', 2, 6, 0.3], ['rifle_ammo', 20, 40, 0.5], ['engine_parts', 1, 2, 0.4], ['wheel', 1, 2, 0.3], ['medkit', 1, 2, 0.5], ['smg', 1, 1, 0.15], ['rifle', 1, 1, 0.08], ['metal_chest', 1, 1, 0.12], ['metal_mask', 1, 1, 0.12], ['metal_legs', 1, 1, 0.12], ['c4', 1, 1, 0.04], ['satchel', 1, 3, 0.2], ['bolt_rifle', 1, 1, 0.07], ['lmg', 1, 1, 0.04], ['rocket_launcher', 1, 1, 0.03], ['rocket', 1, 2, 0.06], ['grenade', 1, 3, 0.25], ['battle_axe', 1, 1, 0.08], ['o2_tank_large', 1, 1, 0.05], ['pearl', 1, 3, 0.15], ['power_cell', 1, 1, 0.06], ['titanium', 2, 5, 0.15], ['depth_mk1', 1, 1, 0.04]],
 };
 
 export function rollLoot(table, rnd = Math.random) {

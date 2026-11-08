@@ -129,6 +129,22 @@ export class Caves {
         const x = (i + fx) * QUAD, z = (j + fz) * QUAD, s = this.surface(x, z);
         if (this.rock(x, s - 0.5, z) < 0) { v = true; break; }
       }
+      // a hole dug into the ground here opens it too, however small (the samples above can miss it)
+      if (!v) {
+        const x0 = i * QUAD, z0 = j * QUAD, seen = new Set();
+        for (const [cx, cz] of [[x0, z0], [x0 + QUAD, z0], [x0, z0 + QUAD], [x0 + QUAD, z0 + QUAD]]) {
+          for (const mi of this.modGrid.get(Math.floor(cx / CAVE_CELL) * 100003 + Math.floor(cz / CAVE_CELL)) || []) {
+            if (seen.has(mi)) continue; seen.add(mi);
+            const [mx, my, mz, r] = this.mods[mi];
+            if (r <= 0) continue;
+            const ms = this.surface(mx, mz);
+            if (my + r < ms - 0.5 || my - r > ms + 0.5) continue; // doesn't break the surface
+            const dx = Math.max(x0 - mx, 0, mx - (x0 + QUAD)), dz = Math.max(z0 - mz, 0, mz - (z0 + QUAD));
+            if (Math.hypot(dx, dz) < r * 0.85) { v = true; break; }
+          }
+          if (v) break;
+        }
+      }
       this.openCache.set(k, v);
     }
     return v;

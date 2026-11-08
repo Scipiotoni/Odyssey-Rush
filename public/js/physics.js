@@ -153,20 +153,22 @@ export class Physics {
     const sdt = dt / steps;
     for (let s = 0; s < steps; s++) {
       p.x += vel.x * sdt; p.y += vel.y * sdt; p.z += vel.z * sdt;
-      // walls: sample a ring around the body at knee, chest and head height
+      // walls: at knee, chest and head height, estimate the distance to the rock from the field and its slope and push
+      // straight out by exactly the overlap (smooth: no stepping back and forth against curved walls)
+      const E = 0.12;
       for (const yo of [stepH + 0.05, h * 0.55, h - 0.1]) {
-        for (let it = 0; it < 3; it++) {
-          let px = 0, pz = 0;
-          for (let a = 0; a < 8; a++) {
-            const ax = Math.cos(a * 0.785), az = Math.sin(a * 0.785);
-            if (rock(p.x + ax * r, p.y + yo, p.z + az * r) > 0) { px -= ax; pz -= az; }
-          }
-          const l = Math.hypot(px, pz);
-          if (l < 1e-6) break;
-          px /= l; pz /= l;
-          p.x += px * 0.05; p.z += pz * 0.05;
-          const vn = vel.x * -px + vel.z * -pz;
-          if (vn > 0) { vel.x += px * vn; vel.z += pz * vn; }
+        for (let it = 0; it < 2; it++) {
+          const y = p.y + yo, v = rock(p.x, y, p.z);
+          if (v < -0.2) break; // well clear
+          const gx = (rock(p.x + E, y, p.z) - rock(p.x - E, y, p.z)) / (2 * E), gz = (rock(p.x, y, p.z + E) - rock(p.x, y, p.z - E)) / (2 * E), gy = (rock(p.x, y + E, p.z) - rock(p.x, y - E, p.z)) / (2 * E);
+          const g = Math.hypot(gx, gy, gz), gh = Math.hypot(gx, gz);
+          if (g < 1e-5 || gh < 0.35 * g) break; // floor or ceiling, not a wall
+          const sdf = v / g, over = sdf + r; // > 0: the body overlaps the rock by this much
+          if (over <= 0) break;
+          const nx = -gx / gh, nz = -gz / gh, push = Math.min(over, 0.35);
+          p.x += nx * push; p.z += nz * push;
+          const vn = vel.x * nx + vel.z * nz;
+          if (vn < 0) { vel.x -= nx * vn; vel.z -= nz * vn; }
         }
       }
       // ceiling
@@ -178,9 +180,11 @@ export class Physics {
       if (this.lastSurf && p.y <= gc + 0.001 && (vel.y <= 0.01 || gc - p.y < stepH)) { p.y = gc; if (vel.y < 0) vel.y = 0; res.ground = true; continue; }
       // floor: if the feet are in rock, lift up to the surface (small ledges step up)
       if (rock(p.x, p.y, p.z) > 0) {
-        let lifted = false;
-        for (let dy = 0.05; dy <= stepH + 0.6; dy += 0.05) if (rock(p.x, p.y + dy, p.z) <= 0) { p.y += dy; lifted = true; break; }
-        if (!lifted) p.y += 0.05;
+        // stand exactly on the surface: find where the rock ends above the feet (bisection, no 5 cm steps)
+        let lo = 0, hi = -1;
+        for (let dy = 0.15; dy <= stepH + 0.6; dy += 0.15) if (rock(p.x, p.y + dy, p.z) <= 0) { hi = dy; break; } else lo = dy;
+        if (hi > 0) { for (let k = 0; k < 7; k++) { const m = (lo + hi) / 2; if (rock(p.x, p.y + m, p.z) > 0) lo = m; else hi = m; } p.y += hi + 0.005; }
+        else p.y += 0.2; // buried (a hole filled in on you): climb out
         if (vel.y < 0) vel.y = 0;
         res.ground = true;
       } else if (vel.y <= 0.01 && rock(p.x, p.y - 0.06, p.z) > 0) { res.ground = true; if (vel.y < 0) vel.y = 0; }

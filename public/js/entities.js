@@ -125,7 +125,8 @@ export class Entities {
       }
       if (p.swingT > 0) p.swingT -= dt;
       const dist = camPos.distanceTo(p.pos), mate = !!(p.flags & 32);
-      p.tag.visible = !sleeping && (dist < 22 || (mate && dist < 400));
+      const camo = !mate && /ghillie/.test(p.armor || ''); // a ghillie suit hides your name beyond a few metres
+      p.tag.visible = !sleeping && (dist < (camo ? 8 : 22) || (mate && dist < 400));
       const sc = mate ? Math.max(1, dist / 18) : 1;
       p.tag.scale.set(1.6 * sc, 0.3 * sc, 1);
       const lit = !!(p.flags & 128) && !sleeping;

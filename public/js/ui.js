@@ -3,6 +3,7 @@ import { ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_
 import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
 import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
 import { audio } from './audio.js';
+import { ACTIONS, keyLabel } from './input.js';
 import { icons } from './icons.js';
 import { PAINT_COLORS, PAINT_NAMES, DECALS } from '/shared/paint.js';
 import { decalPreview } from './paint.js';
@@ -105,7 +106,7 @@ export class UI {
     $('gains').prepend(el);
     setTimeout(() => el.remove(), 3000);
   }
-  prompt(html) { if (this._prompt !== html) { $('prompt').innerHTML = html || ''; this._prompt = html; } }
+  prompt(html) { if (this._prompt !== html) { $('prompt').innerHTML = html ? this.game.input.relabel(html) : ''; this._prompt = html; } }
   target(html) { if (this._target !== html) { $('target').innerHTML = html || ''; this._target = html; } }
   progress(frac, text) {
     if (frac === null) { $('progress').classList.add('hidden'); return; }
@@ -173,19 +174,33 @@ export class UI {
     const el = document.createElement('div');
     if (clan) el.classList.add('clanmsg');
     if (!from) { el.className = 'sys'; el.textContent = m; } else el.innerHTML = `<b>${esc(from)}:</b> ${esc(m)}`;
-    $('chatlog').appendChild(el);
-    while ($('chatlog').children.length > 12) $('chatlog').firstChild.remove();
+    // keep the last 200 lines; only the newest 8 show while the chat is closed. Open it (T / Enter) to scroll back
+    const log = $('chatlog'), atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 30;
+    log.appendChild(el);
+    while (log.children.length > 200) log.firstChild.remove();
+    const n = log.children.length;
+    if (n > 8) log.children[n - 9].classList.add('old');
+    if (atBottom || !$('chat').classList.contains('open')) log.scrollTop = log.scrollHeight;
   }
   openChat() {
     this.open = 'chat';
     $('chat').classList.add('open');
+    const log = $('chatlog'); log.scrollTop = log.scrollHeight;
     const inp = $('chatinput'); inp.classList.remove('hidden'); inp.value = ''; inp.focus();
+    if (!inp._scrollKeys) {
+      inp._scrollKeys = true;
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'PageUp' || (e.key === 'ArrowUp' && e.ctrlKey)) { log.scrollTop -= log.clientHeight * 0.8; e.preventDefault(); }
+        if (e.key === 'PageDown' || (e.key === 'ArrowDown' && e.ctrlKey)) { log.scrollTop += log.clientHeight * 0.8; e.preventDefault(); }
+      });
+    }
   }
   closeChat(send) {
     const inp = $('chatinput');
     if (send && inp.value.trim()) this.game.net.send({ t: 'chat', m: inp.value.trim() });
     inp.classList.add('hidden'); inp.blur();
     $('chat').classList.remove('open');
+    $('chatlog').scrollTop = $('chatlog').scrollHeight;
     this.open = null;
   }
 
@@ -517,6 +532,22 @@ export class UI {
     pick('[data-s]', (el) => (pt.size = +el.dataset.s));
   }
 
+  // ------------------------------------------------------------------ controls: rebind any key
+  showKeys() {
+    if (this.open !== 'keys') this.show('keys');
+    const inp = this.game.input, box = $('keysbox');
+    const used = {}; for (const [a] of ACTIONS) { const k = inp.bindOf(a); (used[k] = used[k] || []).push(a); }
+    box.innerHTML = `<h2>⌨️ Controls</h2><div class="hint">Click a key, then press the new one (Esc cancels). Mouse buttons and the number keys 1–6 stay as they are.</div>
+      <div class="keyrows">${ACTIONS.map(([a, label, d]) => { const k = inp.bindOf(a); return `<div class="keyrow"><span>${esc(label)}</span><button data-a="${a}" class="${used[k].length > 1 ? 'clash' : k !== d ? 'changed' : ''}" title="${used[k].length > 1 ? 'Also used by: ' + used[k].filter((x) => x !== a).join(', ') : ''}">${esc(keyLabel(k))}</button></div>`; }).join('')}</div>
+      <div class="srvbtns"><button id="keysreset" class="alt">↺ Reset to defaults</button><button id="keysdone">Done</button></div>`;
+    box.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => {
+      b.textContent = 'Press a key…'; b.classList.add('wait');
+      inp.capture = (code) => { if (code !== 'Escape') inp.setBind(b.dataset.a, code); audio.click(); this.showKeys(); };
+    }));
+    $('keysreset').onclick = () => { inp.resetBinds(); audio.click(); this.showKeys(); };
+    $('keysdone').onclick = () => { inp.capture = null; this.show('pause'); };
+  }
+
   // ------------------------------------------------------------------ vehicle spawner (/spawn or the pause menu)
   showSpawn() {
     this.show('spawn');
@@ -561,7 +592,7 @@ export class UI {
   show(which) {
     this.close(true);
     this.open = which;
-    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', spawn: 'spawnscreen', reset: 'resetscreen', gunsmith: 'gunsmithscreen' }[which];
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', spawn: 'spawnscreen', keys: 'keysscreen', reset: 'resetscreen', gunsmith: 'gunsmithscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') { this.renderInventory(); this.preview.start(); }
     if (which === 'inv') { const d = this.game.day ?? 0.5, h = Math.floor(d * 24), m = Math.floor((d * 24 - h) * 60); $('pdaclock').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
@@ -574,7 +605,8 @@ export class UI {
     this.game.input.unlock();
   }
   close(silent) {
-    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen', 'resetscreen', 'gunsmithscreen']) $(id).classList.add('hidden');
+    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen', 'resetscreen', 'gunsmithscreen', 'spawnscreen', 'keysscreen']) $(id).classList.add('hidden');
+    this.game.input.capture = null;
     $('itemtip').classList.add('hidden');
     this.endDrag();
     if (this.open === 'inv' && this.game.container) { this.game.net.send({ t: 'close' }); this.game.container = null; }
@@ -682,6 +714,7 @@ export function itemDesc(st, short) {
   let s = short ? '' : `<div class="bigico">${iconHTML(st.id, 'bico')}</div><b>${d.name}</b>${st.n > 1 ? ' ×' + st.n : ''}<br>`;
   if (d.gun) s += `Damage ${d.gun.dmg}${d.gun.pellets ? '×' + d.gun.pellets : ''} · ${d.gun.rate}/s · mag ${d.gun.mag} · ammo: ${ITEMS[d.gun.ammo].name}${st.a !== undefined && !short ? ` · loaded ${st.a}` : ''}`;
   else if (d.dig) s += 'LMB dig the ground (finds stone, sometimes ore) · RMB pile up dirt. Everyone sees your holes and mounds.';
+  else if (d.armor && d.armor.slot !== 'back') { const A = d.armor; s += [`Protection ${Math.round(A.prot * 100)}%`, A.bullet !== undefined ? `vs bullets ${Math.round(A.bullet * 100)}%` : '', A.melee !== undefined ? `vs melee ${Math.round(A.melee * 100)}%` : '', `warmth ${Math.round(A.cold * 100)}%`, A.weight ? `${Math.round(A.weight * 100)}% slower` : '', A.camo ? 'camouflage: hides your name tag beyond 8 m' : '', A.swim ? `swim ${Math.round((A.swim - 1) * 100)}% faster, warm in water` : ''].filter(Boolean).join(' · ') + '. Armour never stops more than 60% of a hit.'; }
   else if (d.flashlight) s += 'LMB switch on/off · R put in a Battery (+50%) or Power Cell (+100%) · or charge it in a Charging Station. A full charge lasts 15 minutes.';
   else if (d.bottle) s += 'Hold it and LMB while standing in water: the sea gives Salt Water, lakes and rivers fresh water.';
   else if (st.id === 'salt_water') s += "Too salty to drink — refine it (Portable Refiner, Refinery or Salt Water Refiner) into a Water Bottle and Salt.";
