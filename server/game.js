@@ -140,15 +140,21 @@ export class Game {
       for (const s of this.structs.values()) if (s.veh) { const v = this.vehicles.get(s.veh); if (v) v.attached.add(s.id); else this.structs.delete(s.id); }
       // the Pacific got bigger: move what was inside an old one to the same spots in the new layout
       for (const v of this.vehicles.values()) {
-        if (v.type !== 'cyclops' || v.layout === 2) continue;
-        v.layout = 2;
-        const I = VEHICLES.cyclops.interior;
+        if (v.type !== 'cyclops' || v.layout === 3) continue;
+        const I = VEHICLES.cyclops.interior, D = VEHICLES.cyclops.deck, was = v.layout || 1;
+        v.layout = 3;
+        // the deck's building origin moves to the new deck; its pieces move with it
+        const bd = this.buildings.get('D' + v.id);
+        let old = bd ? { x: bd.x, y: bd.y, z: bd.z } : { x: 0, y: was === 2 ? I.y0 : -1.7, z: was === 2 ? 1.0 : 0.5 };
+        if (was === 2 && bd && bd.z === 0.5) old = { x: 0, y: I.y0, z: 1.0 }; // the last move shifted the pieces but not the origin
+        if (bd) Object.assign(bd, { x: D.x, y: D.y, z: D.z });
         for (const id of v.attached) {
           const s = this.structs.get(id);
           if (!s?.local) continue;
+          if (s.kind === 'piece') { s.local.x += D.x - old.x; s.local.y += D.y - old.y; s.local.z += D.z - old.z; continue; }
+          if (was === 2) continue; // fittings were already in the new hull
           s.local.y += I.y0 - -1.7;
-          if (s.kind === 'piece') s.local.z += VEHICLES.cyclops.deck.z - 0.5;
-          else { s.local.x = Math.max(-I.hx + 0.3, Math.min(I.hx - 0.3, s.local.x * (I.hx / 2.75))); s.local.z = s.local.z * (I.hz / 12.2); }
+          s.local.x = Math.max(-I.hx + 0.3, Math.min(I.hx - 0.3, s.local.x * (I.hx / 2.75))); s.local.z = s.local.z * (I.hz / 12.2);
         }
       }
       for (const [id, st] of d.nodes || []) this.setNodeState(id, st);
@@ -1154,7 +1160,9 @@ export class Game {
       if (!this.canUseDeck(p, v)) return this.toast(p, 'This hauler belongs to someone else');
       const l = { x: num(m.lx), y: num(m.ly), z: num(m.lz), yaw: num(m.lyaw) };
       const zs = vd.deck.cells.map((c) => vd.deck.z + c * 1.5);
-      if (Math.abs(l.x) > 1.5 || l.z < Math.min(...zs) - 1.5 || l.z > Math.max(...zs) + 1.5 || l.y < vd.deck.y - 0.2 || l.y > vd.deck.y + vd.deck.levels * 3 + 0.3) return this.toast(p, 'Place it on the deck');
+      const I = vd.interior;
+      if (I) { if (Math.abs(l.x) > I.hx - 0.15 || Math.abs(l.z) > I.hz - 0.15 || l.y < I.y0 - 0.2 || l.y > I.y1) return this.toast(p, 'Place it inside the hull'); if (Math.abs(l.x - vd.dock.x) < 1.8 && Math.abs(l.z - vd.dock.z) < 2.5) return this.toast(p, 'Keep the vehicle bay clear'); }
+      else if (Math.abs(l.x) > 1.5 || l.z < Math.min(...zs) - 1.5 || l.z > Math.max(...zs) + 1.5 || l.y < vd.deck.y - 0.2 || l.y > vd.deck.y + vd.deck.levels * 3 + 0.3) return this.toast(p, 'Place it on the deck');
       if (MACHINES[def.deploy.kind] && !MACHINES[def.deploy.kind].portable) return this.toast(p, 'Base machines need a base — only the Portable Refiner works on vehicles');
       if (def.deploy.kind === 'tool_cupboard') return this.toast(p, "Tool cupboards can't go on vehicles — the hauler's owner and clan already control it");
       Inv.remove(p.inv, st.id, 1);
@@ -2396,7 +2404,7 @@ export class Game {
       const def = VEHICLES[type], id = this.id('V');
       const v = { id, type, x: spot.x, y: spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * 0.5), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), spawnedBy: p.pid };
       this.vehicles.set(id, v);
-      if (def.outfit) this.outfitPacific(v);
+      if (def.fresh) this.setupPacific(v);
       p.spawnedVeh.push(id); p.lastSpawn = t;
       if (def.sub) v.fuel = def.fuelCap; // subs start fully charged
       const dd = Math.hypot(spot.x - p.x, spot.z - p.z), dir = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((Math.atan2(spot.x - p.x, -(spot.z - p.z)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
@@ -2687,20 +2695,8 @@ export class Game {
     }
   }
   // the Pacific comes fitted out: a fabricator and lockers inside, and a Mini Sub in its docking bay
-  outfitPacific(v) {
-    const def = VEHICLES[v.type];
-    v.layout = 2;
-    for (const [kind, lx, lz, yaw] of def.outfit) {
-      const d = ITEMS[kind].deploy;
-      const s2 = { id: this.id('S'), kind: 'deploy', type: kind, hp: d.hp, mhp: d.hp, owner: v.owner || 0, veh: v.id, local: { x: lx, y: def.interior.y0, z: lz, yaw }, x: 0, y: 0, z: 0, yaw: 0, created: now() };
-      if (d.slots) s2.slots = Inv.emptySlots(d.slots);
-      this.addStruct(s2);
-    }
-    const md = VEHICLES.minisub, id = this.id('V');
-    const m = { id, type: 'minisub', x: v.x, y: v.y, z: v.z, q: v.q.slice(), vel: [0, 0, 0], hp: md.hp, broken: false, needs: {}, fuel: md.fuelCap, steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(md.seats.length).fill(0), attached: new Set(), owner: v.owner, dockedIn: v.id };
-    this.vehicles.set(id, m); v.docked = id;
-    this.refreshDocked(v);
-  }
+  // a new Pacific comes empty: you fit it out yourself and dock your own Mini Sub in its bay
+  setupPacific(v) { v.layout = 3; }
   dockPose(v) { const d = VEHICLES[v.type].dock, w = quatRotate(v.q, [d.x, d.y, d.z]); return { x: v.x + w[0], y: v.y + w[1], z: v.z + w[2] }; }
   refreshDocked(v) {
     const c = v.docked && this.vehicles.get(v.docked);
@@ -2712,11 +2708,11 @@ export class Game {
     const v = this.vehicles.get(String(m.id));
     if (!v || !p.alive || p.vehicle || !this.inSubInterior(v, p)) return;
     const c = v.docked && this.vehicles.get(v.docked);
-    if (!c) return this.toast(p, 'The docking bay is empty — drive a Mini Sub up into it to dock');
+    if (!c) return this.toast(p, 'The vehicle bay is empty — drive a Mini Sub up under the bay door to dock it');
     if (c.broken) return this.toast(p, 'The docked Mini Sub is wrecked — repair it first');
     if (v.y > -VEHICLES[v.type].half[1] * 0.3) return this.toast(p, 'Dive first — the bay opens under water');
     v.docked = null; c.dockedIn = null;
-    const pose = this.dockPose(v); c.x = pose.x; c.y = pose.y - 0.8; c.z = pose.z;
+    const d = VEHICLES[v.type].dock, w = quatRotate(v.q, [d.x, d.door ?? d.y - 0.8, d.z]); c.x = v.x + w[0]; c.y = v.y + w[1]; c.z = v.z + w[2];
     c.seats[0] = p.pid; p.vehicle = { id: c.id, seat: 0 }; p.x = c.x; p.y = c.y; p.z = c.z;
     this.send(p, { t: 'v_seat', id: c.id, seat: 0, v: this.sVehicleFull(c) });
     this.toast(p, '🔓 Mini Sub released from the docking bay');
@@ -2727,15 +2723,15 @@ export class Game {
     if (!c || p.vehicle.seat !== 0 || c.type !== 'minisub') return;
     for (const v of this.vehicles.values()) {
       if (!VEHICLES[v.type].dock || v.docked || v.broken) continue;
-      const d = this.dockPose(v);
+      const dd = VEHICLES[v.type].dock, wd = quatRotate(v.q, [dd.x, dd.door ?? dd.y, dd.z]), d = { x: v.x + wd[0], y: v.y + wd[1], z: v.z + wd[2] };
       if (Math.hypot(d.x - c.x, d.y - c.y, d.z - c.z) > 4) continue;
       v.docked = c.id; c.dockedIn = v.id; c.vel = [0, 0, 0];
       this.refreshDocked(v);
       c.seats[0] = 0; p.vehicle = null;
-      const I = VEHICLES[v.type].interior, w = quatRotate(v.q, [-1.2, I.y0 + 0.05, VEHICLES[v.type].dock.z]);
+      const I = VEHICLES[v.type].interior, w = quatRotate(v.q, [0.4, I.y0 + 0.05, VEHICLES[v.type].dock.z]);
       this.send(p, { t: 'v_seat', id: null });
       this.teleport(p, v.x + w[0], v.y + w[1], v.z + w[2]);
-      return this.toast(p, '🔒 Docked — you climb up into the Pacific. The Mini Sub recharges from its power.');
+      return this.toast(p, '🔒 Docked in the vehicle bay — you climb out into the Pacific. The Mini Sub recharges from its power.');
     }
   }
   // launch a vehicle kit into the water in front of you
@@ -2751,7 +2747,7 @@ export class Game {
     const y = def.sub ? -def.half[1] * 0.45 : spot.y;
     const nv = { id, type, x: spot.x, y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * (def.sub ? 0.5 : 0.3)), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), owner: p.pid };
     this.vehicles.set(id, nv);
-    if (def.outfit) this.outfitPacific(nv);
+    if (def.fresh) this.setupPacific(nv);
     this.toast(p, `${def.sub ? '🌊' : '🚣'} ${def.name} launched${def.sub ? ' — charge it with batteries (G), fit modules at its module bay (U)' : ''}`);
   }
 

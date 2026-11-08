@@ -697,7 +697,7 @@ class Game {
             if (E) this.net.send({ t: 'v_repair', id: v.id });
           } else if (def.interior && hit.col.role === 'dock') {
             const kid = [...this.vehicleViews.values()].find((o) => o.dockedIn === v.id);
-            text = kid ? `<b>Docking bay</b> — Mini Sub 🔋 ${kid.fuel}/${VEHICLES.minisub.fuelCap} · 🔧 ${kid.hp}/${VEHICLES.minisub.hp}<br><kbd>E</kbd> Climb in and launch it` : '<b>Docking bay</b> — empty. Drive a Mini Sub up under the hull here to dock it.';
+            text = kid ? `<b>Vehicle bay</b> — Mini Sub 🔋 ${kid.fuel}/${VEHICLES.minisub.fuelCap} · 🔧 ${kid.hp}/${VEHICLES.minisub.hp}<br><kbd>E</kbd> Climb in and launch it through the bay door` : '<b>Vehicle bay</b> — empty. Drive a Mini Sub up under the bay door (port side, under the hull) to dock it inside.';
             if (kid && E) this.net.send({ t: 'undock', id: v.id });
           } else if (def.interior && hit.col.role === 'engine') {
             text = `<b>Upgrade console</b> · crush depth ${v.subInfo?.crush ?? def.depths[0]} m<br><kbd>E</kbd> Module bay (depth, thrust and efficiency modules)`;
@@ -714,7 +714,8 @@ class Game {
             // aiming at the fuel cap / battery hatch opens it; anywhere else gets you in
             const lp = cam.clone().addScaledVector(dir, hit.t).sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
             const sv = def.service && !def.interior ? Math.hypot(lp.x - def.service[0], lp.y - def.service[1], lp.z - def.service[2]) : 99;
-            if (sv < (def.half[2] > 4 ? 1.3 : 0.75)) {
+            if (v.dockedIn && sv >= 0.75) { text = `<b>${def.name}</b> — docked in the vehicle bay. Launch it from the bay console.`; }
+            else if (sv < (def.half[2] > 4 ? 1.3 : 0.75)) {
               text = def.power ? `<b>${def.name} — battery hatch</b> 🔋 ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open — put Batteries or Power Cells in` : `<b>${def.name} — fuel cap</b> ⛽ ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open the tank — put Low Grade Fuel in <small>(you have ${countItem(this.inv, 'fuel')})</small>`;
               if (E) this.net.send({ t: 'open', id: 'vf:' + v.id });
             } else {
@@ -957,7 +958,7 @@ class Game {
       for (const v of this.vehicleViews.values()) {
         const d = VEHICLES[v.type].dock;
         if (!d || v.broken || [...this.vehicleViews.values()].some((o) => o.dockedIn === v.id)) continue;
-        const dp = new THREE.Vector3(d.x, d.y, d.z).applyQuaternion(v.q).add(v.pos);
+        const dp = new THREE.Vector3(d.x, d.door ?? d.y, d.z).applyQuaternion(v.q).add(v.pos); // come up under the bay door
         const dd = dp.distanceTo(s.pos);
         if (dd > 7) this.vehicle.dockArmed = true; // only after you've backed out of the bay once
         if (this.vehicle.dockArmed && dd < 3.2 && performance.now() - (this.lastDock || 0) > 3000) { this.lastDock = performance.now(); this.net.send({ t: 'dock' }); }

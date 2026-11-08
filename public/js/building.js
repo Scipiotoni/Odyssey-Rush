@@ -175,10 +175,15 @@ export class Builder {
       if (dk) {
         const p = hit.point, v = dk.view;
         const gy = g.physics.groundAt(p.x, p.z, p.y + 0.1, 0.3);
-        if (Math.abs(gy - p.y) > 0.2) err = 'Needs a flat surface';
+        if (Math.abs(gy - p.y) > 0.2 && !d.deploy.wall) err = 'Needs a flat surface';
         if (d.deploy.kind === 'tool_cupboard') err = "Tool cupboards can't go on vehicles";
-        const lyaw = g.player.yaw - v.yaw;
+        let lyaw = g.player.yaw - v.yaw;
         const l = dk.l;
+        if (d.deploy.wall) {
+          // on a wall inside (the Pacific): back flush to the wall, facing you
+          const dir = g.held.dir().applyQuaternion(_iq.copy(v.q).invert()), back = d.deploy.depth ? d.deploy.depth / 2 + 0.11 : 0.12;
+          l.x -= dir.x * back; l.z -= dir.z * back; l.y -= (d.deploy.h || 0.7) / 2; lyaw = Math.atan2(dir.x, dir.z) + Math.PI;
+        }
         plan = { veh: v.id, l: [l.x, l.y, l.z, lyaw], t: { x: p.x, y: p.y, z: p.z, yaw: g.player.yaw }, w: this.toWorld(v, { x: l.x, y: l.y, z: l.z, yaw: lyaw }) };
       } else if (!hit) err = 'Too far';
       else {

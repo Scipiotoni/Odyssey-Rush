@@ -314,9 +314,9 @@ export class VehicleView {
   update(dt, sim, effects, night) {
     const g = this.group, ud = g.userData;
     if (sim) { this.pos.copy(sim.pos); this.q.copy(sim.q); this.steer = sim.steer; }
-    for (const c of this.colliders) c.ghost = !!this.dockParent; // a docked sub is part of its carrier
+    for (const c of this.colliders) c.ghost = false; // a docked sub sits solid in its carrier's vehicle bay
     if (sim) {} else if (this.dockParent) {
-      // slung under the Pacific in its docking bay
+      // parked inside the Pacific's vehicle bay
       const P = this.dockParent, d = P.def.dock;
       this.pos.set(d.x, d.y, d.z).applyQuaternion(P.q).add(P.pos); this.q.copy(P.q);
     } else {

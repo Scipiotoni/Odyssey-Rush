@@ -267,12 +267,13 @@ they have a pickaxe and enough breath to hack their way out.
   a glass bow dome, a dorsal sail, lit portholes, sponsons and twin ducted screws. Swim underneath and climb in through
   the **floor hatch** with **E**. Inside it's dry and breathable, with no sea water in the hull even far below the surface.
   - **Bridge** (bow): the helm and captain's chair under a big glass dome, with side stations and a sonar screen.
-  - **Crew quarters**: bunk beds, a mess table, a built-in **Fabricator** (crafts everything a Workbench 2 can) and two
-    **wall lockers**.
-  - **The hall** amidships: a big buildable deck (marked in yellow) you can build and furnish with the Building Plan.
-  - **Docking bay** (amidships): a **Mini Sub** comes docked under the hull. At the bay console press **E** to drop into
-    it and launch. To dock again, drive the Mini Sub up under the bay and you climb back into the Pacific. A docked Mini
-    Sub recharges from the Pacific's power.
+  - **It comes empty.** Fit it out yourself: hold the Building Plan, pick deployables in the build menu and place
+    lockers, boxes, workbenches, a fabricator, beds, furniture anywhere on the floor (wall items like torches and
+    lights go on the walls). Walls, floors and stairs go on the deck marked in yellow amidships.
+  - **Vehicle bay** (port side, amidships): a glass-walled bay with a bay door in its floor. The Pacific doesn't come with
+    a Mini Sub; bring your own and drive it up under the bay door (under the hull) to dock it *inside*. You climb out
+    into the Pacific and the Mini Sub recharges from its power. At the bay console press **E** to climb in and drop out
+    through the bay door.
   - **Engine room** (stern): the drive, the **upgrade console** (**E**, modules) and the **power cell rack** (**E**).
   - **Flooding**: below its crush depth the Pacific springs **leaks** that fill it with water. Seal them with a Repair
     Tool and the water drains away. A wrecked Pacific floods completely.

@@ -78,9 +78,9 @@ export const VEHICLES = {
     repair: { scrap: 40, titanium: 4, metal_frags: 150 },
   },
   // the Pacific (id kept as 'cyclops' for old saves): a big walk-in sub, 37 m long and 8 m wide inside. Bridge under the
-  // bow dome; crew quarters with bunks, a mess table, lockers and the fabricator; a buildable deck amidships; the
-  // docking bay for a Mini Sub slung under the hull; the engine room with the upgrade console and the power cell rack
-  // at the stern. You get in and out through a hatch in the floor.
+  // bow dome; a long empty hall you fit out yourself (place lockers, boxes, benches anywhere; build on the marked deck);
+  // an enclosed vehicle bay on the port side that a Mini Sub docks into from below; the engine room with the upgrade
+  // console and the power cell rack at the stern. You get in and out through a hatch in the floor.
   cyclops: {
     name: 'Pacific', sub: true, power: true, big: true, mass: 60000, hp: 6500, fuelCap: 720, fuelUse: 1.1, wheels: [],
     half: [4.3, 3.5, 18.5], com: [0, 0, 0], thrust: 165000, maxSpeed: 7, turn: 0.26, vert: 0.4,
@@ -92,12 +92,13 @@ export const VEHICLES = {
       [0, -0.15, 16.95, 4.1, 2.05, 0.1], [0, -0.15, -16.95, 4.1, 2.05, 0.1],
       [2.35, -0.15, 12.0, 1.55, 2.05, 0.1], [-2.35, -0.15, 12.0, 1.55, 2.05, 0.1], [0, 1.15, 12.0, 0.8, 0.75, 0.1],
       [2.35, -0.15, -8.5, 1.55, 2.05, 0.1], [-2.35, -0.15, -8.5, 1.55, 2.05, 0.1], [0, 1.15, -8.5, 0.8, 0.75, 0.1],
-      [0, -1.75, 15.7, 1.1, 0.45, 0.4, 'helm'], [-3.55, -1.4, -5.0, 0.32, 0.8, 0.65, 'dock'], [3.5, -1.4, -11.2, 0.35, 0.8, 0.6, 'engine'],
+      [0, -1.75, 15.7, 1.1, 0.45, 0.4, 'helm'], [-0.3, -1.45, -2.25, 0.28, 0.75, 0.28, 'dock'], [-0.4, -0.15, -5.0, 0.05, 2.05, 2.45], [-2.15, -0.15, -7.45, 1.75, 2.05, 0.05], [-2.15, -0.15, -2.55, 1.75, 2.05, 0.05], [3.5, -1.4, -11.2, 0.35, 0.8, 0.6, 'engine'],
       [-3.45, -1.1, -12.2, 0.4, 1.1, 1.0, 'cells'], [0, -0.9, -14.3, 1.25, 1.3, 1.6]],
-    deck: { x: 0, y: -2.2, z: 1.0, cells: [-2, 0, 2], levels: 0 },
-    dock: { x: 0, y: -4.45, z: -5.0 },
+    deck: { x: 0.9, y: -2.2, z: 3.0, cells: [-2, 0, 2], levels: 0 },
+    // the vehicle bay: the docked Mini Sub sits inside at (x, y, z); it docks / launches through the bay door below (door = y)
+    dock: { x: -2.1, y: -1.3, z: -5.0, door: -4.8 },
     hatch: { x: 2.6, z: -6.6 },
-    outfit: [['fabricator', 3.55, 10.4, -Math.PI / 2], ['wall_locker', -3.6, 6.4, Math.PI / 2], ['wall_locker', -3.6, 7.5, Math.PI / 2]],
+    fresh: true, // comes empty: no fittings, no Mini Sub
     repair: { scrap: 300, titanium: 30, metal_frags: 1000 },
   },
 };

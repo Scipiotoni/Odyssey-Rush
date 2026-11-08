@@ -223,11 +223,12 @@ export function makeSub(type) {
     body.add(mesh(new THREE.BoxGeometry(2.52, 0.32, 4.2), glow(0x9ad8ff, 0.6), 0, hy + 0.9, 4.8));
     body.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4, 6), metal, 0, hy + 2.3, 4.0));
     body.add(mesh(new THREE.SphereGeometry(0.12, 8, 6), glow(0xff3020, 2), 0, hy + 3.0, 4.0));
-    // docking cradle under the hull (the Mini Sub hangs here) and the floor hatch with its ladder
+    // the vehicle bay door under the hull (a Mini Sub comes up through it into the bay) and the floor hatch with its ladder
     const dk = D.dock;
-    body.add(mesh(new THREE.BoxGeometry(2.8, 0.3, 4.6), dark, 0, -hy - 0.05, dk.z));
-    for (const sx of [-1, 1]) for (const dz of [-1.3, 1.3]) body.add(mesh(new THREE.BoxGeometry(0.22, 1.2, 0.32), grey, sx * 1.2, -hy - 0.65, dk.z + dz));
-    body.add(mesh(new THREE.TorusGeometry(1.0, 0.07, 6, 24), glow(0xffb020, 0.8), 0, -hy - 0.22, dk.z, Math.PI / 2));
+    body.add(mesh(new THREE.BoxGeometry(3.4, 0.2, 5.2), dark, dk.x, -hy + 0.05, dk.z));
+    for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(1.55, 0.06, 4.8), grey, dk.x + sx * 0.8, -hy - 0.07, dk.z)); // door leaves
+    for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 5.0), glow(0xffb020, 0.9), dk.x + sx * 1.66, -hy - 0.06, dk.z));
+    for (const sz of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(3.3, 0.08, 0.08), glow(0xffb020, 0.9), dk.x, -hy - 0.06, dk.z + sz * 2.56));
     const hx2 = D.hatch.x, hz2 = D.hatch.z;
     body.add(mesh(new THREE.CylinderGeometry(0.65, 0.65, hy + I.y0 + 0.3, 18, 1, true), dark, hx2, (-hy + I.y0) / 2, hz2));
     body.add(mesh(new THREE.TorusGeometry(0.66, 0.06, 6, 20), glow(0x40e070, 0.8), hx2, -hy - 0.02, hz2, Math.PI / 2));
@@ -284,25 +285,24 @@ export function makeSub(type) {
     }
     body.add(mesh(new THREE.CylinderGeometry(0.75, 0.8, 0.9, 20), dark, 0, y0 + 0.45, 13.0));
     body.add(mesh(new THREE.CircleGeometry(0.66, 28), glow(0x30e090, 0.9), 0, y0 + 0.91, 13.0, -Math.PI / 2)); // sonar table
-    // ---- crew quarters (z 6 – 12): bunks along port, mess table and benches to starboard (fabricator on that wall)
-    for (const bz2 of [9.0, 11.0]) for (const by of [y0 + 0.45, y0 + 1.55]) {
-      body.add(mesh(new THREE.BoxGeometry(0.95, 0.12, 1.95), rib, -(W2 - 0.5), by, bz2));
-      body.add(mesh(new THREE.BoxGeometry(0.85, 0.12, 1.85), fabric, -(W2 - 0.5), by + 0.12, bz2));
-      body.add(mesh(new THREE.BoxGeometry(0.3, 0.1, 0.45), white, -(W2 - 0.5), by + 0.22, bz2 + 0.65));
-    }
-    for (const bz2 of [8.0, 10.0, 12.0 - 0.1]) body.add(mesh(new THREE.BoxGeometry(0.06, 2.4, 0.06), metal, -(W2 - 1.0), y0 + 1.2, bz2));
-    body.add(mesh(new THREE.BoxGeometry(1.0, 0.08, 2.2), wood, W2 - 1.45, y0 + 0.78, 7.6));
-    body.add(mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.75, 8), metal, W2 - 1.45, y0 + 0.38, 7.6));
-    for (const dx of [-0.75, 0.75]) body.add(mesh(new THREE.BoxGeometry(0.4, 0.45, 2.0), cushion, W2 - 1.45 + dx, y0 + 0.23, 7.6));
     // ---- the open hall: deck outline for building, the docking bay and the entrance hatch
     const dkz = D.deck.z, cells = D.deck.cells;
     const d0 = dkz + Math.min(...cells) * 1.5 - 1.5, d1 = dkz + Math.max(...cells) * 1.5 + 1.5;
     for (const z of [d0, d1]) body.add(mesh(new THREE.BoxGeometry(3.0, 0.02, 0.08), hazard, D.deck.x, y0 + 0.025, z));
     for (const sx of [-1.5, 1.5]) body.add(mesh(new THREE.BoxGeometry(0.08, 0.02, d1 - d0), hazard, D.deck.x + sx, y0 + 0.025, (d0 + d1) / 2));
-    body.add(mesh(new THREE.BoxGeometry(0.6, 1.6, 1.3), dark, -(W2 - 0.35), y0 + 0.8, dk.z));
-    body.add(mesh(new THREE.BoxGeometry(0.05, 0.6, 1.0), glow(0x3ab8e8, 1.2), -(W2 - 0.67), y0 + 1.3, dk.z));
-    body.add(mesh(new THREE.TorusGeometry(0.9, 0.09, 6, 24), hazard, 0, y0 + 0.03, dk.z, Math.PI / 2));
-    body.add(mesh(new THREE.CircleGeometry(0.85, 24), grey, 0, y0 + 0.02, dk.z, -Math.PI / 2));
+    // the vehicle bay: a glass-walled pen on the port side with the bay door in its floor and a console at the corner
+    const bx0 = -W2, bx1 = -0.4, bz0 = dk.z - 2.45, bz1 = dk.z + 2.45, bayGlass = new THREE.MeshPhongMaterial({ color: 0x9adcf0, transparent: true, opacity: 0.18, shininess: 120, side: THREE.DoubleSide, depthWrite: false });
+    body.add(mesh(new THREE.BoxGeometry(0.03, H - 0.3, bz1 - bz0), bayGlass, bx1, y0 + (H - 0.3) / 2, dk.z));
+    for (const z of [bz0, bz1]) body.add(mesh(new THREE.BoxGeometry(bx1 - bx0, H - 0.3, 0.03), bayGlass, (bx0 + bx1) / 2, y0 + (H - 0.3) / 2, z));
+    for (const y of [y0 + 1.0, y0 + H - 0.3]) body.add(mesh(new THREE.BoxGeometry(0.08, 0.08, bz1 - bz0), rib, bx1, y, dk.z));
+    for (const z of [bz0, bz1]) for (const y of [y0 + 1.0, y0 + H - 0.3]) body.add(mesh(new THREE.BoxGeometry(bx1 - bx0, 0.08, 0.08), rib, (bx0 + bx1) / 2, y, z));
+    for (const [x, z] of [[bx1, bz0], [bx1, bz1]]) body.add(mesh(new THREE.BoxGeometry(0.14, H, 0.14), hazard, x, ym, z));
+    body.add(mesh(new THREE.BoxGeometry(3.2, 0.03, 4.6), grey, dk.x, y0 + 0.02, dk.z)); // bay door (closed)
+    for (const sx of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.1, 0.03, 4.7), hazard, dk.x + sx * 1.62, y0 + 0.035, dk.z));
+    for (const sz of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(3.3, 0.03, 0.1), hazard, dk.x, y0 + 0.035, dk.z + sz * 2.33));
+    body.add(mesh(new THREE.BoxGeometry(0.03, 0.03, 4.4), glow(0x40c0ff, 0.8), dk.x, y0 + 0.04, dk.z)); // door seam
+    body.add(mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), dark, -0.3, y0 + 0.75, bz1 + 0.2)); // bay console
+    body.add(mesh(new THREE.BoxGeometry(0.42, 0.35, 0.04), glow(0x3ab8e8, 1.2), -0.3, y0 + 1.3, bz1 + 0.46, -0.3));
     body.add(mesh(new THREE.TorusGeometry(0.62, 0.07, 6, 20), hazard, hx2, y0 + 0.03, hz2, Math.PI / 2));
     body.add(mesh(new THREE.CircleGeometry(0.6, 20), std({ color: 0x2a6070, roughness: 0.3, metalness: 0.4 }), hx2, y0 + 0.02, hz2, -Math.PI / 2));
     for (const z of [3.5, -2.5]) body.add(mesh(new THREE.BoxGeometry(0.05, 0.55, 0.9), glow(0x1a6a8a, 1.1), W2 - 0.02, y0 + 1.7, z));
