@@ -772,7 +772,21 @@ class Game {
         const def = VEHICLES[v.type];
         if (!def.hatch || v.pos.distanceTo(pp) > 25) continue;
         const l = pp.clone().sub(v.pos).applyQuaternion(_rq.copy(v.q).invert()), I = def.interior, h = def.hatch;
-        const near = Math.hypot(l.x - h.x, l.z - h.z);
+        const near = Math.hypot(l.x - h.x, l.z - h.z), th = def.topHatch;
+        if (th) {
+          // the top hatch: climb down from the roof, or up the ladder in the hall to come out on the roof
+          const inside = Math.abs(l.x) < I.hx && Math.abs(l.z) < I.hz && l.y > I.y0 - 0.3 && l.y < I.y1;
+          if (inside && Math.hypot(l.x - th.x, l.z - th.z - 0.45) < 0.9) {
+            text = '<kbd>E</kbd> Climb up the ladder to the top hatch';
+            if (E) { this.player.pos.copy(new THREE.Vector3(th.x - 1.1, th.y + 0.05, th.z).applyQuaternion(v.q).add(v.pos)); this.player.vel.set(0, 0, 0); this.ride = null; audio.door(); }
+            break;
+          }
+          if (!inside && l.y > th.y - 0.6 && l.y < th.y + 2.5 && Math.hypot(l.x - th.x, l.z - th.z) < 1.6) {
+            text = '<kbd>E</kbd> Open the top hatch and climb down';
+            if (E) { this.player.pos.copy(new THREE.Vector3(th.x, I.y0 + 0.05, th.z - 0.4).applyQuaternion(v.q).add(v.pos)); this.player.vel.set(0, 0, 0); this.ride = null; audio.door(); }
+            break;
+          }
+        }
         if (Math.abs(l.x) < I.hx && Math.abs(l.z) < I.hz && l.y > I.y0 - 0.3 && l.y < I.y1 && near < 0.9) {
           text = '<kbd>E</kbd> Exit through the hatch';
           if (E) { this.player.pos.copy(new THREE.Vector3(h.x, -def.half[1] - 1.9, h.z).applyQuaternion(v.q).add(v.pos)); this.player.vel.set(0, -1, 0); this.ride = null; audio.door(); audio.splash(0.4); }

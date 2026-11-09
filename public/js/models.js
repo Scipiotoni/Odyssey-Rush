@@ -255,9 +255,10 @@ export function pieceGeometry(type, tier = 1) {
       return merge(parts);
     }
     if (type === 'sub_dock') {
-      // the Pacific docking arm's base: a housing on the edge with a hydraulic drum (the arm itself is added per piece)
-      parts.push(part(box(1.5, 1.1, 0.9), 0x8a9096, { y: 0.55 }), part(box(1.52, 0.12, 0.92), 0xe8b020, { y: 1.1 }));
-      parts.push(part(cyl(0.3, 0.3, 1.3, 12), 0x3a3e44, { y: 0.75, rz: Math.PI / 2 }), part(box(0.5, 0.3, 0.04), 0x40e070, { y: 0.55, z: 0.46 }));
+      // the Pacific docking arm's base: a gate frame on the edge you walk through, with the hydraulic drum on top (the arm itself is added per piece)
+      for (const sx of [-1, 1]) parts.push(part(box(0.2, 2.1, 0.6), 0x8a9096, { x: sx * 0.72, y: 1.05 }), part(box(0.22, 0.1, 0.62), 0xe8b020, { x: sx * 0.72, y: 0.05 }), part(box(0.04, 1.6, 0.06), 0xe8b020, { x: sx * 0.61, y: 1.05, z: 0.31 }));
+      parts.push(part(box(1.64, 0.2, 0.6), 0x8a9096, { y: 2.2 }), part(box(1.66, 0.06, 0.62), 0xe8b020, { y: 2.32 }));
+      parts.push(part(cyl(0.22, 0.22, 1.4, 12), 0x3a3e44, { y: 2.5, rz: Math.PI / 2 }), part(box(0.4, 0.14, 0.04), 0x40e070, { y: 2.05, z: 0.31 }));
       return merge(parts);
     }
     const col = TIERS[tier].color;

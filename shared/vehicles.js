@@ -93,11 +93,14 @@ export const VEHICLES = {
       [2.35, -0.15, 12.0, 1.55, 2.05, 0.1], [-2.35, -0.15, 12.0, 1.55, 2.05, 0.1], [0, 1.15, 12.0, 0.8, 0.75, 0.1],
       [2.35, -0.15, -8.5, 1.55, 2.05, 0.1], [-2.35, -0.15, -8.5, 1.55, 2.05, 0.1], [0, 1.15, -8.5, 0.8, 0.75, 0.1],
       [0, -1.75, 15.7, 1.1, 0.45, 0.4, 'helm'], [-0.3, -1.45, -2.25, 0.28, 0.75, 0.28, 'dock'], [-0.4, -0.15, -5.0, 0.05, 2.05, 2.45], [-2.15, -0.15, -7.45, 1.75, 2.05, 0.05], [-2.15, -0.15, -2.55, 1.75, 2.05, 0.05], [3.5, -1.4, -11.2, 0.35, 0.8, 0.6, 'engine'],
-      [-3.45, -1.1, -12.2, 0.4, 1.1, 1.0, 'cells'], [0, -0.9, -14.3, 1.25, 1.3, 1.6]],
+      [-3.45, -1.1, -12.2, 0.4, 1.1, 1.0, 'cells'], [0, -0.9, -14.3, 1.25, 1.3, 1.6],
+      // outside: the roof you can walk on (top at 3.5) and the dorsal sail
+      [0, 3.35, -1.0, 4.0, 0.15, 15.0], [0, 4.3, 5.2, 1.2, 0.8, 3.6]],
     deck: { x: 0.9, y: -2.2, z: 3.0, cells: [-2, 0, 2], levels: 0 },
     // the vehicle bay: the docked Mini Sub sits inside at (x, y, z); it docks / launches through the bay door below (door = y)
     dock: { x: -2.1, y: -1.3, z: -5.0, door: -4.8 },
     hatch: { x: 2.6, z: -6.6 },
+    topHatch: { x: 1.6, z: -3.5, y: 3.5 }, // on the roof behind the sail, with a ladder down into the hall
     fresh: true, // comes empty: no fittings, no Mini Sub
     repair: { scrap: 300, titanium: 30, metal_frags: 1000 },
   },

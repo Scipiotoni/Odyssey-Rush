@@ -269,7 +269,11 @@ they have a pickaxe and enough breath to hack their way out.
   - **🔗 Pacific Docking Arm** (metal, titanium, gears): goes on an outer edge of the base, facing water at least 8 m
     deep. Bring the Pacific alongside and leave the helm: the arm **extends** across and clamps onto the hull, the
     Pacific stays moored and charges from the base's power. Press **E** at the arm to board, and **E** inside by the
-    clamp to step back out. Throttle away from the helm to cast off; the arm retracts.
+    clamp to step back out. Throttle away from the helm to cast off; the arm retracts. The arm's base is a gate
+    frame you walk through, and the extended arm is a **walkable glass-railed walkway**: it steps up (or down) to the
+    Pacific's roof and ends in a flat landing on top of the hull.
+- **Pacific top hatch**: you can walk on the Pacific's roof. Behind the sail there's a **top hatch**: press **E** on it
+  to climb down into the hall, and **E** at the ladder under it to climb back up onto the roof.
 - **Underwater bases**: the new **Watertight Steel** building tier can be built in water of any depth. A room whose
   floor, ceiling and walls are all Watertight Steel holds **air**: you walk, breathe and stay dry inside, even on the
   sea floor. Walls get portholes, and doorways need a **Watertight Hatch** (Workbench 2). See *Base flooding* below for what happens under pressure.

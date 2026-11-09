@@ -81,7 +81,7 @@ export function pieceBoxes(type, open = false) {
     case 'raft': return [[0, -0.2, 0, 1.5, 0.2, 1.5]];
     case 'dock': return [[0, -0.12, 0, 1.5, 0.12, 1.5]];
     case 'moonpool': return [[0, -0.12, 0, 1.5, 0.12, 1.5], [1.25, 0.55, -1.25, 0.18, 0.55, 0.18]];
-    case 'sub_dock': return [[0, 0.55, 0, 0.75, 0.55, 0.45]];
+    case 'sub_dock': return [[-0.72, 1.05, 0, 0.1, 1.05, 0.3], [0.72, 1.05, 0, 0.1, 1.05, 0.3], [0, 2.2, 0, 0.82, 0.1, 0.3]]; // a gate frame you walk through
     case 'floor': return [[0, -0.1, 0, 1.5, 0.1, 1.5]];
     case 'roof': return [[0, -0.1, 0, 1.5, 0.1, 1.5], [0, 0.35, 0, 0.9, 0.35, 0.9]];
     case 'wall': return [[0, 1.5, 0, 1.5, 1.5, 0.1]];
@@ -253,5 +253,18 @@ export function worldBoxes(s) {
     const [dx, dz] = rotY(cx, cz, s.yaw);
     out.push({ x: s.x + dx, y: s.y + cy, z: s.z + dz, hx, hy, hz, yaw: s.yaw });
   }
+  // a Pacific docking arm that's reached out: its walkway is a ramp of shallow steps up (or down) onto the hull
+  if (s.type === 'sub_dock' && s.ext > 0 && s.out) {
+    const steps = armSteps(s), yaw = Math.atan2(s.out[0], s.out[1]);
+    for (const st of steps) out.push({ x: s.x + s.out[0] * st.d, y: st.top - 0.3, z: s.z + s.out[1] * st.d, hx: 0.6, hy: 0.3, hz: st.len / 2 + 0.02, yaw });
+  }
+  return out;
+}
+export const ARM_DECK = 0.08; // the walkway starts this far above the base floor
+export const ARM_LANDING = 1.0; // the last metre is a flat landing on the roof
+export function armSteps(s) {
+  const L = s.ext, rise = s.rise || 0, Lc = Math.max(0.6, L - ARM_LANDING), n = Math.max(Math.ceil(Lc / 0.6), Math.ceil(Math.abs(rise) / 0.2)), len = Lc / n, out = [];
+  for (let i = 0; i < n; i++) out.push({ d: 0.3 + (i + 0.5) * len, len, top: s.y + ARM_DECK + rise * ((i + 1) / n) });
+  if (L > Lc) out.push({ d: 0.3 + Lc + (L - Lc) / 2, len: L - Lc, top: s.y + ARM_DECK + rise });
   return out;
 }

@@ -234,6 +234,18 @@ export function makeSub(type) {
     body.add(mesh(new THREE.TorusGeometry(0.66, 0.06, 6, 20), glow(0x40e070, 0.8), hx2, -hy - 0.02, hz2, Math.PI / 2));
     for (let y = -hy - 0.2; y > -hy - 1.8; y -= 0.35) body.add(mesh(new THREE.BoxGeometry(0.6, 0.04, 0.05), metal, hx2, y, hz2 - 0.35));
     for (const sx of [-0.28, 0.28]) body.add(mesh(new THREE.BoxGeometry(0.05, 1.8, 0.05), metal, hx2 + sx, -hy - 0.95, hz2 - 0.35));
+    // the top hatch: a raised ring and a round lid on the roof, a shaft down to the ceiling and a ladder down into the hall
+    const th = D.topHatch;
+    body.add(mesh(new THREE.CylinderGeometry(0.72, 0.78, 0.18, 22), grey, th.x, th.y + 0.06, th.z));
+    body.add(mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.08, 22), dark, th.x, th.y + 0.18, th.z));
+    body.add(mesh(new THREE.TorusGeometry(0.66, 0.035, 6, 22), glow(0x40e070, 0.8), th.x, th.y + 0.16, th.z, Math.PI / 2));
+    body.add(mesh(new THREE.TorusGeometry(0.22, 0.04, 6, 14), metal, th.x, th.y + 0.26, th.z, Math.PI / 2)); // hand wheel
+    for (let k = 0; k < 2; k++) body.add(mesh(new THREE.BoxGeometry(0.42, 0.03, 0.03), metal, th.x, th.y + 0.26, th.z, 0, k * Math.PI / 2));
+    body.add(mesh(new THREE.BoxGeometry(0.3, 0.14, 0.18), dark, th.x + 0.66, th.y + 0.2, th.z)); // hinge
+    body.add(mesh(new THREE.CylinderGeometry(0.6, 0.6, th.y - I.y1, 18, 1, true), dark, th.x, (th.y + I.y1) / 2, th.z));
+    body.add(mesh(new THREE.TorusGeometry(0.62, 0.05, 6, 20), glow(0x40e070, 0.8), th.x, I.y1 - 0.02, th.z, Math.PI / 2));
+    for (let y = I.y0 + 0.3; y < I.y1 - 0.05; y += 0.35) body.add(mesh(new THREE.BoxGeometry(0.6, 0.04, 0.05), metal, th.x, y, th.z + 0.45));
+    for (const sx of [-0.28, 0.28]) body.add(mesh(new THREE.BoxGeometry(0.05, I.y1 - I.y0, 0.05), metal, th.x + sx, (I.y0 + I.y1) / 2, th.z + 0.45));
 
     // ---- inside: 8 m wide, 4 m tall, 33 m long
     const y0 = I.y0, y1 = I.y1, W2 = I.hx, Z = I.hz, H = y1 - y0, ym = (y0 + y1) / 2;

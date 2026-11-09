@@ -1,7 +1,7 @@
 // Client mirror of server structures: meshes, colliders and building indexes.
 import * as THREE from 'three';
 const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _up = new THREE.Vector3(0, 1, 0);
-import { worldBoxes, buildIndex, slotKey, TIERS, LEVEL_H, invRotY } from '/shared/building.js';
+import { worldBoxes, buildIndex, slotKey, TIERS, LEVEL_H, invRotY, armSteps, ARM_DECK, ARM_LANDING } from '/shared/building.js';
 import { sealedRooms, cellAt, roomOfCell } from '/shared/sealed.js';
 import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT, DOOR_MATS } from './models.js';
 import { paintGeometry, paintedMaterial, applyDecals } from './paint.js';
@@ -14,15 +14,25 @@ const ARM_G = new THREE.MeshPhongMaterial({ color: 0x9adcf0, transparent: true, 
 function dockArm(s) {
   const g = new THREE.Group(), [lx, lz] = invRotY(s.out[0], s.out[1], s.yaw);
   g.rotation.y = Math.atan2(lx, lz);
-  const L = Math.max(0.6, s.ext || 0), n = Math.max(1, Math.ceil(L / 3));
-  for (let i = 0; i < n; i++) {
-    const len = Math.min(3, L - i * 3), w = 1.3 - i * 0.08, z0 = 0.45 + i * 3 + len / 2;
-    const seg = new THREE.Group(); seg.position.set(0, 0.95, z0); g.add(seg);
-    seg.add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, len), ARM_M));
+  // a telescoping glass-railed walkway, tilted up (or down) to the Pacific's roof, with steps you can walk up
+  const L = Math.max(0.6, s.ext || 0), rise = s.ext ? s.rise || 0 : 0, Lc = s.ext ? Math.max(0.6, L - ARM_LANDING) : L, Lt = Math.hypot(Lc, rise);
+  const n = Math.max(1, Math.ceil(Lt / 3)), lens = [];
+  for (let i = 0; i < n; i++) lens.push(Math.min(3, Lt - i * 3));
+  if (L > Lc) lens.push(L - Lc);
+  const tilt = new THREE.Group(); tilt.position.set(0, ARM_DECK, 0.3); tilt.rotation.x = -Math.atan2(rise, Lc); g.add(tilt);
+  const land = new THREE.Group(); land.position.set(0, ARM_DECK + rise, 0.3 + Lc); g.add(land);
+  for (let i = 0; i < lens.length; i++) {
+    const len = lens[i], w = 1.3 - i * 0.08, z0 = i < n ? i * 3 + len / 2 : len / 2;
+    const seg = new THREE.Group(); seg.position.set(0, -0.06, z0); (i < n ? tilt : land).add(seg);
+    seg.add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, len), ARM_M));
     for (const sx of [-1, 1]) { const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.9, len), ARM_G); rail.position.set(sx * w / 2, 0.5, 0); seg.add(rail); const top = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, len), ARM_Y); top.position.set(sx * w / 2, 0.95, 0); seg.add(top); }
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, len), ARM_G); roof.position.y = 1.9; seg.add(roof);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, len), ARM_G); roof.position.y = 2.1; seg.add(roof);
+    for (const sx of [-1, 1]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 2.1, 0.07), ARM_M); post.position.set(sx * w / 2, 1.05, len / 2 - 0.05); seg.add(post); }
   }
-  if (s.tgt && s.ext) { const clamp = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.12, 6, 16), ARM_Y); clamp.position.set(0, 1.5, 0.45 + L); g.add(clamp); }
+  if (s.ext) for (const st of armSteps({ ...s, y: 0 })) { // treads: the actual steps (same as the colliders)
+    const t = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.05, st.len * 0.92), ARM_Y); t.position.set(0, st.top - 0.025, st.d); g.add(t);
+  }
+  if (s.tgt && s.ext) { const clamp = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.12, 6, 16), ARM_Y); clamp.position.set(0, ARM_DECK + rise - 0.6, 0.3 + L - 0.7); clamp.rotation.y = Math.PI / 2; g.add(clamp); }
   return g;
 }
 
@@ -77,7 +87,7 @@ export class Structures {
     const old = this.map.get(s.id);
     if (old) {
       // tier change or door open/close -> rebuild visuals; hp only -> just store
-      const visual = old.s.tier !== s.tier || old.s.ext !== s.ext || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth || old.s.pa !== s.pa || JSON.stringify(old.s.dc) !== JSON.stringify(s.dc);
+      const visual = old.s.tier !== s.tier || old.s.ext !== s.ext || old.s.rise !== s.rise || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth || old.s.pa !== s.pa || JSON.stringify(old.s.dc) !== JSON.stringify(s.dc);
       old.s = s;
       if (s.k === 'piece') this.buildings.get(s.bid)?.pieces.set(s.id, s);
       if (!visual) return;

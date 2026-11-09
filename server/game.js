@@ -614,7 +614,7 @@ export class Game {
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
     if (s.off) o.off = 1;
-    if (s.out) { o.out = s.out; o.ext = s.ext || 0; o.tgt = s.tgt || 0; o.side = s.side || 1; o.lz = s.lz || 0; }
+    if (s.out) { o.out = s.out; o.ext = s.ext || 0; o.tgt = s.tgt || 0; o.side = s.side || 1; o.lz = s.lz || 0; o.rise = s.rise || 0; }
     if (s.build) o.bb = [s.build.v, r2(Math.max(0, s.build.until - now())), BAY_BUILDS[s.build.v].time, r2(s.build.spot.x), r2(s.build.spot.z), r2(s.build.spot.yaw || 0)];
     if (s.pw) o.pw = 1;
     if (MACHINES[s.type]?.store) o.ch = Math.round(((s.charge || 0) / MACHINES[s.type].store) * 100);
@@ -1721,7 +1721,8 @@ export class Game {
       for (let d = 1.5; d <= 14; d += 0.25) {
         const wx = a.x + a.out[0] * d, wz = a.z + a.out[1] * d, l = quatRotate(inv, [wx - v.x, a.y + 0.8 - v.y, wz - v.z]);
         if (Math.abs(l[0]) < hx + 0.1 && Math.abs(l[2]) < hz - 3 && Math.abs(l[1]) < D.half[1] + 1.5) {
-          a.ext = r2(d); a.tgt = v.id; v.moored = a.id; v.vel = [0, 0, 0];
+          // reach a little past the side so the ramp lands on the roof, and rise (or drop) to the roof's height
+          a.ext = r2(d + 0.7); a.rise = r2(Math.max(-1.5, Math.min(4, v.y + D.topHatch.y - (a.y + 0.08)))); a.tgt = v.id; v.moored = a.id; v.vel = [0, 0, 0];
           a.side = Math.sign(l[0]) || 1; a.lz = r2(l[2]);
           this.updStruct(a);
           return a;
@@ -1733,7 +1734,7 @@ export class Game {
   unmoor(v) {
     const a = this.structs.get(v.moored);
     v.moored = null;
-    if (a) { a.ext = 0; a.tgt = null; this.updStruct(a); }
+    if (a) { a.ext = 0; a.rise = 0; a.tgt = null; this.updStruct(a); }
     const p = this.byPid.get(v.seats[0]); if (p) this.toast(p, '🔗 Cast off from the docking arm');
   }
   // walk the docking arm into the Pacific (and back out)
