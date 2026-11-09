@@ -1,8 +1,10 @@
 // DOM user interface: HUD, inventory, crafting, containers, map, chat, menus.
-import { ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_SLOTS, HOTBAR, INV_SIZE, stationRecipes } from '/shared/items.js';
+import { BAY_BUILDS, ITEMS, RECIPES, STATION_NAMES, STATION_PROVIDERS, STATION_RANGE, ARMOR_SLOTS, HOTBAR, INV_SIZE, stationRecipes } from '/shared/items.js';
 import { PIECES, PIECE_ORDER, pieceCost, TIERS } from '/shared/building.js';
 import { HALF, WORLD_SIZE, BIOME } from '/shared/worldgen.js';
 import { audio } from './audio.js';
+import { VEHICLES } from '/shared/vehicles.js';
+const VEHICLES_NAME = (k) => VEHICLES[k]?.name || k;
 import { ACTIONS, keyLabel } from './input.js';
 import { icons } from './icons.js';
 import { PAINT_COLORS, PAINT_NAMES, DECALS } from '/shared/paint.js';
@@ -423,7 +425,7 @@ export class UI {
     }
     html += '</div>';
     if (!station) {
-      const locked = RECIPES.filter((r) => r.station && (!q || ITEMS[r.out].name.toLowerCase().includes(q)));
+      const locked = RECIPES.filter((r) => r.station && !r.bay && (!q || ITEMS[r.out].name.toLowerCase().includes(q)));
       if (q && locked.length) html += `<div class="rgroup">Needs a station</div><div class="rgrid">` + locked.map((r) => `<div class="slot rslot locked" data-tip="${ITEMS[r.out].name}|Made at: ${STATION_NAMES[r.station]}">${iconHTML(r.out)}</div>`).join('') + '</div>';
     }
     const list = $('craftlist');
@@ -456,7 +458,7 @@ export class UI {
   // No Man's Sky-style build menu: a tab per building material, then Furniture, Base Items and Large Electronics.
   // Cards show what each costs (red where you're short); Q / E switch tabs, click a card to build it.
   buildTabs() {
-    return [...TIERS.map((t, i) => ({ k: 't' + i, label: t.name, sw: t.color })), { k: 'furniture', label: '🪑 Furniture' }, { k: 'base', label: '🧰 Base Items' }, { k: 'tech', label: '⚡ Large Electronics' }];
+    return [...TIERS.map((t, i) => ({ k: 't' + i, label: t.name, sw: t.color })), { k: 'raft', label: '🛟 Rafts' }, { k: 'furniture', label: '🪑 Furniture' }, { k: 'base', label: '🧰 Base Items' }, { k: 'tech', label: '⚡ Large Electronics' }];
   }
   renderBuildMenu(hoverKey = null) {
     const g = this.game, b = g.building;
@@ -470,6 +472,9 @@ export class UI {
     if (matTab) {
       const tier = +b.tab.slice(1);
       cards = PIECE_ORDER.map((t) => { const c = pieceCost(t, tier); return { key: t, piece: true, name: PIECES[t].name, icon: PIECES[t].icon, ok: Object.entries(c).every(([k, v]) => have(k) >= v), cost: c, sel: !b.furn && b.piece === t && b.tier === tier, desc: `${TIERS[tier].name} ${PIECES[t].name}` }; });
+    } else if (b.tab === 'raft') {
+      const c = pieceCost('raft', 1);
+      cards = [{ key: 'raft', piece: true, name: PIECES.raft.name, icon: PIECES.raft.icon, ok: Object.entries(c).every(([k, v]) => have(k) >= v), cost: c, sel: !b.furn && b.piece === 'raft', desc: 'Compact Raft — a floating foundation. Place it on open water and build walls, floors and more on it.' }];
     } else {
       const ids = Object.keys(ITEMS).filter((id) => { const d = ITEMS[id], dp = d.deploy; if (!dp && !d.door) return false; if (b.tab === 'tech') return !!dp?.tech; if (b.tab === 'furniture') return !!dp?.furniture; return !dp?.tech && !dp?.furniture; });
       cards = ids.map((id) => { const n = have(id), r = RECIPES.find((x) => x.out === id); return { key: id, name: ITEMS[id].name, img: icons.get(id), icon: ITEMS[id].icon, n, ok: n > 0, recipe: r, sel: b.furn === id }; });
@@ -500,7 +505,7 @@ export class UI {
       el.addEventListener('click', () => {
         if (!c.piece && !c.ok) { this.toast(`Craft a ${c.name} first`); return; }
         audio.click();
-        if (c.piece) { b.piece = c.key; b.tier = +b.tab.slice(1); b.furn = null; b.cat = 'construction'; } else { b.furn = c.key; b.cat = 'furniture'; }
+        if (c.piece) { b.piece = c.key; b.tier = c.key === 'raft' ? 1 : +b.tab.slice(1); b.furn = null; b.cat = 'construction'; } else { b.furn = c.key; b.cat = 'furniture'; }
         this.close();
       });
     });
@@ -530,6 +535,26 @@ export class UI {
     pick('[data-c]', (el) => (pt.color = +el.dataset.c));
     pick('[data-d]', (el) => (pt.decal = +el.dataset.d));
     pick('[data-s]', (el) => (pt.size = +el.dataset.s));
+  }
+
+  // ------------------------------------------------------------------ Mobile Vehicle Bay
+  showBay(id) {
+    const g = this.game, e = g.structures.map.get(id);
+    if (!e) return;
+    this.show('bay');
+    const s = e.s, have = (k) => countItem(g.inv, k), creative = !!g.rules?.creative;
+    const V = [['motorboat', '🚤', 'A fast skiff with an outboard motor. Runs on Low Grade Fuel.'], ['minisub', '🐟', 'One-seat submarine with twin thrusters. Comes fully charged. Docks inside the Pacific.'], ['cyclops', '🐋', 'The Pacific: a 37 m walk-in submarine you fit out yourself. Needs deep water around the bay.']];
+    const h = g.holos?.get(id), left = h ? Math.max(0, Math.ceil(h.end - performance.now() / 1000)) : 0;
+    $('baybox').innerHTML = `<h2>🛳️ Mobile Vehicle Bay</h2>
+      ${s.bb ? `<div class="srvnote">🛠️ Building a <b>${esc(VEHICLES_NAME(s.bb[0]))}</b>${left ? ` — about ${left} s left` : ''}. It launches into the water next to the bay.</div>` : '<div class="srvnote">Pick a vessel to build. It\'s assembled next to the bay and launched into the water. (Rowboats are still crafted as kits.)</div>'}
+      <div class="baygrid">${V.map(([k, ic, desc]) => { const B = BAY_BUILDS[k], ok = creative || Object.entries(B.cost).every(([i, n]) => have(i) >= n);
+        return `<div class="baycard"><div class="bayhead"><span class="emo">${ic}</span><b>${esc(VEHICLES_NAME(k))}</b><small>⏱ ${B.time} s</small></div><div class="bdesc">${desc}</div>
+          <div class="bcost">${Object.entries(B.cost).map(([i, n]) => `<span class="${have(i) >= n ? 'ok' : 'short'}">${iconHTML(i, 'cico')}${n} ${esc(ITEMS[i].name)} <small>(${have(i)})</small></span>`).join('')}</div>
+          <button data-b="${k}" ${ok && !s.bb ? '' : 'disabled'}>${s.bb ? 'Busy' : ok ? 'Build' : 'Missing materials'}</button></div>`; }).join('')}</div>
+      <div class="srvbtns"><button id="baypack" class="alt" ${s.bb ? 'disabled' : ''}>📦 Pack up the bay</button><button id="bayclose">Close</button></div>`;
+    $('baybox').querySelectorAll('[data-b]').forEach((b) => (b.onclick = () => { g.net.send({ t: 'baybuild', id, v: b.dataset.b }); audio.click(); this.close(); }));
+    $('baypack').onclick = () => { g.net.send({ t: 'baypack', id }); audio.click(); this.close(); };
+    $('bayclose').onclick = () => this.close();
   }
 
   // ------------------------------------------------------------------ controls: rebind any key
@@ -592,7 +617,7 @@ export class UI {
   show(which) {
     this.close(true);
     this.open = which;
-    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', spawn: 'spawnscreen', keys: 'keysscreen', reset: 'resetscreen', gunsmith: 'gunsmithscreen' }[which];
+    const el = { inv: 'invscreen', map: 'mapscreen', build: 'buildmenu', pause: 'pausescreen', death: 'deathscreen', clan: 'clanscreen', paint: 'paintscreen', items: 'itemscreen', spawn: 'spawnscreen', keys: 'keysscreen', bay: 'bayscreen', reset: 'resetscreen', gunsmith: 'gunsmithscreen' }[which];
     $(el).classList.remove('hidden');
     if (which === 'inv') { this.renderInventory(); this.preview.start(); }
     if (which === 'inv') { const d = this.game.day ?? 0.5, h = Math.floor(d * 24), m = Math.floor((d * 24 - h) * 60); $('pdaclock').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
@@ -605,7 +630,7 @@ export class UI {
     this.game.input.unlock();
   }
   close(silent) {
-    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen', 'resetscreen', 'gunsmithscreen', 'spawnscreen', 'keysscreen']) $(id).classList.add('hidden');
+    for (const id of ['invscreen', 'mapscreen', 'buildmenu', 'pausescreen', 'deathscreen', 'clanscreen', 'paintscreen', 'itemscreen', 'resetscreen', 'gunsmithscreen', 'spawnscreen', 'keysscreen', 'bayscreen']) $(id).classList.add('hidden');
     this.game.input.capture = null;
     $('itemtip').classList.add('hidden');
     this.endDrag();

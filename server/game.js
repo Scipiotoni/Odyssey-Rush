@@ -2,8 +2,8 @@
 // loot, animals, vehicles and persistence.
 import crypto from 'crypto';
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
-import { STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
-import { G, LEVEL_H, slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
+import { BAY_BUILDS, STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
+import { RAFT_Y, isBase, G, LEVEL_H, slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw, subStats } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
@@ -301,6 +301,8 @@ export class Game {
       case 'drop': return this.onDrop(p, m);
       case 'eat': return this.onEat(p, m);
       case 'flash': return this.onFlash(p, m);
+      case 'baybuild': return this.onBayBuild(p, m);
+      case 'baypack': return this.onBayPack(p, m);
       case 'fillbottle': return this.onFillBottle(p, m);
       case 'drink': return this.onDrink(p);
       case 'throw': return this.onThrow(p, m);
@@ -610,6 +612,7 @@ export class Game {
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
     if (s.off) o.off = 1;
+    if (s.build) o.bb = [s.build.v, r2(Math.max(0, s.build.until - now())), BAY_BUILDS[s.build.v].time, r2(s.build.spot.x), r2(s.build.spot.z), r2(s.build.spot.yaw || 0)];
     if (s.pw) o.pw = 1;
     if (MACHINES[s.type]?.store) o.ch = Math.round(((s.charge || 0) / MACHINES[s.type].store) * 100);
     if (s.paint !== undefined) o.pa = s.paint;
@@ -921,6 +924,7 @@ export class Game {
     const r = RECIPES[num(m.r, -1)];
     const n = Math.max(1, Math.min(20, num(m.n, 1) | 0));
     if (!r || !p.alive) return;
+    if (r.bay) return this.toast(p, '🛳️ Subs are built at a Mobile Vehicle Bay now — craft one, float it on the water and press E on it');
     if (r.station) {
       // station recipes are crafted *in* the station (press E on it); the result stays there until collected
       const st = this.structs.get(String(m.st || ''));
@@ -1014,6 +1018,17 @@ export class Game {
     if (this.world.ground(t.x, t.z) < -2 && !TIERS[tier]?.sealed) return 'Water is too deep — build underwater with Watertight Steel';
     return null;
   }
+  // a compact raft needs water under all of it (1.2 m deep or more) and floats at sea level
+  checkRaftWater(b, gx, gz) {
+    if (Math.abs(b.y - RAFT_Y) > 0.3) return 'Rafts float at sea level — start a separate raft base on the water';
+    const t = pieceTransform(b, { type: 'raft', gx, gz, level: 0 });
+    for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 0]]) {
+      const [dx, dz] = rotY(cx, cz, t.yaw);
+      if (this.world.ground(t.x + dx, t.z + dz) > -1.2) return 'Rafts need open water (1.2 m deep) under them';
+    }
+    if (this.caves.inVolume(t.x, 0, t.z)) return 'Rafts need open water';
+    return null;
+  }
   piecesOf(bid) { const out = []; for (const s of this.structs.values()) if (s.bid === bid && s.kind === 'piece') out.push(s); return out; }
 
   onBuild(p, m) {
@@ -1022,7 +1037,7 @@ export class Game {
     if (!PIECES[type]) return;
     const plan = p.inv[p.sel];
     if (!plan || plan.id !== 'building_plan') return this.toast(p, 'Equip a building plan');
-    const tier = Math.max(0, Math.min(TIERS.length - 1, num(m.tier, 0) | 0));
+    const tier = type === 'raft' ? 1 : Math.max(0, Math.min(TIERS.length - 1, num(m.tier, 0) | 0)); // rafts are wood
     const cost = pieceCost(type, tier);
     if (!this.settings.creative && !Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     let b, gx = num(m.gx) | 0, gz = num(m.gz) | 0, level = num(m.level) | 0;
@@ -1030,8 +1045,8 @@ export class Game {
     if (m.veh) return this.onDeckBuild(p, m, type, tier, cost, gx, gz, level);
     if (m.bid && this.buildings.has(String(m.bid))) b = this.buildings.get(String(m.bid));
     else {
-      if (type !== 'foundation') return this.toast(p, 'Start with a foundation');
-      const x = num(m.x), y = num(m.y), z = num(m.z);
+      if (!isBase(type)) return this.toast(p, 'Start with a foundation (or a raft on water)');
+      const x = num(m.x), y = type === 'raft' ? RAFT_Y : num(m.y), z = num(m.z);
       b = { id: this.id('B'), x, y, z, yaw: num(m.yaw), owner: p.pid };
       gx = 0; gz = 0; level = 0; isNew = true;
       // keep new buildings from overlapping others
@@ -1044,6 +1059,7 @@ export class Game {
     const err = canPlaceAny(type, gx, gz, level, buildIndex(pieces), isNew);
     if (err) return this.toast(p, err);
     if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz, tier); if (ge) return this.toast(p, ge); }
+    if (type === 'raft') { const re = this.checkRaftWater(b, gx, gz); if (re) return this.toast(p, re); }
     if (isNew) this.buildings.set(b.id, b);
     if (!this.settings.creative) Inv.removeAll(p.inv, cost);
     const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
@@ -1058,7 +1074,7 @@ export class Game {
     if (!def?.deck) return this.toast(p, 'You can only build on a hauler deck');
     if (dist3(v, p) > def.half[2] + 8) return this.toast(p, 'Too far away');
     if (!this.canUseDeck(p, v)) return this.toast(p, 'This hauler belongs to someone else');
-    if (type === 'foundation') return this.toast(p, 'The deck is already a foundation — build walls and floors on it');
+    if (isBase(type)) return this.toast(p, 'The deck is already a foundation — build walls and floors on it');
     const d = def.deck;
     if (Math.abs(gx) > 1 || gz < Math.min(...d.cells) - 1 || gz > Math.max(...d.cells) + 1 || level > d.levels) return this.toast(p, 'Outside the deck');
     const b = this.deckBuilding(v);
@@ -1077,6 +1093,7 @@ export class Game {
     const ham = p.inv[p.sel];
     if (!ham || ham.id !== 'hammer') return;
     const tier = num(m.tier, s.tier + 1) | 0;
+    if (s.type === 'raft') return this.toast(p, 'Rafts stay wooden — reinforce them with R instead');
     if (tier <= s.tier || tier >= TIERS.length) return;
     if (dist3(s, p) > BUILD_REACH + 3) return;
     if (this.privBlocked(p, s.x, s.z, s)) return this.toast(p, 'Building blocked');
@@ -1188,13 +1205,21 @@ export class Game {
     if (kind === 'tool_cupboard') {
       for (const s of this.structsNear(x, z)) if (s.type === 'tool_cupboard' && dist2(s, { x, z }) < (PRIV_RADIUS * 1.4) ** 2) return this.toast(p, 'Another tool cupboard is too close');
     }
+    let fy = y;
+    if (def.deploy.water) {
+      // floats: open water at least 2.5 m deep, not in a cave
+      if (this.world.ground(x, z) > -2.5 || this.caves.inVolume(x, 0, z)) return this.toast(p, `The ${def.name} floats — place it on open water at least 2.5 m deep`);
+      for (const s2 of this.structsNear(x, z)) if (s2.type === 'vehicle_bay' && Math.hypot(s2.x - x, s2.z - z) < 8) return this.toast(p, 'Another vehicle bay is too close');
+      fy = 0.05;
+    }
     Inv.remove(p.inv, st.id, 1);
-    const s = { id: this.id('S'), kind: 'deploy', type: kind, hp: def.deploy.hp, mhp: def.deploy.hp, owner: p.pid, x, y, z, yaw: num(m.yaw), created: now() };
+    const s = { id: this.id('S'), kind: 'deploy', type: kind, hp: def.deploy.hp, mhp: def.deploy.hp, owner: p.pid, x, y: fy, z, yaw: num(m.yaw), created: now() };
     if (def.deploy.slots) s.slots = Inv.emptySlots(def.deploy.slots);
     if (kind === 'tool_cupboard') s.auth = [p.pid];
     if (mBase) s.bid = mBase.bid;
     if (MD?.pump) s.pump = this.pumpSource(x, y, z);
     this.addStruct(s);
+    if (kind === 'vehicle_bay') this.toast(p, '🛳️ Mobile Vehicle Bay afloat — press E on it to build boats and submarines (or pack it up)');
     if (MD) this.toast(p, MD.portable ? `⚗️ ${MD.name} placed — put fuel (Low Grade Fuel, a Battery or a Power Cell) and things to refine in it` : MD.gen ? `⚡ ${MD.name} placed — it powers every machine in this base` : MD.store ? '🔋 Battery Bank placed — it stores spare power for the night' : `🔌 ${MD.name} placed${MD.pump ? (s.pump ? ` — it can pump ${s.pump === 'sea' ? 'sea' : 'fresh'} water here` : ' — no water to pump here, feed it Salt Water') : ''} · needs power from a Solar Panel or Fuel Generator in this base`);
     this.sendInv(p);
     if (kind === 'sleeping_bag' || kind === 'bed') this.toast(p, `${def.name} placed — you can respawn here`);
@@ -1597,6 +1622,59 @@ export class Game {
     this.give(p, sea ? 'salt_water' : 'water_bottle', 1);
     this.toast(p, sea ? '🌊 Filled a bottle with Salt Water — refine it into drinking water and salt' : '💧 Filled a bottle with fresh water');
     this.sendInv(p);
+  }
+
+  // ------------------------------------------------------------ Mobile Vehicle Bay (Subnautica style)
+  bayFor(p, id) {
+    const s = this.structs.get(String(id));
+    if (!s || s.type !== 'vehicle_bay' || !p.alive || dist3(s, p) > 7) return null;
+    return s;
+  }
+  onBayBuild(p, m) {
+    const s = this.bayFor(p, m.id), type = String(m.v), B = BAY_BUILDS[type], def = VEHICLES[type];
+    if (!s || !B || !def) return;
+    if (s.build) return this.toast(p, `The bay is still building a ${VEHICLES[s.build.v].name}`);
+    // room in the water around the bay for it (deep enough for a sub)
+    const minD = def.sub ? def.half[1] * 2 + 1.5 : 1.2, far = def.half[2] + 3.5;
+    const spot = this.findWaterSpot(type, s.x, s.z, s.yaw || 0, null, minD, [far, far + 3, far + 7, far + 12, far + 18, far + 26]);
+    if (!spot) return this.toast(p, def.sub ? `Not enough deep water around the bay for the ${def.name} (needs ${Math.ceil(minD)} m) — move the bay further out` : 'No open water around the bay');
+    if (!this.settings.creative) {
+      if (!Inv.hasAll(p.inv, B.cost)) return this.toast(p, `Need ${Object.entries(B.cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
+      Inv.removeAll(p.inv, B.cost); this.sendInv(p);
+    }
+    s.build = { v: type, until: now() + B.time, by: p.pid, spot };
+    this.activeBays().add(s.id);
+    this.updStruct(s);
+    this.toNear(s.x, s.z, 160, { t: 'fx', k: 'baybuild', id: s.id, p: [s.x, s.y, s.z], to: [spot.x, def.sub || def.boat ? (def.float ?? -def.half[1] * 0.45) : spot.y, spot.z], yaw: spot.yaw, v: type, dur: B.time });
+    this.toast(p, `🛠️ Building a ${def.name} — ${B.time} s`);
+  }
+  onBayPack(p, m) {
+    const s = this.bayFor(p, m.id);
+    if (!s) return;
+    if (s.build) return this.toast(p, 'Wait until it finishes building');
+    if (s.owner !== p.pid && !this.sameClan(p, this.byPid.get(s.owner)) && this.authorizedAt(p, s.x, s.z) === false) return this.toast(p, "This vehicle bay isn't yours");
+    this.destroyStruct(s, false);
+    this.give(p, 'vehicle_bay', 1);
+    this.sendInv(p);
+    this.toast(p, '📦 Vehicle bay packed up');
+  }
+  activeBays() { if (!this._bays) this._bays = new Set([...this.structs.values()].filter((s) => s.type === 'vehicle_bay' && s.build).map((s) => s.id)); return this._bays; }
+  tickBays() {
+    const t = now(), set = this.activeBays();
+    for (const id0 of set) {
+      const s = this.structs.get(id0);
+      if (!s || !s.build) { set.delete(id0); continue; }
+      if (s.build.until > t) continue;
+      set.delete(id0);
+      const { v: type, spot, by } = s.build, def = VEHICLES[type], id = this.id('V');
+      const nv = { id, type, x: spot.x, y: def.sub ? -def.half[1] * 0.45 : spot.y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: def.sub ? def.fuelCap : Math.round(def.fuelCap * 0.5), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), owner: by };
+      this.vehicles.set(id, nv);
+      if (def.fresh) this.setupPacific(nv);
+      s.build = null; this.updStruct(s);
+      const pb = this.byPid.get(by);
+      if (pb) this.toast(pb, `${def.sub ? '🛥️' : '🚤'} Your ${def.name} is ready${def.sub ? ' — fully charged' : ' (half a tank)'}`);
+      this.toNear(s.x, s.z, 160, { t: 'fx', k: 'baydone', id: s.id, p: [spot.x, 0, spot.z] });
+    }
   }
 
   // ------------------------------------------------------------ machines: refiners and the base power grid
@@ -2951,7 +3029,7 @@ export class Game {
     this.tickAnimals(dt);
     this.tickWeather(dt);
     this.acc.stats += dt; this.acc.save += dt; this.acc.slow += dt;
-    if (this.acc.stats >= 1) { this.tickMachines(this.acc.stats); this.tickFlashlights(this.acc.stats); this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
+    if (this.acc.stats >= 1) { this.tickBays(); this.tickMachines(this.acc.stats); this.tickFlashlights(this.acc.stats); this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }
     if (this.acc.save >= 60 && this.onSave) { this.acc.save = 0; this.onSave(); }
     this.flushPrints();

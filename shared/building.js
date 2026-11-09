@@ -40,10 +40,15 @@ export const PIECES = {
   half_wall: { name: 'Low Wall', slot: 'edge', costMul: 0.5, icon: '▬' },
   stairs: { name: 'Stairs', slot: 'cell', costMul: 1, icon: '🪜' },
   roof: { name: 'Roof', slot: 'cell', costMul: 0.75, icon: '🔺' },
+  // a floating foundation: placed on water (1.2 m deep or more), its deck sits RAFT_Y above sea level; walls etc. go on it
+  raft: { name: 'Compact Raft', slot: 'cell', costMul: 1, icon: '🛟', raft: true, cost: { wood: 120, rope: 1 } },
 };
+export const RAFT_Y = 0.35;
+export const isBase = (t) => t === 'foundation' || t === 'raft'; // ground-level pieces walls stand on
 export const PIECE_ORDER = ['foundation', 'wall', 'doorway', 'window', 'half_wall', 'floor', 'roof', 'stairs'];
 
 export function pieceCost(type, tier) {
+  if (PIECES[type]?.cost) return { ...PIECES[type].cost };
   const base = TIERS[tier].cost, m = PIECES[type].costMul, out = {};
   for (const k in base) out[k] = Math.ceil(base[k] * m);
   return out;
@@ -69,6 +74,7 @@ export function pieceTransform(b, p) {
 export function pieceBoxes(type, open = false) {
   switch (type) {
     case 'foundation': return [[0, -1.5, 0, 1.5, 1.5, 1.5]];
+    case 'raft': return [[0, -0.2, 0, 1.5, 0.2, 1.5]];
     case 'floor': return [[0, -0.1, 0, 1.5, 0.1, 1.5]];
     case 'roof': return [[0, -0.1, 0, 1.5, 0.1, 1.5], [0, 0.35, 0, 0.9, 0.35, 0.9]];
     case 'wall': return [[0, 1.5, 0, 1.5, 1.5, 0.1]];
@@ -92,6 +98,7 @@ export function pieceBoxes(type, open = false) {
     case 'wall_torch': return [];
     case 'fabricator': return [[0, 0.85, 0, 0.5, 0.85, 0.28]];
     case 'wall_locker': return [[0, 0.95, 0, 0.45, 0.95, 0.25]];
+    case 'vehicle_bay': return [[0, 0.1, 0, 1.6, 0.12, 1.6], [1.25, 0.8, -1.25, 0.16, 0.6, 0.16]];
     case 'portable_refiner': return [[0, 0.4, 0, 0.42, 0.4, 0.32]];
     case 'refinery': return [[0, 0.8, 0, 0.75, 0.8, 0.35]];
     case 'desalinator': return [[0, 0.7, 0, 0.55, 0.7, 0.28]];
@@ -135,12 +142,12 @@ export function canPlace(type, gx, gz, level, idx, isFirst) {
   const key = slotKey(gx, gz, level, type === 'stairs' ? 'stairs' : def.slot);
   if (idx.has(key)) return 'Occupied';
   if (level < 0 || level > 8) return 'Too high';
-  if (type === 'foundation') {
-    if (level !== 0) return 'Foundations go on the ground';
+  if (isBase(type)) {
+    if (level !== 0) return type === 'raft' ? 'Rafts float on the water' : 'Foundations go on the ground';
     if (isFirst) return null;
-    // must neighbour another foundation
-    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) if (idx.get(slotKey(gx + dx, gz + dz, 0, 'cell'))?.type === 'foundation') return null;
-    return 'Must connect to a foundation';
+    // must neighbour another foundation / raft
+    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) if (isBase(idx.get(slotKey(gx + dx, gz + dz, 0, 'cell'))?.type)) return null;
+    return type === 'raft' ? 'Must connect to another raft' : 'Must connect to a foundation';
   }
   if (type === 'floor' || type === 'roof') {
     if (level < 1) return 'Floors need walls below';
@@ -156,7 +163,7 @@ export function canPlace(type, gx, gz, level, idx, isFirst) {
   // edge pieces
   for (const [cx, cz] of edgeCells(gx, gz)) {
     const c = idx.get(slotKey(cx, cz, level, 'cell'));
-    if (c && (c.type === 'foundation' || c.type === 'floor')) return null;
+    if (c && (isBase(c.type) || c.type === 'floor')) return null;
   }
   const below = idx.get(slotKey(gx, gz, level - 1, 'edge'));
   if (below && below.type !== 'half_wall') return null;
@@ -196,7 +203,7 @@ export function unsupportedPieces(pieces) {
     const next = [];
     let changed = false;
     for (const p of alive) {
-      if (p.type === 'foundation') { next.push(p); continue; }
+      if (isBase(p.type)) { next.push(p); continue; }
       const tmp = new Map(idx); tmp.delete(pieceSlotKey(p));
       const r = canPlaceAny(p.type, p.gx, p.gz, p.level, tmp, false);
       if (r && r !== 'Blocked by floor above' && r !== 'Stairs below') { dead.push(p); changed = true; }

@@ -453,3 +453,15 @@ body.dragging .gtile { pointer-events: none; opacity: .55; }
 #keysbox .keyrow button.clash { border-color: #ff7a6a; color: #ffb0a0; }
 #keysbox .keyrow button.changed { border-color: #f0a030; }
 @media (max-width: 600px) { #keysbox .keyrows { grid-template-columns: 1fr; } }
+
+/* Mobile Vehicle Bay */
+#baybox { max-width: 760px; }
+#baybox .baygrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 10px 0; }
+#baybox .baycard { background: #232a30; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+#baybox .bayhead { display: flex; align-items: center; gap: 8px; font-size: 15px; } #baybox .bayhead small { margin-left: auto; opacity: .75; font-size: 12px; }
+#baybox .bayhead .emo { font-size: 26px; }
+#baybox .bdesc { opacity: .8; }
+#baybox .bcost { display: flex; flex-direction: column; gap: 3px; } #baybox .bcost span { display: flex; align-items: center; gap: 6px; }
+#baybox .bcost .short { color: #ff8a7a; } #baybox .bcost .ok { color: #b8e8a0; } #baybox .bcost .cico { width: 20px; height: 20px; }
+#baybox .baycard button { margin-top: auto; padding: 7px; font: inherit; font-weight: 700; border-radius: 6px; border: 0; background: #f0a030; color: #1a1a1a; cursor: pointer; }
+#baybox .baycard button:disabled { background: #444; color: #999; cursor: default; }

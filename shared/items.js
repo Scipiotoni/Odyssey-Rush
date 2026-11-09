@@ -169,6 +169,8 @@ export const ITEMS = {
   ghillie_hood: { name: 'Ghillie Hood', cat: 'armor', stack: 1, icon: '🌿', armor: { slot: 'head', prot: 0.04, cold: 0.15, camo: true, color: 0x4f6a32 } },
   wetsuit: { name: 'Diving Wetsuit', cat: 'armor', stack: 1, icon: '🤿', armor: { slot: 'chest', prot: 0.05, cold: 0.35, swim: 1.4, color: 0x1a1c20 } },
   parka: { name: 'Arctic Parka', cat: 'armor', stack: 1, icon: '🧥', armor: { slot: 'chest', prot: 0.12, cold: 0.8, weight: 0.02, color: 0xc85a2a } },
+  // ---- Mobile Vehicle Bay: float it on the water, build boats and subs from it, pack it up again
+  vehicle_bay: { name: 'Mobile Vehicle Bay', cat: 'deployable', stack: 1, icon: '🛳️', deploy: { kind: 'vehicle_bay', hp: 900, water: true } },
   // ---- flashlight, bottles, salt
   hand_flashlight: { name: 'Flashlight', cat: 'tool', stack: 1, icon: '🔦', flashlight: true },
   empty_bottle: { name: 'Empty Bottle', cat: 'resource', stack: 5, icon: '🫙', bottle: true },
@@ -308,8 +310,8 @@ RECIPES.push({ out: 'titanium', n: 2, time: 6, station: 'furnace', cost: { titan
 RECIPES.push({ out: 'glass', n: 2, time: 5, station: 'furnace', cost: { quartz: 3, wood: 10 } });
 RECIPES.push({ out: 'battery', n: 1, time: 6, station: 'wb1', cost: { lithium: 2, copper: 2, metal_frags: 10 } });
 RECIPES.push({ out: 'power_cell', n: 1, time: 10, station: 'wb2', cost: { battery: 2, titanium: 1, glass: 1 } });
-RECIPES.push({ out: 'minisub_kit', n: 1, time: 30, station: 'wb2', cost: { titanium: 10, glass: 6, battery: 2, metal_frags: 300, gears: 2 } });
-RECIPES.push({ out: 'cyclops_kit', n: 1, time: 90, station: 'wb3', cost: { titanium: 45, glass: 20, power_cell: 2, hqm: 40, metal_frags: 1500, gears: 8, lithium: 10 } });
+RECIPES.push({ out: 'minisub_kit', n: 1, time: 30, bay: true, station: 'wb2', cost: { titanium: 10, glass: 6, battery: 2, metal_frags: 300, gears: 2 } });
+RECIPES.push({ out: 'cyclops_kit', n: 1, time: 90, bay: true, station: 'wb3', cost: { titanium: 45, glass: 20, power_cell: 2, hqm: 40, metal_frags: 1500, gears: 8, lithium: 10 } });
 RECIPES.push({ out: 'rowboat_kit', n: 1, time: 15, station: 'wb1', cost: { wood: 400, rope: 2 } });
 RECIPES.push({ out: 'depth_mk1', n: 1, time: 12, station: 'wb2', cost: { titanium: 6, glass: 2, metal_frags: 100 } });
 RECIPES.push({ out: 'depth_mk2', n: 1, time: 20, station: 'wb2', cost: { titanium: 12, lithium: 6, glass: 4, hqm: 6 } });
@@ -339,6 +341,7 @@ RECIPES.push({ out: 'fuel_generator', n: 1, time: 15, station: 'wb1', cost: { me
 RECIPES.push({ out: 'battery_bank', n: 1, time: 15, station: 'wb2', cost: { battery: 4, copper: 6, metal_frags: 150 } });
 RECIPES.push({ out: 'charger', n: 1, time: 8, station: 'wb1', cost: { copper: 6, battery: 1, metal_frags: 80 } });
 RECIPES.push({ out: 'wall_light', n: 2, time: 4, station: 'wb1', cost: { copper: 2, glass: 1, metal_frags: 20 } });
+RECIPES.push({ out: 'vehicle_bay', n: 1, time: 20, station: 'wb1', cost: { metal_frags: 250, gears: 2, battery: 1, rope: 2 } });
 // ---- armour (appended: recipe ids are positional)
 RECIPES.push({ out: 'kevlar_vest', n: 1, time: 15, station: 'wb2', cost: { cloth: 40, metal_frags: 150, hqm: 3 } });
 RECIPES.push({ out: 'riot_helmet', n: 1, time: 12, station: 'wb2', cost: { metal_frags: 100, glass: 1, hqm: 2, leather: 5 } });
@@ -363,7 +366,7 @@ export const STATION_RANGE = 4.5;
 export const STATION_KINDS = ['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith', 'fabricator'];
 export const STATION_OUTPUT_SLOTS = 12;
 // Recipes a given station (deployable kind) can make. Hand recipes (no station) are made from the inventory.
-export function stationRecipes(kind) { return RECIPES.filter((r) => r.station && STATION_PROVIDERS[r.station].includes(kind)); }
+export function stationRecipes(kind) { return RECIPES.filter((r) => r.station && !r.bay && STATION_PROVIDERS[r.station].includes(kind)); }
 
 // Gathering: per node type
 export const NODES = {
@@ -415,7 +418,7 @@ const SIZES = {
   // wide
   smg: [2, 1], engine_parts: [2, 1], pipe: [2, 1], sleeping_bag: [2, 1], campfire: [2, 1], rug: [2, 1], painting: [2, 1], satchel: [1, 1],
 };
-const DEPLOY_SIZES = { furnace: [2, 2], workbench1: [2, 2], workbench2: [2, 2], workbench3: [2, 2], small_box: [2, 1], large_box: [2, 2], tool_cupboard: [1, 2], portable_refiner: [2, 2], refinery: [2, 2], desalinator: [2, 2], solar_panel: [2, 2], fuel_generator: [2, 2], battery_bank: [2, 1], charger: [1, 1], wall_light: [1, 1],
+const DEPLOY_SIZES = { vehicle_bay: [2, 2], furnace: [2, 2], workbench1: [2, 2], workbench2: [2, 2], workbench3: [2, 2], small_box: [2, 1], large_box: [2, 2], tool_cupboard: [1, 2], portable_refiner: [2, 2], refinery: [2, 2], desalinator: [2, 2], solar_panel: [2, 2], fuel_generator: [2, 2], battery_bank: [2, 1], charger: [1, 1], wall_light: [1, 1],
   chair: [1, 2], table: [2, 2], bed: [2, 2], sofa: [2, 2], bookshelf: [2, 2], wardrobe: [2, 2], fridge: [2, 2], lamp: [1, 2], plant_pot: [1, 1] };
 export function itemSize(id) {
   if (SIZES[id]) return SIZES[id];
@@ -443,4 +446,11 @@ export const ANIMALS = {
   cave_spider: { name: 'Cave Spider', hp: 45, speed: 5.5, aggro: true, dmg: 9, drops: { cloth: 6, raw_meat: 1, bone: 3 }, color: 0x2a2522, size: 0.7, cave: true },
   bat: { name: 'Bat', hp: 8, speed: 6, aggro: false, dmg: 0, drops: { raw_meat: 1, bone: 1, leather: 2 }, color: 0x3a3030, size: 0.35, cave: true, fly: true },
   bear: { name: 'Bear', hp: 160, speed: 7.5, aggro: true, dmg: 30, drops: { raw_meat: 10, leather: 40, animal_fat: 15, bone: 20 }, color: 0x3d2b1f, size: 1.5 },
+};
+
+// What a Mobile Vehicle Bay can build (Subnautica style): seconds to build and what it costs
+export const BAY_BUILDS = {
+  motorboat: { time: 12, cost: { metal_frags: 300, engine_parts: 1, wood: 200, rope: 2 } },
+  minisub: { time: 20, cost: { titanium: 10, glass: 6, battery: 2, metal_frags: 300, gears: 2 } },
+  cyclops: { time: 50, cost: { titanium: 45, glass: 20, power_cell: 2, hqm: 40, metal_frags: 1500, gears: 8, lithium: 10 } },
 };

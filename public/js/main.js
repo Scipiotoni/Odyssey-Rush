@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { World, BIOME_NAMES, chunkKey, CHUNK } from '/shared/worldgen.js';
 import { ITEMS, NODES, ANIMALS, INV_SIZE } from '/shared/items.js';
 import { MACHINES } from '/shared/machines.js';
+import { makeVehicle } from './models.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE } from '/shared/vehicles.js';
 import { PIECES, TIERS, rotY } from '/shared/building.js';
 import { Physics } from './physics.js';
@@ -40,6 +41,7 @@ import { makeHumanoid, poseHumanoid } from './character.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { audio } from './audio.js';
 const _rv = new THREE.Vector3(), _rq = new THREE.Quaternion();
+const HOLO_MAT = new THREE.MeshBasicMaterial({ color: 0x5ae0ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true });
 
 const $ = (id) => document.getElementById(id);
 const MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4;
@@ -114,6 +116,7 @@ class Game {
     this.structures = new Structures(this.scene, this.physics, this.effects);
     this.nature = new Nature(this.scene, this.world, this.physics);
     this.caveWorld = new CaveWorld(this.scene, this.caves, this.world);
+    this.caveWorld.initWorker(seed, this.world.modList(), this.caves.mods.map((m) => m.slice()));
     this.audio = audio;
     this.footprints = new Footprints(this.scene, this.world);
     this.iceField = new IceField(this.world); this.physics.ice = this.iceField;
@@ -182,7 +185,7 @@ class Game {
     const n = this.net;
     n.on('weather', (m) => this.weather?.setState(m));
     n.on('bolt', (m) => this.weather?.bolt(m));
-    n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); const r = Math.abs(m.m[3]); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], r); if (Math.abs(m.m[1] - this.world.ground(m.m[0], m.m[2])) < r + 2.5) { this.terrain.refreshHoles(m.m[0], m.m[2], r); this.nature.grass?.invalidate?.(m.m[0], m.m[2]); } });
+    n.on('cmod', (m) => { if (!this.caves) return; this.caves.addMod(...m.m); this.caveWorld.syncMod(m.m); this.terrain.syncCaveMod(m.m); const r = Math.abs(m.m[3]); this.caveWorld.dirty(m.m[0], m.m[1], m.m[2], r); if (Math.abs(m.m[1] - this.world.ground(m.m[0], m.m[2])) < r + 2.5) { this.terrain.refreshHoles(m.m[0], m.m[2], r); this.nature.grass?.invalidate?.(m.m[0], m.m[2]); } });
     n.on('reset_confirm', (m) => this.showResetDialog(m));
     n.on('spawn_menu', () => this.ui.showSpawn());
     n.on('spawned_at', (m) => { this.spawnMark = { x: m.x, z: m.z, name: m.name }; if (this.ui.open === 'map') this.ui.renderMap(); });
@@ -314,7 +317,7 @@ class Game {
       this.terrain.center = [NaN, NaN];
     });
     n.on('snap', (m) => this.onSnap(m));
-    n.on('terr', (m) => { this.terrain.applyMods(m.m); this.iceField?.cache.clear(); });
+    n.on('terr', (m) => { this.terrain.applyMods(m.m); this.caveWorld?.syncTerrain(m.m); this.iceField?.cache.clear(); });
     n.on('ice', (m) => this.applyIce(m));
     n.on('flood', (m) => { this.structures.flood.set(m.bid, m.f || {}); this.hullHI.set(m.bid, m.hi); });
     n.on('fishbite', (m) => this.fishing?.onBite(m));
@@ -396,10 +399,14 @@ class Game {
     this.entities.syncPlayers(m.pl);
     this.entities.syncAnimals(m.an);
     const seen = new Set();
+    let newViews = 0;
+    const cp = this.camera.position;
     for (const a of m.ve) {
-      seen.add(a[0]);
       let v = this.vehicleViews.get(a[0]);
-      if (!v) { v = new VehicleView(this.scene, { id: a[0], type: a[1], var: a[14] }, this.world, this.physics); this.vehicleViews.set(a[0], v); this.physics.dynamic.push(...v.colliders); }
+      // building a vehicle model takes a while: far ones come in one per snapshot instead of all at once
+      if (!v && newViews >= 1 && Math.hypot(a[2] - cp.x, a[4] - cp.z) > 40) continue;
+      seen.add(a[0]);
+      if (!v) { newViews++; v = new VehicleView(this.scene, { id: a[0], type: a[1], var: a[14] }, this.world, this.physics); this.vehicleViews.set(a[0], v); this.physics.dynamic.push(...v.colliders); }
       v.setNet(a);
       // mobile-base structures on this vehicle: fetch them when our copy is out of date
       if (v.netDecRev !== v.decRev && performance.now() - (v.paintAt || -1e9) > 2000) { v.paintAt = performance.now(); this.net.send({ t: 'vpaint', id: a[0] }); }
@@ -423,6 +430,8 @@ class Game {
       if (d < 120) { audio.iceCrack(true, d); if (d < 60) { this.effects.burst(pos, { count: 40, color: 0xe4f0f8, speed: 4.5, size: 0.11, life: 1.1, gravity: 9 }); this.effects.burst(pos, { count: 18, color: 0xbfdcec, speed: 2.5, size: 0.06, life: 0.8 }); } }
       return;
     }
+    if (m.k === 'baydone') { const pos = new THREE.Vector3(...m.p); this.effects.burst(pos, { count: 40, color: 0x9adcff, speed: 4, up: 3, size: 0.2, life: 1.2, gravity: 4 }); if (cam.distanceTo(pos) < 80) audio.splash?.(0.8); return; }
+    if (m.k === 'baybuild') return;
     if (m.k === 'douse' || m.k === 'ignite') { const pos = new THREE.Vector3(...m.p); pos.y += 0.4; this.effects.burst(pos, m.k === 'douse' ? { count: 16, color: 0xcfcfcf, speed: 1.2, up: 2.5, size: 0.25, life: 1.6, gravity: -1.5, drag: 1 } : { count: 18, color: 0xffa030, speed: 2.5, up: 2, size: 0.1, life: 0.7, glow: true, gravity: -1 }); if (cam.distanceTo(pos) < 30) audio.click(); return; }
     if (m.k === 'cavedig') { const pos = new THREE.Vector3(...m.p); if (cam.distanceTo(pos) < 40) { audio.mine(); this.effects.burst(pos, { count: 14, color: m.ore ? [0x6a645c, 0xc07a3a, 0xd8c040, 0x7fe8ff, 0x3aa080, 0xe890b0, 0xd8dce0, 0xf4f4ff, 0x3a70ff][m.ore] : [0x5c4530, 0x8c5c38, 0x75706a, 0x484a52][m.layer || 0], speed: 3.5, size: 0.08, life: 0.8, gravity: 9 }); } return; }
     if (m.k === 'gunmod') { audio.click(); return; }
@@ -668,6 +677,10 @@ class Game {
         if (s) {
           const G = active && this.input.hit('KeyG'), M = MACHINES[s.type];
           if (s.k === 'door') { text = `<kbd>E</kbd> ${s.open ? 'Close' : 'Open'} door`; if (E) this.net.send({ t: 'use', id: s.id }); }
+          else if (s.type === 'vehicle_bay') {
+            text = s.bb ? `<b>Mobile Vehicle Bay</b> — building a ${VEHICLES[s.bb[0]].name}…<br><kbd>E</kbd> Open` : '<kbd>E</kbd> Open the Mobile Vehicle Bay <small>(build boats &amp; submarines · pack it up)</small>';
+            if (E) this.ui.showBay(s.id);
+          }
           else if (M) {
             // machines: open the storage (refiners, generator, charger), switch base machines on/off, see their state
             const st = M.solar ? (s.pw ? '☀️ making power' : '🌙 no sun right now') : M.store ? `🔋 ${s.ch || 0}% charged` : s.off ? '⚫ switched off' : s.pw ? '🟢 running' : M.portable ? '' : M.gen ? '⚪ idle' : '⚪ idle / no power';
@@ -839,6 +852,39 @@ class Game {
     this.clipBoxes = list.slice(0, 8);
     this.sky.setWaterClips(this.clipBoxes);
   }
+  // Mobile Vehicle Bays building something: a glowing hologram of the vehicle grows next to the bay while a drone
+  // zips back and forth laying it down
+  updateBays(dt) {
+    this._bayScan = (this._bayScan || 0) - dt;
+    if (this._bayScan <= 0) {
+      this._bayScan = 0.3;
+      const live = new Set();
+      for (const e of this.structures.map.values()) {
+        const s = e.s;
+        if (s.type !== 'vehicle_bay' || !s.bb || Math.hypot(s.x - this.camera.position.x, s.z - this.camera.position.z) > 220) continue;
+        live.add(s.id);
+        this.holos = this.holos || new Map();
+        let h = this.holos.get(s.id);
+        if (!h || h.v !== s.bb[0]) {
+          if (h) this.scene.remove(h.obj);
+          const def = VEHICLES[s.bb[0]], obj = makeVehicle(s.bb[0]);
+          const rm = []; obj.traverse((o) => { if (o.isLight) rm.push(o); else if (o.isMesh) o.material = HOLO_MAT; });
+          for (const o of rm) o.parent.remove(o);
+          obj.position.set(s.bb[3], def.sub ? -def.half[1] * 0.45 : def.float ?? 0.2, s.bb[4]); obj.rotation.set(0, s.bb[5], 0);
+          this.scene.add(obj);
+          h = { obj, v: s.bb[0], from: new THREE.Vector3(s.x, 1.2, s.z), end: performance.now() / 1000 + s.bb[1], total: s.bb[2] };
+          this.holos.set(s.id, h);
+        }
+      }
+      for (const [id, h] of this.holos || []) if (!live.has(id)) { this.scene.remove(h.obj); this.holos.delete(id); }
+    }
+    for (const h of this.holos?.values() || []) {
+      const f = Math.min(1, Math.max(0.03, 1 - (h.end - performance.now() / 1000) / h.total));
+      h.obj.scale.set(1, f, 1);
+      HOLO_MAT.opacity = 0.28 + Math.sin(performance.now() / 180) * 0.06;
+      if (Math.random() < dt * 14) { const t = Math.random(), to = h.obj.position; this.effects.burst({ x: h.from.x + (to.x - h.from.x) * t, y: 1.4 + Math.sin(t * Math.PI) * 2, z: h.from.z + (to.z - h.from.z) * t }, { count: 1, color: 0x7ae8ff, speed: 0.5, size: 0.12, life: 0.4, glow: true, gravity: 0 }); }
+    }
+  }
   // inside the big sub's hull (dry, breathable)
   inSubInterior(pos) {
     for (const v of this.vehicleViews.values()) {
@@ -1008,6 +1054,7 @@ class Game {
     this.timers.entr = (this.timers.entr || 0) - dt;
     if (this.timers.entr <= 0) { this.timers.entr = 1; this.caveWorld.setEntrances(this.caveEntrances(cp.x, cp.z)); this.caveWorld.setBlueHoles(this.blueHoles || []); this.seaLife.setBlueHoles(this.blueHoles || []); }
     this.structures.update(dt, this.camera.position);
+    this.updateBays(dt);
     this.entities.updatePlayers(dt, this.camera.position, this.vehicleViews);
     this.entities.updateAnimals(dt);
     this.entities.updateExplosives(dt, audio, this.camera.position);

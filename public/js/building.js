@@ -1,6 +1,6 @@
 // Building plan / deployable / hammer placement logic with snapping ghosts.
 import * as THREE from 'three';
-import { REINFORCE, reinforceCost, G, LEVEL_H, BUILD_REACH, PIECES, TIERS, pieceTransform, canPlaceAny, buildIndex, pieceCost, invRotY, rotY } from '/shared/building.js';
+import { RAFT_Y, isBase, REINFORCE, reinforceCost, G, LEVEL_H, BUILD_REACH, PIECES, TIERS, pieceTransform, canPlaceAny, buildIndex, pieceCost, invRotY, rotY } from '/shared/building.js';
 import { POI_FLAT } from '/shared/worldgen.js';
 import { ITEMS } from '/shared/items.js';
 import { pieceGeometry, deployGeometry } from './models.js';
@@ -35,6 +35,19 @@ export class Builder {
     return { o, d, hit, point: hit ? hit.point : { x: o.x + d.x * reach, y: o.y + d.y * reach, z: o.z + d.z * reach } };
   }
 
+  // where the aim crosses the sea surface (for rafts and things that float), or null
+  waterPoint(reach = BUILD_REACH + 2) {
+    const cam = this.game.camera.position, dir = this.game.held.dir();
+    if (dir.y > -0.02 || cam.y < 0) return null;
+    const t = -cam.y / dir.y;
+    return t < reach ? new THREE.Vector3(cam.x + dir.x * t, 0, cam.z + dir.z * t) : null;
+  }
+  raftWater(b, gx, gz) {
+    if (Math.abs(b.y - RAFT_Y) > 0.3) return 'Rafts float at sea level — start a separate raft base on the water';
+    const w = this.game.world, t = pieceTransform(b, { type: 'raft', gx, gz, level: 0 });
+    for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 0]]) { const [dx, dz] = rotY(cx, cz, t.yaw); if (w.ground(t.x + dx, t.z + dz) > -1.2) return 'Rafts need open water (1.2 m deep) under them'; }
+    return null;
+  }
   foundationGround(b, gx, gz) {
     const w = this.game.world;
     const t = pieceTransform(b, { type: 'foundation', gx, gz, level: 0 });
@@ -68,7 +81,7 @@ export class Builder {
     let gx, gz, level;
     if (PIECES[type].slot === 'cell') {
       gx = 2 * Math.round(fx); gz = 2 * Math.round(fz);
-      level = type === 'foundation' ? 0 : type === 'floor' || type === 'roof' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
+      level = isBase(type) ? 0 : type === 'floor' || type === 'roof' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
     } else {
       const i = Math.round(fx), j = Math.round(fz), dx = fx - i, dz = fz - j;
       if (Math.abs(dx) > Math.abs(dz)) { gx = 2 * i + Math.sign(dx || 1); gz = 2 * j; } else { gx = 2 * i; gz = 2 * j + Math.sign(dz || 1); }
@@ -95,7 +108,8 @@ export class Builder {
   // ------------------------------------------------------------ building plan
   updatePlan() {
     const g = this.game, type = this.piece;
-    const { point, hit } = this.aim();
+    let { point, hit } = this.aim();
+    if (type === 'raft') { const wp = this.waterPoint(); if (wp && (!point || hit?.kind === 'terrain' || point.y < -0.2)) { point = wp; hit = null; } }
     const dk = this.deckHit(hit);
     if (dk) {
       let { plan, err } = this.updateDeckPlan(type, dk);
@@ -117,7 +131,7 @@ export class Builder {
       let gx, gz, level;
       if (PIECES[type].slot === 'cell') {
         gx = 2 * Math.round(fx); gz = 2 * Math.round(fz);
-        level = type === 'foundation' ? 0 : type === 'floor' || type === 'roof' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
+        level = isBase(type) ? 0 : type === 'floor' || type === 'roof' ? Math.max(1, Math.round(ly / LEVEL_H)) : Math.max(0, Math.floor((ly + 0.3) / LEVEL_H));
       } else {
         const i = Math.round(fx), j = Math.round(fz), dx = fx - i, dz = fz - j;
         if (Math.abs(dx) > Math.abs(dz)) { gx = 2 * i + Math.sign(dx || 1); gz = 2 * j; } else { gx = 2 * i; gz = 2 * j + Math.sign(dz || 1); }
@@ -125,8 +139,16 @@ export class Builder {
       }
       err = canPlaceAny(type, gx, gz, level, g.structures.index(b.id), false);
       if (!err && type === 'foundation') err = this.foundationGround(b, gx, gz);
+      if (!err && type === 'raft') err = this.raftWater(b, gx, gz);
       const t = pieceTransform(b, { type, gx, gz, level, rot: this.rot });
       plan = { type, bid: b.id, gx, gz, level, rot: this.rot, t };
+    } else if (type === 'raft') {
+      // the first raft of a new floating base: anywhere on open water
+      if (!point || Math.abs(point.y) > 0.2) err = 'Aim at the water';
+      const yaw = g.player.yaw, nb = { x: point?.x || 0, y: RAFT_Y, z: point?.z || 0, yaw };
+      if (!err) err = this.raftWater(nb, 0, 0);
+      if (!err && g.structures.nearestBuilding(nb.x, nb.z, 4.5)) err = 'Too close to another building';
+      plan = { type, x: nb.x, y: nb.y, z: nb.z, yaw, t: { x: nb.x, y: nb.y, z: nb.z, yaw } };
     } else if (type === 'foundation') {
       if (!hit || hit.kind !== 'terrain') err = 'Aim at the ground';
       const yaw = g.player.yaw;
@@ -170,6 +192,13 @@ export class Builder {
         plan = { door: s.id, t: s };
       }
       this.setGhost('door', () => { const b = new THREE.BoxGeometry(1.2, 2.2, 0.1); b.translate(0, 1.1, 0); return b; });
+    } else if (d.deploy?.water) {
+      // floats: aim at open water at least 2.5 m deep
+      const wp = this.waterPoint(9);
+      if (!wp) err = 'Aim at the water';
+      else if (g.world.ground(wp.x, wp.z) > -2.5) err = 'Needs open water at least 2.5 m deep';
+      plan = wp ? { t: { x: wp.x, y: 0.05, z: wp.z, yaw: g.player.yaw } } : null;
+      this.setGhost('d:' + d.deploy.kind, () => deployGeometry(d.deploy.kind));
     } else {
       const dk = d.deploy && this.deckHit(hit);
       if (dk) {
@@ -235,11 +264,11 @@ export class Builder {
     const name = s.k === 'piece' ? `${rf ? REINFORCE[rf].name + ' ' : ''}${TIERS[s.tier].name} ${PIECES[s.type].name}` : s.k === 'door' ? `${s.dt} door` : ITEMS[s.type]?.name || s.type;
     const ct = (c) => Object.entries(c).map(([k, v]) => v + ' ' + ITEMS[k].name).join(', ');
     let txt = `<b>${name}</b> ${s.hp}/${s.mhp}`;
-    if (s.k === 'piece' && s.tier < TIERS.length - 1) txt += `<br><kbd>LMB</kbd> upgrade to ${TIERS[s.tier + 1].name} (${ct(pieceCost(s.type, s.tier + 1))})`;
+    if (s.k === 'piece' && s.tier < TIERS.length - 1 && s.type !== 'raft') txt += `<br><kbd>LMB</kbd> upgrade to ${TIERS[s.tier + 1].name} (${ct(pieceCost(s.type, s.tier + 1))})`;
     if (s.k === 'piece' && rf < REINFORCE.length - 1) txt += `<br><kbd>R</kbd> reinforce: ${REINFORCE[rf + 1].name} +50% HP (${ct(reinforceCost(s.type, rf + 1))})`;
     if (s.hp < s.mhp) txt += `<br><kbd>RMB</kbd> repair`;
     g.ui.prompt(txt);
-    if (input.mouse.leftPressed && s.k === 'piece' && s.tier < TIERS.length - 1) { g.net.send({ t: 'upgrade', id: s.id, tier: s.tier + 1 }); g.held.swingAnim(); }
+    if (input.mouse.leftPressed && s.k === 'piece' && s.tier < TIERS.length - 1 && s.type !== 'raft') { g.net.send({ t: 'upgrade', id: s.id, tier: s.tier + 1 }); g.held.swingAnim(); }
     if (input.hit('KeyR') && s.k === 'piece' && rf < REINFORCE.length - 1) { g.net.send({ t: 'reinforce', id: s.id }); g.held.swingAnim(0.5, true); }
     if (input.mouse.rightPressed) { g.net.send({ t: 'repair', id: s.id }); g.held.swingAnim(); }
     if (input.hit('KeyX')) g.net.send({ t: 'demolish', id: s.id });

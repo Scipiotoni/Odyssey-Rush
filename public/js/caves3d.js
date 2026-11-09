@@ -4,6 +4,7 @@
 // in the deepest caverns and underground lakes.
 import * as THREE from 'three';
 import { CAVE_TOP, CAVE_BOTTOM, CAVE_ZONE, CAVE_CELL, CAVE_ARRIVE, LAVA_Y, QUAD, layerAt } from '/shared/caves.js';
+import { meshChunkData } from './caveMesh.js';
 
 const MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide });
 const CRYSTAL = new THREE.MeshLambertMaterial({ color: 0x7fe8ff, emissive: 0x3ab8e8, emissiveIntensity: 1.4, flatShading: true });
@@ -21,101 +22,6 @@ function glowGeo() {
 const GLOW_GEO = glowGeo();
 
 const C = CAVE_CELL;
-const _c = new THREE.Color();
-const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-
-// one 16 m cube of the rock field
-function meshChunk(caves, cx, cy, cz) {
-  const N = C + 3, x0 = cx * C - 1, y0 = cy * C - 1, z0 = cz * C - 1;
-  const idx = (i, j, k) => (j * N + k) * N + i;
-  // coarse look first: a cube that's solid rock (or open air) all through is skipped cheaply
-  let cmin = Infinity, cmax = -Infinity;
-  for (let a = 0; a <= 4; a++) for (let b = 0; b <= 4; b++) for (let c = 0; c <= 4; c++) { const v = caves.rock(x0 + a * 4.5, y0 + b * 4.5, z0 + c * 4.5); if (v < cmin) cmin = v; if (v > cmax) cmax = v; }
-  if (cmin > 0.32 || cmax < -0.32) return null;
-  const d = new Float32Array(N * N * N);
-  let pos0 = false, neg0 = false;
-  for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) for (let i = 0; i < N; i++) { const v = caves.rock(x0 + i, y0 + j, z0 + k); d[idx(i, j, k)] = v; if (v > 0) pos0 = true; else neg0 = true; }
-  if (!pos0 || !neg0) return null;
-  const wet = caves.flooded(x0 + C / 2, z0 + C / 2);
-  const vIndex = new Int32Array((N - 1) * (N - 1) * (N - 1)).fill(-1);
-  const cidx = (i, j, k) => (j * (N - 1) + k) * (N - 1) + i;
-  const vp = [];
-  const corners = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
-  const edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
-  const cv = new Float32Array(8);
-  for (let j = 0; j < N - 1; j++) for (let k = 0; k < N - 1; k++) for (let i = 0; i < N - 1; i++) {
-    let mask = 0;
-    for (let c = 0; c < 8; c++) { const [a, b, e] = corners[c]; cv[c] = d[idx(i + a, j + b, k + e)]; if (cv[c] > 0) mask |= 1 << c; }
-    if (mask === 0 || mask === 255) continue;
-    let sx = 0, sy = 0, sz = 0, n = 0;
-    for (const [a, b] of edges) {
-      if ((cv[a] > 0) === (cv[b] > 0)) continue;
-      const t = cv[a] / (cv[a] - cv[b]), A = corners[a], Bc = corners[b];
-      sx += A[0] + (Bc[0] - A[0]) * t; sy += A[1] + (Bc[1] - A[1]) * t; sz += A[2] + (Bc[2] - A[2]) * t; n++;
-    }
-    vIndex[cidx(i, j, k)] = vp.length / 3;
-    vp.push(x0 + i + sx / n, y0 + j + sy / n, z0 + k + sz / n);
-  }
-  const pos = [], col = [];
-  const V = (c) => [vp[c * 3], vp[c * 3 + 1], vp[c * 3 + 2]];
-  const tri = (a, b, c) => {
-    const A = V(a), Bv = V(b), Cv = V(c);
-    const mx = (A[0] + Bv[0] + Cv[0]) / 3, my = (A[1] + Bv[1] + Cv[1]) / 3, mz = (A[2] + Bv[2] + Cv[2]) / 3;
-    const s = caves.surface(mx, mz), depth = s - my;
-    // the ground itself is drawn by the terrain heightfield, except where it has a hole
-    if (depth < 1.3 && !caves.quadOpen(Math.floor(mx / QUAD), Math.floor(mz / QUAD))) return;
-    pos.push(...A, ...Bv, ...Cv);
-    const nx = (Bv[1] - A[1]) * (Cv[2] - A[2]) - (Bv[2] - A[2]) * (Cv[1] - A[1]), ny = (Bv[2] - A[2]) * (Cv[0] - A[0]) - (Bv[0] - A[0]) * (Cv[2] - A[2]), nz = (Bv[0] - A[0]) * (Cv[1] - A[1]) - (Bv[1] - A[1]) * (Cv[0] - A[0]);
-    const up = ny / (Math.hypot(nx, ny, nz) || 1);
-    const ore = caves.ore(mx, my, mz), v = 0.85 + Math.sin(mx * 1.7 + mz * 1.3 + my * 2.1) * 0.08;
-    const min = ore > 0.5 || ore < -0.5 ? null : caves.mineral(mx, my, mz);
-    if (depth < 0.6 && up > 0.5) _c.setRGB(0.36 * v, 0.5 * v, 0.24 * v);                    // grass at the rim of a hole
-    else if (ore > 0.5 && depth > 8) _c.setRGB(0.62 * v, 0.38 * v, 0.2 * v);
-    else if (ore < -0.5 && depth > 8) _c.setRGB(0.72 * v, 0.66 * v, 0.24 * v);
-    else if (min === 'copper_ore' && depth > 12) _c.setRGB(0.22 * v, 0.52 * v, 0.42 * v);
-    else if (min === 'lithium_ore' && depth > 12) _c.setRGB(0.78 * v, 0.56 * v, 0.66 * v);
-    else if (min === 'titanium_ore' && depth > 12) _c.setRGB(0.74 * v, 0.76 * v, 0.8 * v);
-    else if (min === 'quartz' && depth > 12) _c.setRGB(0.9 * v, 0.9 * v, 0.92 * v);
-    else if (min === 'kyanite') _c.setRGB(0.22 * v, 0.38 * v, 0.9 * v);
-    else if (wet) _c.setRGB((up > 0.6 ? 0.2 : 0.28) * v, (up > 0.6 ? 0.34 : 0.33) * v, (up > 0.6 ? 0.36 : 0.4) * v);
-    else {
-      // dug layers: topsoil, clay, stone, deepstone (blended), mossy cave floors
-      const L = layerAt(depth), Ln = layerAt(depth + 2.5);
-      const f = L === Ln ? 0 : smooth(0, 2.5, Ln[1] - depth);
-      const c0 = L[3], c1 = Ln[3];
-      _c.setRGB((c0[0] + (c1[0] - c0[0]) * (1 - f)) * v, (c0[1] + (c1[1] - c0[1]) * (1 - f)) * v, (c0[2] + (c1[2] - c0[2]) * (1 - f)) * v);
-      if (up > 0.6 && depth > 25) _c.lerp(new THREE.Color(0.3 * v, 0.34 * v, 0.24 * v), 0.5);
-    }
-    for (let q = 0; q < 3; q++) col.push(_c.r, _c.g, _c.b);
-  };
-  const crystals = [], glows = [];
-  for (let j = 1; j < N - 1; j++) for (let k = 1; k < N - 1; k++) for (let i = 1; i < N - 1; i++) {
-    if (i > C || k > C || j > C) continue;
-    const a = d[idx(i, j, k)] > 0;
-    if (a !== (d[idx(i + 1, j, k)] > 0)) {
-      const c0 = vIndex[cidx(i, j - 1, k - 1)], c1 = vIndex[cidx(i, j, k - 1)], c2 = vIndex[cidx(i, j, k)], c3 = vIndex[cidx(i, j - 1, k)];
-      if (c0 >= 0 && c1 >= 0 && c2 >= 0 && c3 >= 0) { if (a) { tri(c0, c1, c2); tri(c0, c2, c3); } else { tri(c0, c2, c1); tri(c0, c3, c2); } }
-    }
-    if (a !== (d[idx(i, j + 1, k)] > 0)) {
-      const c0 = vIndex[cidx(i - 1, j, k - 1)], c1 = vIndex[cidx(i, j, k - 1)], c2 = vIndex[cidx(i, j, k)], c3 = vIndex[cidx(i - 1, j, k)];
-      if (c0 >= 0 && c1 >= 0 && c2 >= 0 && c3 >= 0) { if (a) { tri(c0, c2, c1); tri(c0, c3, c2); } else { tri(c0, c1, c2); tri(c0, c2, c3); } }
-      const wx = x0 + i, wy = y0 + j, wz = z0 + k, dep = caves.surface(wx, wz) - wy;
-      if (dep > 20 && caves.crystal(wx, wy, wz) && ((i * 7 + k * 13 + j) % 5 === 0)) crystals.push([wx, wy + 0.5, wz, a ? 1 : -1]);
-      // bioluminescent anemones on flooded cave floors; glow-worm lights on deep dry ceilings
-      if (a && dep > 6 && (wet ? (i * 31 + k * 17 + j * 7) % 6 === 0 : dep > 40 && (i * 31 + k * 17 + j * 7) % 23 === 0)) glows.push([wx + 0.5, wy + 0.5, wz + 0.5, (i * 13 + k * 7) % 3]);
-    }
-    if (a !== (d[idx(i, j, k + 1)] > 0)) {
-      const c0 = vIndex[cidx(i - 1, j - 1, k)], c1 = vIndex[cidx(i, j - 1, k)], c2 = vIndex[cidx(i, j, k)], c3 = vIndex[cidx(i - 1, j, k)];
-      if (c0 >= 0 && c1 >= 0 && c2 >= 0 && c3 >= 0) { if (a) { tri(c0, c2, c1); tri(c0, c3, c2); } else { tri(c0, c1, c2); tri(c0, c2, c3); } }
-    }
-  }
-  if (!pos.length && !crystals.length) return { geo: null, crystals, glows };
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.computeVertexNormals(); g.computeBoundingSphere();
-  return { geo: g, crystals, glows };
-}
 
 const LAVA_MAT = new THREE.MeshLambertMaterial({ color: 0xff6a1a, emissive: 0xff4a00, emissiveIntensity: 1.8 });
 const LAKE_MAT = new THREE.MeshPhongMaterial({ color: 0x1a4a6a, transparent: true, opacity: 0.75, shininess: 80, depthWrite: false, side: THREE.DoubleSide });
@@ -124,6 +30,14 @@ export class CaveWorld {
   constructor(scene, caves, world) {
     this.scene = scene; this.caves = caves; this.world = world;
     this.chunks = new Map(); this.queue = []; this.center = null; this.active = false; this.empty = new Set();
+    // meshing happens in a worker (no hitches while you explore or dig); the main thread only builds the meshes
+    this.ver = new Map(); this.inflight = new Map(); this.worker = null;
+    try {
+      const w = new Worker(new URL('./caveWorker.js', import.meta.url), { type: 'module' });
+      w.onmessage = (e) => this.onWorker(e.data);
+      w.onerror = (e) => { console.warn('cave worker failed, meshing on the main thread', e.message); this.worker = null; this.inflight.clear(); };
+      this.worker = w;
+    } catch { this.worker = null; }
     this.lantern = new THREE.PointLight(0xffd8a0, 0, 9, 2);
     this.ambient = new THREE.HemisphereLight(0x6a7a9a, 0x2a2420, 0);
     scene.add(this.lantern); scene.add(this.ambient);
@@ -134,12 +48,53 @@ export class CaveWorld {
     this.lavaLight = new THREE.PointLight(0xff6a20, 0, 40, 1.5); scene.add(this.lavaLight);
     this.lake = new THREE.Mesh(new THREE.PlaneGeometry(192, 192).rotateX(-Math.PI / 2), LAKE_MAT); this.lake.visible = false; scene.add(this.lake);
   }
+  // the worker needs the same world: call once the seed and edits are known, then for every edit
+  initWorker(seed, tmods, cmods) { this.worker?.postMessage({ type: 'init', seed, tmods, cmods }); }
+  syncTerrain(list) { this.worker?.postMessage({ type: 'tmods', list }); }
+  syncMod(m) { this.worker?.postMessage({ type: 'cmod', m }); }
+  onWorker(m) {
+    this.inflight.delete(m.k);
+    if ((this.ver.get(m.k) || 0) !== m.ver) { if (!this.queue.includes(m.k)) this.queue.unshift(m.k); return; } // edited meanwhile
+    if (!this.wantSet?.has(m.k)) return;
+    if (m.empty) { const old = this.chunks.get(m.k); if (old) { this.disposeChunk(old); this.chunks.delete(m.k); } this.empty.add(m.k); if (this.empty.size > 20000) this.empty.clear(); return; }
+    this.install(m.k, m);
+  }
+  install(k, res) {
+    const meshes = [];
+    if (res.pos) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(res.pos, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(res.col, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(res.nrm, 3));
+      geo.computeBoundingSphere();
+      const m = new THREE.Mesh(geo, MAT); this.scene.add(m); meshes.push(m);
+    }
+    if (res.crystals.length) {
+      const im = new THREE.InstancedMesh(this.crystalGeo, res.crystals.length % 2 ? CRYSTAL : CRYSTAL2, res.crystals.length);
+      const mm = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      res.crystals.forEach(([x2, y2, z2, s2], i) => { e.set((Math.sin(x2) * 0.4) + (s2 < 0 ? Math.PI : 0), x2 + z2, Math.cos(z2) * 0.4); q.setFromEuler(e); mm.compose(new THREE.Vector3(x2, y2, z2), q, new THREE.Vector3(1, 0.7 + Math.abs(Math.sin(x2 * 3)) * 0.8, 1)); im.setMatrixAt(i, mm); });
+      im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); this.scene.add(im); meshes.push(im);
+    }
+    for (let kind = 0; kind < 3; kind++) {
+      const list = res.glows.filter((q) => q[3] === kind);
+      if (!list.length) continue;
+      const im = new THREE.InstancedMesh(GLOW_GEO, GLOW_MATS[kind], list.length);
+      const mm = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      list.forEach(([x2, y2, z2], i) => { const sc = 0.7 + Math.abs(Math.sin(x2 * 7 + z2)) * 1.1; mm.compose(new THREE.Vector3(x2, y2 - 0.4, z2), q.setFromEuler(e.set(0, x2 * 3 + z2, 0)), new THREE.Vector3(sc, sc, sc)); im.setMatrixAt(i, mm); });
+      im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); this.scene.add(im); meshes.push(im);
+    }
+    const old = this.chunks.get(k); if (old) this.disposeChunk(old);
+    this.chunks.set(k, { meshes });
+  }
   dirty(x, y, z, r) {
     r = Math.abs(r);
     for (let a = Math.floor((x - r - 1) / C); a <= Math.floor((x + r + 1) / C); a++) for (let b = Math.floor((y - r - 1) / C); b <= Math.floor((y + r + 1) / C); b++) for (let c = Math.floor((z - r - 1) / C); c <= Math.floor((z + r + 1) / C); c++) {
       const k = a + ',' + b + ',' + c;
       this.empty.delete(k);
-      if (this.chunks.has(k)) { this.disposeChunk(this.chunks.get(k)); this.chunks.delete(k); }
+      this.ver.set(k, (this.ver.get(k) || 0) + 1);
+      // with the worker, keep showing the old mesh until the new one arrives (no flicker); it's swapped in install()
+      if (!this.worker && this.chunks.has(k)) { this.disposeChunk(this.chunks.get(k)); this.chunks.delete(k); }
+      if (this.worker && this.chunks.has(k)) this.stale = (this.stale || new Set()).add(k);
       if (!this.queue.includes(k)) this.queue.unshift(k);
     }
   }
@@ -222,34 +177,31 @@ export class CaveWorld {
     if (key !== this.center || this.planT <= 0) {
       this.center = key; this.planT = 2;
       const want = new Set(this.wanted(cam).map((c) => c.join(',')));
+      this.wantSet = want;
       for (const [k, c] of this.chunks) if (!want.has(k)) { this.disposeChunk(c); this.chunks.delete(k); }
       const [ccx, ccy, ccz] = key.replace(/[us]$/, '').split(',').map(Number);
-      this.queue = [...want].filter((k) => !this.chunks.has(k) && !this.empty.has(k)).sort((a, b) => { const A = a.split(',').map(Number), B = b.split(',').map(Number); return Math.hypot(A[0] - ccx, (A[1] - ccy) * 1.5, A[2] - ccz) - Math.hypot(B[0] - ccx, (B[1] - ccy) * 1.5, B[2] - ccz); });
+      this.queue = [...want].filter((k) => (!this.chunks.has(k) || this.stale?.has(k)) && !this.empty.has(k)).sort((a, b) => { const A = a.split(',').map(Number), B = b.split(',').map(Number); return Math.hypot(A[0] - ccx, (A[1] - ccy) * 1.5, A[2] - ccz) - Math.hypot(B[0] - ccx, (B[1] - ccy) * 1.5, B[2] - ccz); });
+    }
+    if (this.worker) {
+      // keep a few chunks in flight in the worker, nearest first
+      while (this.queue.length && this.inflight.size < 4) {
+        const k = this.queue.shift();
+        if ((this.chunks.has(k) && !this.stale?.has(k)) || this.empty.has(k) || this.inflight.has(k)) continue;
+        this.stale?.delete(k);
+        const [x, y, z] = k.split(',').map(Number), ver = this.ver.get(k) || 0;
+        this.inflight.set(k, ver);
+        this.worker.postMessage({ type: 'mesh', k, cx: x, cy: y, cz: z, ver });
+      }
+      return;
     }
     const t0 = performance.now();
     while (this.queue.length && performance.now() - t0 < 10) {
       const k = this.queue.shift();
       if (this.chunks.has(k) || this.empty.has(k)) continue;
       const [x, y, z] = k.split(',').map(Number);
-      const res = meshChunk(caves, x, y, z);
+      const res = meshChunkData(caves, x, y, z);
       if (!res) { this.empty.add(k); if (this.empty.size > 20000) this.empty.clear(); continue; }
-      const meshes = [];
-      if (res.geo) { const m = new THREE.Mesh(res.geo, MAT); this.scene.add(m); meshes.push(m); }
-      if (res.crystals.length) {
-        const im = new THREE.InstancedMesh(this.crystalGeo, res.crystals.length % 2 ? CRYSTAL : CRYSTAL2, res.crystals.length);
-        const mm = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
-        res.crystals.forEach(([x2, y2, z2, s2], i) => { e.set((Math.sin(x2) * 0.4) + (s2 < 0 ? Math.PI : 0), x2 + z2, Math.cos(z2) * 0.4); q.setFromEuler(e); mm.compose(new THREE.Vector3(x2, y2, z2), q, new THREE.Vector3(1, 0.7 + Math.abs(Math.sin(x2 * 3)) * 0.8, 1)); im.setMatrixAt(i, mm); });
-        im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); this.scene.add(im); meshes.push(im);
-      }
-      for (let kind = 0; kind < 3; kind++) {
-        const list = res.glows.filter((q) => q[3] === kind);
-        if (!list.length) continue;
-        const im = new THREE.InstancedMesh(GLOW_GEO, GLOW_MATS[kind], list.length);
-        const mm = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
-        list.forEach(([x2, y2, z2], i) => { const sc = 0.7 + Math.abs(Math.sin(x2 * 7 + z2)) * 1.1; mm.compose(new THREE.Vector3(x2, y2 - 0.4, z2), q.setFromEuler(e.set(0, x2 * 3 + z2, 0)), new THREE.Vector3(sc, sc, sc)); im.setMatrixAt(i, mm); });
-        im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); this.scene.add(im); meshes.push(im);
-      }
-      this.chunks.set(k, { meshes });
+      this.install(k, res);
     }
   }
 }

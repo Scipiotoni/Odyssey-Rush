@@ -53,12 +53,12 @@ export class Terrain {
     this.workers = [];
     this.rr = 0;
     try {
-      const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 1));
+      const n = Math.max(1, Math.min(2, (navigator.hardwareConcurrency || 4) - 2)); // (the caves have their own worker too)
       for (let i = 0; i < n; i++) {
         const w = new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' });
         w.onmessage = (e) => this.onWorker(e.data);
         w.onerror = (e) => { console.warn('terrain worker failed, using main thread', e.message); this.workers = []; this.inflight.clear(); this.center = [NaN, NaN]; };
-        w.postMessage({ type: 'init', seed: world.seed, mods: world.modList() });
+        w.postMessage({ type: 'init', seed: world.seed, mods: world.modList(), cmods: (physics?.caves?.mods || []).map((m) => m.slice()) });
         this.workers.push(w);
       }
     } catch (e) { console.warn('Web Workers unavailable, generating on main thread', e); this.workers = []; }
@@ -72,6 +72,8 @@ export class Terrain {
   setViewDist(v) { this.viewDist = v; this.center = [NaN, NaN]; }
   lodFor(d) { return d <= 2 ? 1 : d <= 4 ? 2 : d <= 7 ? 4 : 8; }
 
+  // a hole dug somewhere: the workers cut the ground over it
+  syncCaveMod(m) { for (const w of this.workers) w.postMessage({ type: 'cmod', m }); }
   // Terrain edits from the server: [[ix, iz, value], ...]
   applyMods(list) {
     const dirty = new Set();
@@ -143,6 +145,9 @@ export class Terrain {
   onWorker(m) {
     this.inflight.delete(m.id);
     if (m.type === 'chunk') {
+      // the worker worked out which ground squares are open: remember them so nothing here recomputes them
+      const C = this.caves;
+      if (m.quads && C && C.mods.length === m.quads.nm) { if (C.openCache.size > 250000) C.openCache.clear(); const { i0, j0, n, mask } = m.quads; for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) C.openCache.set((i0 + a) * 100003 + (j0 + b), !!mask[b * n + a]); }
       if (this.wantT.get(m.k) !== m.lod || (this.ver.get(m.k) || 0) !== m.ver) return;
       this.installChunk(m.k, m.lod, m.ver, m);
     } else if (m.type === 'nodes') {
@@ -204,7 +209,7 @@ export class Terrain {
     return { ...d, ...out };
   }
   installChunk(k, lod, ver, d) {
-    d = this.cutHoles(d, lod);
+    if (!d.cut) d = this.cutHoles(d, lod);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(d.pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(d.col, 3));

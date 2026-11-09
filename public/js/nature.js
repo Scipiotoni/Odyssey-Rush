@@ -102,8 +102,9 @@ class Grass {
       for (const [k, c] of this.cells) if (!want.has(k)) { this.dispose(c); this.cells.delete(k); }
       this.queue = [...want].filter((k) => !this.cells.has(k)).sort((a, b) => { const [ax, az] = a.split(',').map(Number), [bx, bz] = b.split(',').map(Number); return Math.hypot(ax - cx, az - cz) - Math.hypot(bx - cx, bz - cz); });
     }
-    // build up to two cells per frame, nearest first
-    for (let n = 0; n < 2 && this.queue.length; n++) {
+    // build the nearest cell each frame, and a second one only if that was quick (no hitches when moving fast)
+    const t0 = performance.now();
+    for (let n = 0; n < 2 && this.queue.length && (n === 0 || performance.now() - t0 < 3); n++) {
       const k = this.queue.shift();
       if (this.cells.has(k)) continue;
       const [x, z] = k.split(',').map(Number);

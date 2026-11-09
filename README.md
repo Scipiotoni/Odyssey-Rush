@@ -248,7 +248,16 @@ they have a pickaxe and enough breath to hack their way out.
   oyster with a pearl.
 - **Boats**: wooden **rowboats** (oars, no fuel) on lakes and **skiff motorboats** (fuel) on the coast are moored along the
   shores, or use `/spawn rowboat|motorboat` beside water. They ride the waves, bank into turns and run aground on
-  beaches. In winter a boat on a lake is **frozen into the ice** until you break the ice around it.
+  beaches. In winter a boat on a lake is **frozen into the ice** until you break the ice around it. Rowboats are crafted
+  as kits (Workbench 1); motorboats and submarines are built at a Mobile Vehicle Bay (below).
+- **Mobile Vehicle Bay** (Workbench 1), like Subnautica's: hold it and click on open water at least 2.5 m deep and it
+  floats there. Press **E** on it and pick a **Skiff Motorboat** (12 s), **Mini Sub** (20 s) or **Pacific** (50 s, needs
+  deep water around the bay). It takes the materials, a glowing hologram of the vessel builds up next to the bay while
+  its drone works, and the finished vessel launches into the water (subs fully charged). **📦 Pack up** puts the bay back
+  in your inventory to take it somewhere else.
+- **Compact Rafts** (build menu → 🛟 Rafts, 120 wood + 1 rope each): floating foundations. Place the first one on open
+  water at least 1.2 m deep, connect more to it, and build walls, doorways, floors, stairs and roofs on them like on
+  foundations. A floating base out at sea.
 - **Underwater bases**: the new **Watertight Steel** building tier can be built in water of any depth. A room whose
   floor, ceiling and walls are all Watertight Steel holds **air**: you walk, breathe and stay dry inside, even on the
   sea floor. Walls get portholes, and doorways need a **Watertight Hatch** (Workbench 2). See *Base flooding* below for what happens under pressure.
@@ -265,9 +274,9 @@ they have a pickaxe and enough breath to hack their way out.
   Drop Batteries (25) or Power Cells (120) into the slots; when the one in use runs flat the next one is used.
 - **Fuel**: cars, the Atlas Hauler and the motorboat have a **fuel cap** (yellow ring: the left side of the jeeps, on
   top of the ATV's tank, on the boat's motor). Look at it, press **E** and put Low Grade Fuel in the tank.
-- **Mini Sub** (kit at Workbench 2): a one-seat bubble-canopy sub with twin ducted thrusters. Hold the kit and click to launch it into deep enough
+- **Mini Sub** (built at a Mobile Vehicle Bay; old kits still work): a one-seat bubble-canopy sub with twin ducted thrusters. Hold a kit and click to launch it into deep enough
   water. **W/S** thrust, **A/D** turn, **Space** rise, **Ctrl** dive. It noses down to dive and banks into turns.
-- **Pacific** (kit at Workbench 3, or `/spawn pacific`): a 37 m walk-in submarine, 8 m wide and 4 m tall inside, with
+- **Pacific** (built at a Mobile Vehicle Bay, or `/spawn pacific`): a 37 m walk-in submarine, 8 m wide and 4 m tall inside, with
   a glass bow dome, a dorsal sail, lit portholes, sponsons and twin ducted screws. Swim underneath and climb in through
   the **floor hatch** with **E**. Inside it's dry and breathable, with no sea water in the hull even far below the surface.
   - **Bridge** (bow): the helm and captain's chair under a big glass dome, with side stations and a sonar screen.
@@ -346,6 +355,13 @@ slows you by at most 8%. Hover a piece in your inventory to see its numbers.
 | **Arctic Parka** (WB1) | chest | very warm for winter and the snow |
 
 Movement: sprint, **slide** (crouch while sprinting), slide-jump, and armour that never bogs you down.
+
+### Performance
+
+World generation runs off the main thread so exploring stays smooth. Terrain chunks and the holes over cave mouths are
+built in background workers (they also tell the game which ground is open, so it never recomputes that itself), cave
+meshes are built in their own worker, grass cells and vehicle models are spread over several frames, and a dug hole
+keeps showing its old mesh until the new one is ready (no flicker).
 
 ### Survival
 

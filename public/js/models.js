@@ -225,6 +225,17 @@ export const TIER_MATS = TIERS.map((t) => new THREE.MeshLambertMaterial({ color:
 export function pieceGeometry(type, tier = 1) {
   return cached(`piece_${type}_${tier}`, () => {
     const parts = [];
+    if (type === 'raft') {
+      // compact raft: a lashed plank deck on three beams, floating on four barrels
+      for (let k = 0; k < 7; k++) parts.push(part(box(0.4, 0.07, 2.96), k % 2 ? 0x9a6a3c : 0x8a5c32, { x: -1.29 + k * 0.43, y: -0.035 }, 0.15));
+      for (const z of [-1.2, 0, 1.2]) parts.push(part(box(3.0, 0.12, 0.16), 0x5e3c22, { y: -0.13, z }));
+      for (const [x, z] of [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]]) {
+        parts.push(part(cyl(0.3, 0.3, 0.9, 12), 0x3a6a8a, { x, y: -0.42, z, rx: Math.PI / 2 }));
+        for (const dz of [-0.3, 0.3]) parts.push(part(cyl(0.31, 0.31, 0.05, 12), 0x24282c, { x, y: -0.42, z: z + dz, rx: Math.PI / 2 }));
+      }
+      for (const [x, z] of [[-1.45, -1.45], [1.45, -1.45], [-1.45, 1.45], [1.45, 1.45]]) parts.push(part(cyl(0.05, 0.05, 0.12, 6), 0xb89a62, { x, y: -0.05, z }));
+      return merge(parts);
+    }
     const col = TIERS[tier].color;
     const dk = new THREE.Color(col).multiplyScalar(0.7).getHex(), lt = new THREE.Color(col).multiplyScalar(1.15).getHex();
     for (const [cx, cy, cz, hx, hy, hz] of pieceBoxes(type)) {
@@ -438,6 +449,18 @@ export function deployGeometry(kind) {
       }
       case 'charger': return merge([part(box(0.5, 0.7, 0.3), 0x2e3236, { y: 0.35 }), part(box(0.36, 0.25, 0.04), 0x40c0ff, { y: 0.5, z: 0.16 }), part(box(0.4, 0.06, 0.2), 0xe07a20, { y: 0.12, z: 0.1 }), part(box(0.06, 0.12, 0.03), 0x40e070, { x: 0.15, y: 0.25, z: 0.16 })]);
       case 'wall_light': return merge([part(box(0.3, 0.12, 0.15), 0x3a3e44, { y: 0.15 }), part(box(0.26, 0.06, 0.12), 0xfff2c8, { y: 0.07, z: 0.01 })]);
+      case 'vehicle_bay': {
+        // Mobile Vehicle Bay: a floating pad on four pontoons, hazard-striped rim, a console mast and a parked builder drone
+        const Y = 0xe8b020, D = 0x2a2e33, W = 0xdfe3e3;
+        const parts = [part(box(3.2, 0.16, 3.2), W, { y: 0.1 }), part(box(2.6, 0.02, 2.6), 0x3a4048, { y: 0.19 })];
+        for (const [x, z] of [[-1.25, -1.25], [1.25, -1.25], [-1.25, 1.25], [1.25, 1.25]]) parts.push(part(cyl(0.38, 0.38, 0.9, 10), 0xe07a20, { x, y: -0.12, z, rx: Math.PI / 2 }));
+        for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; parts.push(part(box(0.8, 0.05, 0.12), k % 2 ? Y : D, { x: Math.cos(a) * 1.45, y: 0.2, z: Math.sin(a) * 1.45, ry: -a + Math.PI / 2 })); }
+        for (const s of [-1, 1]) { parts.push(part(box(3.2, 0.06, 0.12), Y, { y: 0.21, z: s * 1.56 })); parts.push(part(box(0.12, 0.06, 3.2), Y, { x: s * 1.56, y: 0.21 })); }
+        parts.push(part(box(0.3, 1.2, 0.3), D, { x: 1.25, y: 0.8, z: -1.25 }), part(box(0.5, 0.35, 0.06), 0x2ad0ff, { x: 1.25, y: 1.3, z: -1.08, rx: -0.3 }));
+        parts.push(part(cyl(0.32, 0.32, 0.14, 12), D, { y: 0.32 }), part(cyl(0.2, 0.26, 0.14, 12), 0x40c0ff, { y: 0.44 }));
+        for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + Math.PI / 4; parts.push(part(box(0.5, 0.04, 0.06), D, { x: Math.cos(a) * 0.4, y: 0.42, z: Math.sin(a) * 0.4, ry: -a }), part(cyl(0.12, 0.12, 0.03, 10), 0x9aa2aa, { x: Math.cos(a) * 0.62, y: 0.45, z: Math.sin(a) * 0.62 })); }
+        return merge(parts);
+      }
       case 'wall_locker': {
         const W = 0xd8dcd8, D = 0x4a4e54;
         return merge([part(box(0.9, 1.9, 0.5), W, { y: 0.95 }), part(box(0.02, 1.8, 0.02), D, { y: 0.95, z: 0.26 }), part(box(0.06, 0.25, 0.04), 0x9aa2aa, { x: 0.12, y: 1.0, z: 0.27 }), part(box(0.06, 0.25, 0.04), 0x9aa2aa, { x: -0.12, y: 1.0, z: 0.27 }),
