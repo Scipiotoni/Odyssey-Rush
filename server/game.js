@@ -767,16 +767,17 @@ export class Game {
     if (!h || !h.def.gun) return;
     const g = gunStats(h.stack), need = g.mag - (h.stack.a || 0);
     if (need <= 0) return;
-    const have = Inv.count(p.inv, g.ammo);
+    const have = this.settings.creative ? need : Inv.count(p.inv, g.ammo);
     const n = Math.min(need, have);
     if (n <= 0) return this.toast(p, `No ${ITEMS[g.ammo].name}`);
-    Inv.remove(p.inv, g.ammo, n);
+    if (!this.settings.creative) Inv.remove(p.inv, g.ammo, n);
     h.stack.a = (h.stack.a || 0) + n;
     this.sendInv(p);
   }
 
   damagePlayer(o, amt, src, hs = false, kind = '') {
     if (!o.alive) return;
+    if (this.settings.creative) { if (src && src.pid && src !== o) this.send(src, { t: 'hitmark', hs, kill: false }); return; } // creative: nothing hurts you
     if (src && src.pid && src !== o && this.sameClan(src, o)) return; // no friendly fire
     if (src && src.pid && src !== o && !this.settings.pvp) return; // PvP off on this server
     if (this.settings.difficulty === 'peaceful' && typeof src === 'string' && /^a /.test(src)) return; // animals don't hurt you
@@ -789,6 +790,7 @@ export class Game {
     else this.sendStats(o);
   }
   killPlayer(p, byName, src) {
+    if (this.settings.creative && byName !== 'suicide') { p.hp = this.maxHp(p); p.breath = BREATH_MAX; this.sendStats(p); return; } // creative: you can't die
     p.alive = false; p.hp = 0; p.deaths = (p.deaths || 0) + 1;
     p.lastDeath = { x: p.x, y: p.y, z: p.z };
     if (src && src.pid && src !== p) { src.kills = (src.kills || 0) + 1; this.addXp(src, 25); this.sendStats(src); }
@@ -1171,15 +1173,17 @@ export class Game {
     const ham = p.inv[p.sel];
     if (!ham || ham.id !== 'hammer') return;
     if (dist3(s, p) > BUILD_REACH + 3) return;
-    if (now() - (s.lastDmg || 0) < 30) return this.toast(p, 'Recently damaged — wait 30s to repair');
+    if (!this.settings.creative && now() - (s.lastDmg || 0) < 30) return this.toast(p, 'Recently damaged — wait 30s to repair');
     const frac = 1 - s.hp / s.mhp;
     let cost;
     if (s.kind === 'piece') cost = pieceCost(s.type, s.tier);
     else cost = { wood: 50 };
     const c = {};
     for (const k in cost) c[k] = Math.max(1, Math.ceil(cost[k] * frac * 0.5));
-    if (!Inv.hasAll(p.inv, c)) return this.toast(p, 'Not enough resources to repair');
-    Inv.removeAll(p.inv, c);
+    if (!this.settings.creative) {
+      if (!Inv.hasAll(p.inv, c)) return this.toast(p, 'Not enough resources to repair');
+      Inv.removeAll(p.inv, c);
+    }
     s.hp = s.mhp;
     this.updStruct(s); this.sendInv(p);
   }
@@ -1206,7 +1210,7 @@ export class Game {
       if (dist3(dw, p) > BUILD_REACH + 3) return;
       for (const s of this.structs.values()) if (s.kind === 'door' && s.parent === dw.id) return this.toast(p, 'Doorway already has a door');
       if (this.privBlocked(p, dw.x, dw.z, dw)) return this.toast(p, 'Building blocked');
-      Inv.remove(p.inv, st.id, 1);
+      if (!this.settings.creative) Inv.remove(p.inv, st.id, 1);
       const tier = DOOR_TIER[def.door.tier];
       this.addStruct({ id: this.id('S'), kind: 'door', type: 'door', doorTier: def.door.tier, tierIdx: tier, parent: dw.id, hp: def.door.hp, mhp: def.door.hp, owner: p.pid, x: dw.x, y: dw.y, z: dw.z, yaw: dw.yaw, open: false, created: now(), ...(dw.veh ? { veh: dw.veh, local: { ...dw.local } } : {}) });
       this.sendInv(p);
@@ -1224,7 +1228,7 @@ export class Game {
       else if (Math.abs(l.x) > 1.5 || l.z < Math.min(...zs) - 1.5 || l.z > Math.max(...zs) + 1.5 || l.y < vd.deck.y - 0.2 || l.y > vd.deck.y + vd.deck.levels * 3 + 0.3) return this.toast(p, 'Place it on the deck');
       if (MACHINES[def.deploy.kind] && !MACHINES[def.deploy.kind].portable) return this.toast(p, 'Base machines need a base — only the Portable Refiner works on vehicles');
       if (def.deploy.kind === 'tool_cupboard') return this.toast(p, "Tool cupboards can't go on vehicles — the hauler's owner and clan already control it");
-      Inv.remove(p.inv, st.id, 1);
+      if (!this.settings.creative) Inv.remove(p.inv, st.id, 1);
       if (!v.owner) v.owner = p.pid;
       const s = { id: this.id('S'), kind: 'deploy', type: def.deploy.kind, hp: def.deploy.hp, mhp: def.deploy.hp, owner: p.pid, veh: v.id, local: l, x: 0, y: 0, z: 0, yaw: 0, created: now() };
       if (def.deploy.slots) s.slots = Inv.emptySlots(def.deploy.slots);
@@ -1253,7 +1257,7 @@ export class Game {
       for (const s2 of this.structsNear(x, z)) if (s2.type === 'vehicle_bay' && Math.hypot(s2.x - x, s2.z - z) < 8) return this.toast(p, 'Another vehicle bay is too close');
       fy = 0.05;
     }
-    Inv.remove(p.inv, st.id, 1);
+    if (!this.settings.creative) Inv.remove(p.inv, st.id, 1);
     const s = { id: this.id('S'), kind: 'deploy', type: kind, hp: def.deploy.hp, mhp: def.deploy.hp, owner: p.pid, x, y: fy, z, yaw: num(m.yaw), created: now() };
     if (def.deploy.slots) s.slots = Inv.emptySlots(def.deploy.slots);
     if (kind === 'tool_cupboard') s.auth = [p.pid];
@@ -1371,9 +1375,9 @@ export class Game {
     const err = this.digBlocked(ix, iz);
     if (err) return this.toast(p, err);
     if (m.up) {
-      if (!Inv.hasAll(p.inv, DIG.raiseCost)) return this.toast(p, `Piling up dirt needs ${DIG.raiseCost.stone} Stone`);
+      if (!this.settings.creative && !Inv.hasAll(p.inv, DIG.raiseCost)) return this.toast(p, `Piling up dirt needs ${DIG.raiseCost.stone} Stone`);
       if (!this.editTerrain(ix, iz, DIG.step)) return this.toast(p, "Can't raise the ground any higher here");
-      Inv.removeAll(p.inv, DIG.raiseCost); this.sendInv(p);
+      if (!this.settings.creative) { Inv.removeAll(p.inv, DIG.raiseCost); this.sendInv(p); }
     } else {
       if (!this.editTerrain(ix, iz, -DIG.step)) {
         // at the bottom of a maxed-out hole you break through into the cave layer: a shaft with a ladder
@@ -1629,9 +1633,9 @@ export class Game {
     if (st.c === undefined) st.c = FLASH.start;
     if (m.a === 'charge') {
       if (st.c >= 99) return this.toast(p, '🔦 The flashlight is already fully charged');
-      const cell = Inv.count(p.inv, 'battery') ? 'battery' : Inv.count(p.inv, 'power_cell') ? 'power_cell' : null;
+      const cell = this.settings.creative ? 'power_cell' : Inv.count(p.inv, 'battery') ? 'battery' : Inv.count(p.inv, 'power_cell') ? 'power_cell' : null;
       if (!cell) return this.toast(p, '🔦 You need a Battery or a Power Cell to recharge it (or put it in a Charging Station)');
-      Inv.remove(p.inv, cell, 1);
+      if (!this.settings.creative) Inv.remove(p.inv, cell, 1);
       st.c = Math.min(100, st.c + FLASH[cell]);
       this.toast(p, `🔋 Flashlight charged to ${Math.round(st.c)}%`);
     } else {
@@ -1646,7 +1650,7 @@ export class Game {
       const st = p.inv[p.sel];
       if (!st || !st.on || !ITEMS[st.id]?.flashlight) continue;
       const before = Math.ceil(st.c ?? FLASH.start);
-      st.c = Math.max(0, (st.c ?? FLASH.start) - FLASH.drain * dt);
+      if (!this.settings.creative) st.c = Math.max(0, (st.c ?? FLASH.start) - FLASH.drain * dt);
       if (st.c <= 0) { st.on = false; this.toast(p, '🔦 The flashlight battery is flat — press R to put in a Battery'); this.sendInv(p); }
       else if (Math.ceil(st.c) !== before && Math.ceil(st.c) % 5 === 0) this.sendInv(p);
     }
@@ -1868,6 +1872,7 @@ export class Game {
         // burns its own fuel while it has work
         let on = false;
         if (this.machineJob(s, M) !== null || s.job) {
+          if (!(s.burn > 0) && this.settings.creative) s.burn = 60;
           if (!(s.burn > 0)) for (const [fid, secs] of Object.entries(M.burn)) if (Inv.count(s.slots, fid)) { Inv.remove(s.slots, fid, 1); s.burn = secs; s.dirty = true; break; }
           if (s.burn > 0) { s.burn -= dt; on = this.runRefiner(s, M, dt); } else s.st = 'nofuel';
         } else s.st = 'idle';
@@ -1895,6 +1900,7 @@ export class Game {
         if (!M.burn) continue;
         let run = false;
         if (!s.off && (gen < demand || stored < cap - 1)) {
+          if (!(s.burn > 0) && this.settings.creative) s.burn = 60;
           if (!(s.burn > 0)) for (const [fid, secs] of Object.entries(M.burn)) if (Inv.count(s.slots, fid)) { Inv.remove(s.slots, fid, 1); s.burn = secs; s.dirty = true; break; }
           if (s.burn > 0) { s.burn -= dt; gen += M.gen; run = true; }
         }
@@ -1987,9 +1993,9 @@ export class Game {
       const cur = st.mods[slot];
       if (mod && !canMod(st.id, slot, mod)) return this.toast(p, "That doesn't fit this weapon");
       if (mod === cur) return;
-      if (mod && Inv.count(p.inv, mod) <= 0) return this.toast(p, `You need a ${ITEMS[mod].name} — craft one at this bench`);
-      if (mod) Inv.remove(p.inv, mod, 1);
-      if (cur) { const left = Inv.add(p.inv, cur, 1); if (left) this.dropBag(p.x, p.y, p.z, [newStack(cur, 1)]); }
+      if (mod && !this.settings.creative && Inv.count(p.inv, mod) <= 0) return this.toast(p, `You need a ${ITEMS[mod].name} — craft one at this bench`);
+      if (mod && !this.settings.creative) Inv.remove(p.inv, mod, 1);
+      if (cur && !this.settings.creative) { const left = Inv.add(p.inv, cur, 1); if (left) this.dropBag(p.x, p.y, p.z, [newStack(cur, 1)]); }
       if (mod) st.mods[slot] = mod; else delete st.mods[slot];
       // the magazine may hold fewer rounds now: give the extra ammo back
       const g = gunStats(st);
@@ -2825,7 +2831,8 @@ export class Game {
     v.vel = Array.isArray(m.v) ? m.v.slice(0, 3).map((x) => num(x)) : [0, 0, 0];
     v.steer = num(m.s); v.rpm = num(m.r); v.thr = num(m.th);
     const vd = VEHICLES[v.type];
-    if (vd.power) v.fuel = Math.max(0, v.fuel - vd.fuelUse * dt * (0.12 + Math.abs(v.thr) + Math.abs(num(m.vt)) * 0.5) * (1 - subStats(vd, v.modules, ITEMS).eff));
+    if (this.settings.creative) v.fuel = vd.fuelCap; // creative: tanks and batteries never run down
+    else if (vd.power) v.fuel = Math.max(0, v.fuel - vd.fuelUse * dt * (0.12 + Math.abs(v.thr) + Math.abs(num(m.vt)) * 0.5) * (1 - subStats(vd, v.modules, ITEMS).eff));
     else if (Math.abs(v.thr) > 0.05) { v.fuel = Math.max(0, v.fuel - vd.fuelUse * dt * Math.abs(v.thr)); }
     if (v.fuel <= 0.001) this.drawCells(v);
     for (const pid of v.seats) { const o = this.byPid.get(pid); if (o) { o.x = v.x; o.y = v.y; o.z = v.z; this.updateRegions(o); } }
@@ -2854,17 +2861,17 @@ export class Game {
     if (!v.broken) {
       // field repair with hammer: metal fragments restore health
       if (v.hp >= def.hp) return this.toast(p, 'Vehicle is in perfect condition');
-      const n = Math.min(Inv.count(p.inv, 'metal_frags'), Math.ceil((def.hp - v.hp) / 5));
+      const n = this.settings.creative ? Math.ceil((def.hp - v.hp) / 5) : Math.min(Inv.count(p.inv, 'metal_frags'), Math.ceil((def.hp - v.hp) / 5));
       if (n <= 0) return this.toast(p, 'Need Metal Fragments to patch it up');
-      Inv.remove(p.inv, 'metal_frags', n); v.hp = Math.min(def.hp, v.hp + n * 5);
+      if (!this.settings.creative) Inv.remove(p.inv, 'metal_frags', n); v.hp = Math.min(def.hp, v.hp + n * 5);
       this.sendInv(p); this.toast(p, `🔧 Patched to ${Math.floor(v.hp)}/${def.hp}`);
       return;
     }
     // install whatever parts we have
     let installed = [];
     for (const k in v.needs) {
-      const n = Math.min(v.needs[k], Inv.count(p.inv, k));
-      if (n > 0) { Inv.remove(p.inv, k, n); v.needs[k] -= n; installed.push(`${n} ${ITEMS[k].name}`); }
+      const n = this.settings.creative ? v.needs[k] : Math.min(v.needs[k], Inv.count(p.inv, k));
+      if (n > 0) { if (!this.settings.creative) Inv.remove(p.inv, k, n); v.needs[k] -= n; installed.push(`${n} ${ITEMS[k].name}`); }
       if (v.needs[k] <= 0) delete v.needs[k];
     }
     if (!Object.keys(v.needs).length) {
@@ -2977,7 +2984,7 @@ export class Game {
     const type = d.launch, def = VEHICLES[type];
     const spot = this.findWaterSpot(type, p.x, p.z, p.yaw + Math.PI, null, def.sub ? def.half[1] * 2 + 1.5 : 1.2);
     if (!spot) return this.toast(p, def.sub ? `Needs deeper open water (over ${Math.ceil(def.half[1] * 2 + 1.5)} m) in front of you` : 'Needs open water in front of you');
-    Inv.remove(p.inv, st.id, 1); this.sendInv(p);
+    if (!this.settings.creative) Inv.remove(p.inv, st.id, 1); this.sendInv(p);
     const id = this.id('V');
     const y = def.sub ? -def.half[1] * 0.45 : spot.y;
     const nv = { id, type, x: spot.x, y, z: spot.z, q: [0, Math.sin(spot.yaw / 2), 0, Math.cos(spot.yaw / 2)], vel: [0, 0, 0], hp: def.hp, broken: false, needs: {}, fuel: Math.round(def.fuelCap * (def.sub ? 0.5 : 0.3)), steer: 0, rpm: 0, var: Math.floor(Math.random() * 1000), seats: new Array(def.seats.length).fill(0), attached: new Set(), owner: p.pid };
@@ -3189,7 +3196,7 @@ export class Game {
       if (now() - (p.lastSt || 0) > 5) continue; // tab closed / hidden / connection stalled: no hunger or thirst while away
       p.food = Math.max(0, p.food - 0.045 * dt * this.settings.hunger);
       p.water = Math.max(0, p.water - 0.07 * dt * this.settings.hunger);
-      if ((p.food <= 0 || p.water <= 0) && this.settings.difficulty !== 'peaceful') { p.hp -= 0.6 * dt; if (p.hp <= 0) { this.killPlayer(p, p.food <= 0 ? 'starvation' : 'dehydration'); continue; } }
+      if ((p.food <= 0 || p.water <= 0) && this.settings.difficulty !== 'peaceful' && !this.settings.creative) { p.hp -= 0.6 * dt; if (p.hp <= 0) { this.killPlayer(p, p.food <= 0 ? 'starvation' : 'dehydration'); continue; } }
       else if (p.food > 60 && p.water > 60 && p.hp < this.maxHp(p)) p.hp = Math.min(this.maxHp(p), p.hp + 0.25 * dt);
       // cold: tundra / night / water
       const b = this.world.biome(p.x, p.z);
@@ -3204,7 +3211,7 @@ export class Game {
       for (const s of ARMOR_SLOTS) if (p.armor[s]) { const a = ITEMS[p.armor[s].id].armor; warmth += a.cold + (a.swim && wet ? 0.6 : 0); }
       for (const s of this.structsNear(p.x, p.z, 0)) if ((s.type === 'campfire' || s.type === 'furnace') && !s.off && dist3(s, p) < 5) warmth += 1;
       p.cold = Math.max(0, cold - warmth);
-      if (p.cold > 0.5) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }
+      if (p.cold > 0.5 && !this.settings.creative) { p.hp -= (p.cold - 0.5) * 1.2 * dt; if (p.hp <= 0) { this.killPlayer(p, 'the cold'); continue; } }
       // breath: holding it underwater, drowning when it runs out
       const head = p.y + (p.cr ? 1.05 : 1.55);
       // inside a sealed room or the Pacific the water line is whatever has leaked in (none if it's dry)
@@ -3213,7 +3220,7 @@ export class Game {
       p.dry = wl !== null && head > wl;
       const inVol = this.caves.inVolume(p.x, p.y + 0.3, p.z), lake = inVol ? this.caves.lakeLevel(p.x, p.z) : -Infinity;
       const under = !p.vehicle && (wl !== null ? head < wl - 0.05 : inVol ? this.caves.flooded(p.x, p.z) || head < lake - 0.05 : head < -0.1 && this.world.ground(p.x, p.z) < head);
-      if (inVol && p.y < LAVA_Y + 0.4 && !p.vehicle) { p.hp -= 25 * dt; this.send(p, { t: 'hurt', dmg: 25 }); if (p.hp <= 0) { this.killPlayer(p, 'lava'); continue; } }
+      if (inVol && p.y < LAVA_Y + 0.4 && !p.vehicle && !this.settings.creative) { p.hp -= 25 * dt; this.send(p, { t: 'hurt', dmg: 25 }); if (p.hp <= 0) { this.killPlayer(p, 'lava'); continue; } }
       if (p.breath === undefined) p.breath = BREATH_MAX;
       // the deeper you are, the faster a breath (or a tank) runs out
       const drain = breathDrain(-head);
@@ -3222,7 +3229,8 @@ export class Game {
       if (under && tmax && tank.air > 0) tank.air = Math.max(0, tank.air - dt * drain);
       else if (under) p.breath = Math.max(0, p.breath - dt * drain);
       else { p.breath = Math.min(BREATH_MAX, p.breath + dt * 5); if (tmax) tank.air = Math.min(tmax, tank.air + dt * 6); } // tanks top up from the air
-      if (under && p.breath <= 0) { p.hp -= 9 * dt; if (p.hp <= 0) { p.breath = BREATH_MAX; this.killPlayer(p, 'drowning'); continue; } }
+      if (this.settings.creative) { p.hp = this.maxHp(p); p.food = 100; p.water = 100; p.breath = BREATH_MAX; p.cold = 0; if (tmax) tank.air = tmax; } // creative: never hungry, cold or out of breath
+      else if (under && p.breath <= 0) { p.hp -= 9 * dt; if (p.hp <= 0) { p.breath = BREATH_MAX; this.killPlayer(p, 'drowning'); continue; } }
       this.sendStats(p);
     }
     for (const p of this.players.values()) if (p.online && p.queue.length) this.sendQueue(p);

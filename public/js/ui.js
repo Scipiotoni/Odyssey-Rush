@@ -420,7 +420,7 @@ export class UI {
     html += `<div class="rgroup">${station ? `${ITEMS[station].name} recipes` : 'Hand crafting — press E on a camp fire, furnace or workbench for more'}</div><div class="rgrid">`;
     const tipOf = (r) => `${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''} · ${r.time}s|${Object.entries(r.cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`;
     for (const r of recipes.filter((r) => !q || ITEMS[r.out].name.toLowerCase().includes(q))) {
-      const can = affordable(g.inv, r.cost);
+      const can = isFree(g) || affordable(g.inv, r.cost);
       html += `<div class="slot rslot ${can ? 'can' : 'no'} ${this.selRecipe === r.id ? 'sel' : ''}" data-r="${r.id}" data-tip="${tipOf(r)}">${iconHTML(r.out)}${r.n > 1 ? `<span class="n">${r.n}</span>` : ''}</div>`;
     }
     html += '</div>';
@@ -441,7 +441,7 @@ export class UI {
     const det = $('craftdetail');
     const r = RECIPES[this.selRecipe];
     if (!r || !recipes.includes(r)) { det.innerHTML = `<span class="hint">${station ? 'Select a recipe. Crafted items appear in the output slots above — drag them to your inventory.' : 'Select a recipe. Workbench, furnace and camp fire items are made at the station itself: walk up to it and press E.'}</span>`; return; }
-    const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${countItem(g.inv, k) < v ? 'miss' : ''}">${iconHTML(k, 'gico')} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
+    const cost = Object.entries(r.cost).map(([k, v]) => `<span class="${!isFree(g) && countItem(g.inv, k) < v ? 'miss' : ''}">${iconHTML(k, 'gico')} ${v} ${ITEMS[k].name} (${countItem(g.inv, k)})</span>`).join('');
     det.innerHTML = `<div class="bigico">${iconHTML(r.out, 'bico')}</div><b>${ITEMS[r.out].name}${r.n > 1 ? ' ×' + r.n : ''}</b> <small>${r.station ? 'Requires ' + STATION_NAMES[r.station] : ''}</small><div class="cost">${cost}</div><div>${itemDesc({ id: r.out, n: 1 }, true)}</div><div style="margin-top:6px"><button id="c1">Craft</button><button id="c5" class="alt">×5</button></div>`;
     const st = station ? c.id : undefined;
     $('c1').onclick = () => { g.net.send({ t: 'craft', r: r.id, n: 1, st }); audio.click(); };
@@ -464,8 +464,8 @@ export class UI {
     const g = this.game, b = g.building;
     if (!b.tab) b.tab = b.cat === 'construction' ? 't' + (b.tier || 0) : 'furniture';
     const hex = (n) => '#' + n.toString(16).padStart(6, '0');
-    const have = (id) => countItem(g.inv, id);
-    const costHTML = (c) => Object.entries(c).map(([k, v]) => `<span class="${have(k) >= v ? 'ok' : 'short'}">${iconHTML(k, 'cico')}${v} ${esc(ITEMS[k].name)} <small>(${have(k)})</small></span>`).join('');
+    const have = (id) => (isFree(g) ? Infinity : countItem(g.inv, id));
+    const costHTML = (c) => Object.entries(c).map(([k, v]) => `<span class="${have(k) >= v ? 'ok' : 'short'}">${iconHTML(k, 'cico')}${v} ${esc(ITEMS[k].name)} ${isFree(g) ? '' : `<small>(${have(k)})</small>`}</span>`).join('');
     const tabs = this.buildTabs();
     let cards = [];
     const matTab = /^t\d+$/.test(b.tab);
@@ -731,6 +731,8 @@ export class UI {
   }
 }
 
+// creative servers: nothing costs anything
+export const isFree = (g) => !!g?.rules?.creative;
 export function countItem(inv, id) { let n = 0; for (const s of inv) if (s && s.id === id) n += s.n; return n; }
 function affordable(inv, cost) { for (const k in cost) if (countItem(inv, k) < cost[k]) return false; return true; }
 export function itemDesc(st, short) {

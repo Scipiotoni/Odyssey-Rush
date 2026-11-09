@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ITEMS, RECIPES } from '/shared/items.js';
 import { GUN_SLOTS, MODS, FINISHES, SLOT_NAMES, gunStats, isModdable } from '/shared/gunmods.js';
 import { makeItemModel } from './items3d.js';
-import { iconHTML, countItem } from './ui.js';
+import { iconHTML, countItem, isFree } from './ui.js';
 import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -107,7 +107,7 @@ export class Gunsmith {
     $('gsslots').innerHTML = html;
     $('gsslots').querySelectorAll('[data-slot]').forEach((el) => el.addEventListener('click', () => {
       const mod = el.dataset.mod || null, slot = el.dataset.slot;
-      if (mod && mods[slot] !== mod && countItem(inv, mod) <= 0) { g.ui.toast(`Craft a ${MODS[mod].name} at this bench first (Fabrication list)`); return; }
+      if (mod && mods[slot] !== mod && !isFree(g) && countItem(inv, mod) <= 0) { g.ui.toast(`Craft a ${MODS[mod].name} at this bench first (Fabrication list)`); return; }
       this.send({ slot, mod });
     }));
     $('gsslots').querySelectorAll('[data-fin]').forEach((el) => el.addEventListener('click', () => this.send({ finish: el.dataset.fin })));

@@ -92,7 +92,7 @@ export class Home {
       ${chk('f_pvp', st.pvp, '🔫 PvP (players can hurt each other)')}
       ${chk('f_animals', st.animals, '🐺 Animals')}
       ${chk('f_sharks', st.sharks, '🦈 Sharks')}
-      ${chk('f_creative', st.creative, '🧱 Creative (free building & crafting, item spawner, owner flies with Z)')}
+      ${chk('f_creative', st.creative, '🧱 Creative (everything free, no dying, item spawner, owner flies with Z)')}
       <div class="srvnote full"><b>Peaceful</b>: animals and sharks don't hurt you, no starving. <b>Hardcore</b>: dying wipes your level, kills and respawn points.</div>
       <div class="srvbtns full"><button id="f_save">${s ? '💾 Save settings' : '➕ Create server'}</button>${s ? '<button id="f_code" class="alt">🔁 New invite code</button><button id="f_wipe" class="alt">🏝️ New island…</button><button id="f_del" class="alt danger">🗑️ Delete…</button>' : ''}</div>
       <div id="srvmsg" class="srvnote full"></div></div>`;

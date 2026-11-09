@@ -9,7 +9,7 @@ import { ITEMS, NODES, FIST } from '/shared/items.js';
 import { makeItemModel, makeFPArm } from './models.js';
 import { gunStats, modsKey } from '/shared/gunmods.js';
 import { audio } from './audio.js';
-import { countItem } from './ui.js';
+import { countItem, isFree } from './ui.js';
 
 const _d = new THREE.Vector3();
 const ease = (t) => t * t * (3 - 2 * t);
@@ -271,7 +271,7 @@ export class Held {
       this.updateLaser(!!this.gun?.laser && this.ads < 0.5);
       if ((d.gun.auto ? L : LP) && performance.now() >= this.coolUntil && !g.player.sprinting) {
         if ((st.a || 0) > 0) this.fire(st, d);
-        else { audio.click(); this.coolUntil = performance.now() + 300; if (countItem(g.inv, d.gun.ammo) > 0) this.startReload(st, d); }
+        else { audio.click(); this.coolUntil = performance.now() + 300; if (isFree(g) || countItem(g.inv, d.gun.ammo) > 0) this.startReload(st, d); }
       }
       if (this.gun?.scope) g.ui.prompt(this.ads > 0.85 ? '' : '<small><kbd>RMB</kbd> scope</small>');
       else this.idlePrompt();
@@ -336,7 +336,7 @@ export class Held {
 
   startReload(st, d) {
     const gs = gunStats(st);
-    if ((st.a || 0) >= gs.mag || countItem(this.game.inv, gs.ammo) <= 0) return;
+    if ((st.a || 0) >= gs.mag || (!isFree(this.game) && countItem(this.game.inv, gs.ammo) <= 0)) return;
     this.reload = this.reloadDur = gs.reload;
     audio.click();
   }
@@ -426,7 +426,7 @@ export class Held {
     p.pitch += rk * 0.5; p.yaw += (Math.random() - 0.5) * rk * 0.4;
     g.net.send({ t: 'fire', sel: g.sel, o: [o.x, o.y, o.z], d: [base.x, base.y, base.z], hits, e: ends });
     g.ui.renderHotbar();
-    if (gun.mag === 1 && countItem(g.inv, gun.ammo) > 0) setTimeout(() => this.startReload(st, d), 250);
+    if (gun.mag === 1 && (isFree(g) || countItem(g.inv, gun.ammo) > 0)) setTimeout(() => this.startReload(st, d), 250);
   }
 
   launchRocket(from, to) {

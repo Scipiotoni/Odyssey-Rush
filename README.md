@@ -24,8 +24,12 @@ The home screen has a **server browser**:
 - **Create**: make your own server (up to 3 per device). Pick a name, public or private, an optional password, a world seed
   (or a random island), max players, **difficulty** (🕊️ Peaceful: animals and sharks don't hurt you and you can't starve ·
   ⚔️ Normal · 💀 Hardcore: dying wipes your level, kills and respawn points), day and season length, gather rate, hunger and
-  thirst rate, PvP, animals and sharks on or off, and **Creative** (free building and crafting, the item spawner for everyone,
-  and the owner flies with **Z**).
+  thirst rate, PvP, animals and sharks on or off, and **Creative** (the item spawner for everyone, and the owner flies with **Z**).
+  On a Creative server **nothing costs anything**: building, upgrading and crafting are free, repairs (structures and
+  vehicles, with no 30 s wait) are free, placing furniture, doors, deployables and vehicle launchers keeps the item,
+  reloads, gun mods and flashlight charges are free, vehicles never run out of fuel or charge and machines never need
+  fuel. And **you can't die**: nothing hurts you (falls, animals, players, lava, the cold), and you never get hungry,
+  thirsty or run out of breath.
 - **My servers**: change any setting later and it applies live for everyone online. You can also roll a new invite code,
   generate a brand-new island, or delete the server. The owner has admin commands on their own server.
 

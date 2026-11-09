@@ -4,7 +4,7 @@ import { RAFT_Y, isBase, REINFORCE, reinforceCost, G, LEVEL_H, BUILD_REACH, PIEC
 import { POI_FLAT } from '/shared/worldgen.js';
 import { ITEMS } from '/shared/items.js';
 import { pieceGeometry, deployGeometry } from './models.js';
-import { countItem } from './ui.js';
+import { countItem, isFree } from './ui.js';
 
 const _l = new THREE.Vector3(), _iq = new THREE.Quaternion(), _yq = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
 const OK = new THREE.MeshBasicMaterial({ color: 0x40ff60, transparent: true, opacity: 0.35, depthWrite: false });
@@ -117,7 +117,7 @@ export class Builder {
     const dk = this.deckHit(hit);
     if (dk) {
       let { plan, err } = this.updateDeckPlan(type, dk);
-      if (!err) { const cost = pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
+      if (!err) { const cost = isFree(g) ? {} : pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
       this.plan = plan; this.err = err;
       this.setGhost('p:' + type, () => pieceGeometry(type, 1));
       this.ghost.material = err ? BAD : OK;
@@ -171,7 +171,7 @@ export class Builder {
       if (!err) err = this.foundationGround(nb, 0, 0);
       plan = { type, x: nb.x, y: nb.y, z: nb.z, yaw, t: { x: nb.x, y: nb.y, z: nb.z, yaw } };
     } else err = 'Place a foundation first';
-    if (plan && !err) { const cost = pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
+    if (plan && !err) { const cost = isFree(g) ? {} : pieceCost(type, this.tier); for (const k in cost) if (countItem(g.inv, k) < cost[k]) { err = `Need ${cost[k]} ${ITEMS[k].name}`; break; } }
     this.plan = plan; this.err = err;
     if (plan) {
       this.setGhost('p:' + type, () => pieceGeometry(type, 1));
