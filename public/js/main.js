@@ -699,6 +699,16 @@ class Game {
           else if (s.type === 'sleeping_bag' || s.type === 'bed') { const nm = s.type === 'bed' ? 'bed' : 'sleeping bag'; text = s.o === this.pid ? `Your ${nm} (respawn point)` : `<kbd>E</kbd> Claim ${nm}`; if (E && s.o !== this.pid) this.net.send({ t: 'use', id: s.id }); }
           else if (['campfire', 'furnace', 'workbench1', 'workbench2', 'workbench3', 'gunsmith', 'fabricator'].includes(s.type)) { text = `<kbd>E</kbd> Use ${ITEMS[s.type].name}`; if (E) this.net.send({ t: 'open', id: s.id }); }
           else if (s.k === 'deploy') { text = `${ITEMS[s.type]?.name}`; }
+          else if (s.type === 'moonpool') {
+            const kid = [...this.vehicleViews.values()].find((o) => o.type === 'minisub' && Math.hypot(o.pos.x - s.x, o.pos.z - s.z) < 0.8 && Math.abs(o.pos.y - s.y - 0.95) < 0.8);
+            if (kid) { text = `<b>Moonpool</b> — Mini Sub 🔋 ${kid.fuel}/${VEHICLES.minisub.fuelCap}<br><kbd>E</kbd> Climb in and launch it`; if (E) this.net.send({ t: 'mplaunch', id: s.id }); }
+            else target = 'Moonpool — drive a Mini Sub up under it to dock (charges from the base power)';
+          }
+          else if (s.type === 'sub_dock') {
+            if (s.tgt && s.ext) { text = '<b>Pacific Docking Arm</b> — clamped on<br><kbd>E</kbd> Board the Pacific'; if (E) this.net.send({ t: 'armboard', id: s.id }); }
+            else target = "Pacific Docking Arm — leave the Pacific's helm with its side near here to dock";
+          }
+          else if (s.type === 'dock') target = 'Boat Dock — get out of a boat beside it to moor it';
           else if (s.k === 'piece') target = `${TIERS[s.tier].name} ${PIECES[s.type].name}<div class="tbar"><div style="width:${(s.hp / s.mhp) * 100}%"></div></div>`;
         }
       } else if (hit.kind === 'v') {
@@ -721,7 +731,7 @@ class Game {
             if (E) this.net.send({ t: 'open', id: 'vf:' + v.id });
           } else if (def.interior && hit.col.role !== 'helm') {
             const inside = this.inSubInterior(this.player.pos);
-            target = `${def.name}${inside ? (v.leaks?.length ? ` — ⚠️ ${v.leaks.length} hull leak${v.leaks.length > 1 ? 's' : ''}! Seal them with a Repair Tool` : ' — helm at the bow, docking bay amidships, engine room at the stern') : ' — swim under it to the hatch to climb in'}`;
+            target = `${def.name}${inside ? (v.leaks?.length ? ` — ⚠️ ${v.leaks.length} hull leak${v.leaks.length > 1 ? 's' : ''}! Seal them with a Repair Tool` : ' — helm at the bow, vehicle bay amidships, engine room at the stern') : ' — swim under it to the hatch to climb in'}`;
           } else if (def.deck && !def.interior && hit.col !== v.colliders[1]) {
             target = `${def.name} deck${v.nAttached ? '' : ' — build on it with the Building Plan'}`;
           } else {
@@ -750,7 +760,14 @@ class Game {
     }
     const pp = this.player.pos;
     if (!text && !this.vehicle && this.alive) {
-      // the Pacific's floor hatch: climb in from below, drop out from inside
+      // the Pacific's floor hatch: climb in from below, drop out from inside (and a docking arm's clamp in the side)
+      if (!this._armT || performance.now() - this._armT > 500) { this._armT = performance.now(); this._arms = [...this.structures.map.values()].map((e) => e.s).filter((q) => q.type === 'sub_dock' && q.tgt); }
+      for (const a of this._arms || []) {
+        const v = this.vehicleViews.get(a.tgt), I = v && VEHICLES[v.type].interior;
+        if (!I || v.pos.distanceTo(pp) > 25) continue;
+        const l = pp.clone().sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
+        if (Math.abs(l.x - a.side * (I.hx - 0.7)) < 1.4 && Math.abs(l.z - a.lz) < 1.6 && l.y > I.y0 - 0.3 && l.y < I.y1) { text = '<kbd>E</kbd> Step out onto the docking arm'; if (E) this.net.send({ t: 'armboard', id: a.id, out: 1 }); break; }
+      }
       for (const v of this.vehicleViews.values()) {
         const def = VEHICLES[v.type];
         if (!def.hatch || v.pos.distanceTo(pp) > 25) continue;
@@ -1011,6 +1028,13 @@ class Game {
         const dd = dp.distanceTo(s.pos);
         if (dd > 7) this.vehicle.dockArmed = true; // only after you've backed out of the bay once
         if (this.vehicle.dockArmed && dd < 3.2 && performance.now() - (this.lastDock || 0) > 3000) { this.lastDock = performance.now(); this.net.send({ t: 'dock' }); }
+      }
+      // moonpools in bases: come up under one to dock
+      if (!this._mpT || performance.now() - this._mpT > 500) { this._mpT = performance.now(); this._mps = [...this.structures.map.values()].map((e) => e.s).filter((q) => q.type === 'moonpool' && Math.hypot(q.x - s.pos.x, q.z - s.pos.z) < 60); }
+      for (const q of this._mps || []) {
+        const dd = Math.hypot(q.x - s.pos.x, q.y - 3 - s.pos.y, q.z - s.pos.z);
+        if (dd > 7) this.vehicle.mpArmed = true;
+        if (this.vehicle.mpArmed && dd < 3.2 && performance.now() - (this.lastDock || 0) > 3000) { this.lastDock = performance.now(); this.net.send({ t: 'dock', mp: q.id }); }
       }
     }
     this.structures.updateAttached(this.vehicleViews);

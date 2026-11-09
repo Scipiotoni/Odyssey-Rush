@@ -38,14 +38,18 @@ export class Builder {
   // where the aim crosses the sea surface (for rafts and things that float), or null
   waterPoint(reach = BUILD_REACH + 2) {
     const cam = this.game.camera.position, dir = this.game.held.dir();
-    if (dir.y > -0.02 || cam.y < 0) return null;
+    // swimming (eyes at the waterline): a spot a few metres ahead on the water
+    if (cam.y < 0.5) { const l = Math.hypot(dir.x, dir.z) || 1; return new THREE.Vector3(cam.x + (dir.x / l) * 3.5, 0, cam.z + (dir.z / l) * 3.5); }
+    if (dir.y > -0.02) return null;
     const t = -cam.y / dir.y;
     return t < reach ? new THREE.Vector3(cam.x + dir.x * t, 0, cam.z + dir.z * t) : null;
   }
   raftWater(b, gx, gz) {
     if (Math.abs(b.y - RAFT_Y) > 0.3) return 'Rafts float at sea level — start a separate raft base on the water';
     const w = this.game.world, t = pieceTransform(b, { type: 'raft', gx, gz, level: 0 });
-    for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 0]]) { const [dx, dz] = rotY(cx, cz, t.yaw); if (w.ground(t.x + dx, t.z + dz) > -1.2) return 'Rafts need open water (1.2 m deep) under them'; }
+    let wet = 0;
+    for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) { const [dx, dz] = rotY(cx, cz, t.yaw); if (w.ground(t.x + dx, t.z + dz) < -0.25) wet++; }
+    if (w.ground(t.x, t.z) > -0.5 || wet < 2) return 'Rafts need open water under them (at least 0.5 m deep)';
     return null;
   }
   foundationGround(b, gx, gz) {
@@ -139,9 +143,18 @@ export class Builder {
       }
       err = canPlaceAny(type, gx, gz, level, g.structures.index(b.id), false);
       if (!err && type === 'foundation') err = this.foundationGround(b, gx, gz);
-      if (!err && type === 'raft') err = this.raftWater(b, gx, gz);
-      const t = pieceTransform(b, { type, gx, gz, level, rot: this.rot });
-      plan = { type, bid: b.id, gx, gz, level, rot: this.rot, t };
+      if (type === 'raft' && Math.abs(b.y - RAFT_Y) > 0.3) {
+        // next to a foundation on the shore: the raft snaps to its grid but floats at sea level (its own raft base)
+        const t = pieceTransform(b, { type, gx, gz, level: 0 }), nb = { x: t.x, y: RAFT_Y, z: t.z, yaw: b.yaw };
+        if (!err) err = this.raftWater(nb, 0, 0);
+        const other = g.structures.nearestBuilding(t.x, t.z, 2.2);
+        if (!err && other && other.id !== b.id) err = 'Occupied';
+        plan = { type, align: b.id, gx, gz, level: 0, rot: this.rot, t: { x: t.x, y: RAFT_Y, z: t.z, yaw: b.yaw } };
+      } else {
+        if (!err && type === 'raft') err = this.raftWater(b, gx, gz);
+        const t = pieceTransform(b, { type, gx, gz, level, rot: this.rot });
+        plan = { type, bid: b.id, gx, gz, level, rot: this.rot, t };
+      }
     } else if (type === 'raft') {
       // the first raft of a new floating base: anywhere on open water
       if (!point || Math.abs(point.y) > 0.2) err = 'Aim at the water';
@@ -174,6 +187,7 @@ export class Builder {
     if (!p) return;
     if (this.err) { this.game.ui.toast(this.err); return; }
     if (p.veh) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, veh: p.veh, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
+    else if (p.align) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, align: p.align, gx: p.gx, gz: p.gz, level: 0, rot: p.rot });
     else if (p.bid) this.game.net.send({ t: 'build', type: p.type, tier: this.tier, bid: p.bid, gx: p.gx, gz: p.gz, level: p.level, rot: p.rot });
     else this.game.net.send({ t: 'build', type: p.type, tier: this.tier, x: p.x, y: p.y, z: p.z, yaw: p.yaw });
   }

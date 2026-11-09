@@ -255,9 +255,21 @@ they have a pickaxe and enough breath to hack their way out.
   deep water around the bay). It takes the materials, a glowing hologram of the vessel builds up next to the bay while
   its drone works, and the finished vessel launches into the water (subs fully charged). **📦 Pack up** puts the bay back
   in your inventory to take it somewhere else.
-- **Compact Rafts** (build menu → 🛟 Rafts, 120 wood + 1 rope each): floating foundations. Place the first one on open
-  water at least 1.2 m deep, connect more to it, and build walls, doorways, floors, stairs and roofs on them like on
-  foundations. A floating base out at sea.
+- **Compact Rafts** (build menu → 🛟 Rafts & Docks, 120 wood + 1 rope each): floating foundations. Place the first
+  one on open water (you can do it while swimming), connect more to it, and build walls, doorways, floors, stairs and
+  roofs on them like on foundations. Aim next to a **foundation on the shore** and the raft snaps to its grid (it
+  floats at sea level, a step down from the foundation).
+- **Docks** (same tab), all snapping onto foundations and rafts:
+  - **⚓ Boat Dock** (150 wood, 2 rope): a pier on pilings that sticks out over the water. Get out of a boat right next
+    to it and the boat **moors** alongside, parallel to the pier, and you step onto the dock.
+  - **🌀 Moonpool** (metal, titanium, glass, gears): needs water at least 3 m deep under it. Drive a **Mini Sub** up
+    under it and it's lifted onto the cradle; you climb out on the deck. It **recharges from the base's power** (Solar
+    Panel / Fuel Generator / Battery Bank in the same base). Press **E** on the moonpool to climb in and drop back into
+    the water.
+  - **🔗 Pacific Docking Arm** (metal, titanium, gears): goes on an outer edge of the base, facing water at least 8 m
+    deep. Bring the Pacific alongside and leave the helm: the arm **extends** across and clamps onto the hull, the
+    Pacific stays moored and charges from the base's power. Press **E** at the arm to board, and **E** inside by the
+    clamp to step back out. Throttle away from the helm to cast off; the arm retracts.
 - **Underwater bases**: the new **Watertight Steel** building tier can be built in water of any depth. A room whose
   floor, ceiling and walls are all Watertight Steel holds **air**: you walk, breathe and stay dry inside, even on the
   sea floor. Walls get portholes, and doorways need a **Watertight Hatch** (Workbench 2). See *Base flooding* below for what happens under pressure.

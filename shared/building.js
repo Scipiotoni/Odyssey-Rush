@@ -41,10 +41,14 @@ export const PIECES = {
   stairs: { name: 'Stairs', slot: 'cell', costMul: 1, icon: '🪜' },
   roof: { name: 'Roof', slot: 'cell', costMul: 0.75, icon: '🔺' },
   // a floating foundation: placed on water (1.2 m deep or more), its deck sits RAFT_Y above sea level; walls etc. go on it
-  raft: { name: 'Compact Raft', slot: 'cell', costMul: 1, icon: '🛟', raft: true, cost: { wood: 120, rope: 1 } },
+  raft: { name: 'Compact Raft', slot: 'cell', costMul: 1, icon: '🛟', raft: true, tier: 1, cost: { wood: 120, rope: 1 } },
+  // docks: they snap onto foundations and rafts like any piece of the base
+  dock: { name: 'Boat Dock', slot: 'cell', costMul: 1, icon: '⚓', tier: 1, cost: { wood: 150, rope: 2 } },              // pier boats moor at
+  moonpool: { name: 'Moonpool', slot: 'cell', costMul: 1, icon: '🌀', tier: 3, cost: { metal_frags: 300, titanium: 4, glass: 2, gears: 2 } }, // a Mini Sub docks up into it
+  sub_dock: { name: 'Pacific Docking Arm', slot: 'edge', costMul: 1, icon: '🔗', tier: 3, cost: { metal_frags: 400, titanium: 6, gears: 3 } }, // extends and clamps to a Pacific's side
 };
 export const RAFT_Y = 0.35;
-export const isBase = (t) => t === 'foundation' || t === 'raft'; // ground-level pieces walls stand on
+export const isBase = (t) => t === 'foundation' || t === 'raft' || t === 'dock' || t === 'moonpool'; // ground-level pieces walls stand on
 export const PIECE_ORDER = ['foundation', 'wall', 'doorway', 'window', 'half_wall', 'floor', 'roof', 'stairs'];
 
 export function pieceCost(type, tier) {
@@ -75,6 +79,9 @@ export function pieceBoxes(type, open = false) {
   switch (type) {
     case 'foundation': return [[0, -1.5, 0, 1.5, 1.5, 1.5]];
     case 'raft': return [[0, -0.2, 0, 1.5, 0.2, 1.5]];
+    case 'dock': return [[0, -0.12, 0, 1.5, 0.12, 1.5]];
+    case 'moonpool': return [[0, -0.12, 0, 1.5, 0.12, 1.5], [1.25, 0.55, -1.25, 0.18, 0.55, 0.18]];
+    case 'sub_dock': return [[0, 0.55, 0, 0.75, 0.55, 0.45]];
     case 'floor': return [[0, -0.1, 0, 1.5, 0.1, 1.5]];
     case 'roof': return [[0, -0.1, 0, 1.5, 0.1, 1.5], [0, 0.35, 0, 0.9, 0.35, 0.9]];
     case 'wall': return [[0, 1.5, 0, 1.5, 1.5, 0.1]];
@@ -159,6 +166,12 @@ export function canPlace(type, gx, gz, level, idx, isFirst) {
     const below = idx.get(slotKey(gx, gz, level, 'cell'));
     // stairs live in their own key space so they can sit on a floor/foundation cell
     return below ? null : 'Place on a foundation or floor';
+  }
+  // the Pacific docking arm goes on an outer edge: base on one side, open water on the other
+  if (type === 'sub_dock') {
+    if (level !== 0) return 'Docking arms go on the edge of the base floor';
+    const n = edgeCells(gx, gz).filter(([cx, cz]) => isBase(idx.get(slotKey(cx, cz, 0, 'cell'))?.type)).length;
+    return n === 1 ? null : n === 0 ? 'Needs a foundation, raft or dock beside it' : 'Put it on an outer edge of the base';
   }
   // edge pieces
   for (const [cx, cz] of edgeCells(gx, gz)) {

@@ -1,11 +1,30 @@
 // Client mirror of server structures: meshes, colliders and building indexes.
 import * as THREE from 'three';
 const _m = new THREE.Matrix4(), _ml = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _up = new THREE.Vector3(0, 1, 0);
-import { worldBoxes, buildIndex, slotKey, TIERS, LEVEL_H } from '/shared/building.js';
+import { worldBoxes, buildIndex, slotKey, TIERS, LEVEL_H, invRotY } from '/shared/building.js';
 import { sealedRooms, cellAt, roomOfCell } from '/shared/sealed.js';
 import { reinforceGeometry, TIER_MATS, pieceGeometry, makeDoor, deployGeometry, MAT, DOOR_MATS } from './models.js';
 import { paintGeometry, paintedMaterial, applyDecals } from './paint.js';
 import { WORLD_MAT } from './season.js';
+
+// the Pacific docking arm: a telescoping covered walkway reaching out over the water; clamps onto the hull when docked
+const ARM_M = new THREE.MeshStandardMaterial({ color: 0x9aa2aa, roughness: 0.4, metalness: 0.6, flatShading: true });
+const ARM_Y = new THREE.MeshStandardMaterial({ color: 0xe8b020, roughness: 0.5, flatShading: true });
+const ARM_G = new THREE.MeshPhongMaterial({ color: 0x9adcf0, transparent: true, opacity: 0.3, shininess: 120, side: THREE.DoubleSide, depthWrite: false });
+function dockArm(s) {
+  const g = new THREE.Group(), [lx, lz] = invRotY(s.out[0], s.out[1], s.yaw);
+  g.rotation.y = Math.atan2(lx, lz);
+  const L = Math.max(0.6, s.ext || 0), n = Math.max(1, Math.ceil(L / 3));
+  for (let i = 0; i < n; i++) {
+    const len = Math.min(3, L - i * 3), w = 1.3 - i * 0.08, z0 = 0.45 + i * 3 + len / 2;
+    const seg = new THREE.Group(); seg.position.set(0, 0.95, z0); g.add(seg);
+    seg.add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, len), ARM_M));
+    for (const sx of [-1, 1]) { const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.9, len), ARM_G); rail.position.set(sx * w / 2, 0.5, 0); seg.add(rail); const top = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, len), ARM_Y); top.position.set(sx * w / 2, 0.95, 0); seg.add(top); }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, len), ARM_G); roof.position.y = 1.9; seg.add(roof);
+  }
+  if (s.tgt && s.ext) { const clamp = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.12, 6, 16), ARM_Y); clamp.position.set(0, 1.5, 0.45 + L); g.add(clamp); }
+  return g;
+}
 
 export class Structures {
   constructor(scene, physics, effects) {
@@ -58,7 +77,7 @@ export class Structures {
     const old = this.map.get(s.id);
     if (old) {
       // tier change or door open/close -> rebuild visuals; hp only -> just store
-      const visual = old.s.tier !== s.tier || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth || old.s.pa !== s.pa || JSON.stringify(old.s.dc) !== JSON.stringify(s.dc);
+      const visual = old.s.tier !== s.tier || old.s.ext !== s.ext || old.s.rf !== s.rf || old.s.open !== s.open || old.s.auth !== s.auth || old.s.pa !== s.pa || JSON.stringify(old.s.dc) !== JSON.stringify(s.dc);
       old.s = s;
       if (s.k === 'piece') this.buildings.get(s.bid)?.pieces.set(s.id, s);
       if (!visual) return;
@@ -69,6 +88,7 @@ export class Structures {
       const pg = pieceGeometry(s.type, s.tier || 0);
       obj = new THREE.Mesh(s.pa !== undefined ? paintGeometry(pg, `p_${s.type}_${s.tier || 0}`, s.pa) : pg, s.type === 'roof' ? WORLD_MAT : MAT); // snow settles on roofs
       if (s.rf) { const rg = reinforceGeometry(s.type, s.rf); if (rg) obj.add(new THREE.Mesh(rg, MAT)); }
+      if (s.type === 'sub_dock' && s.out) obj.add(dockArm(s));
       if (s.b) {
         let b = this.buildings.get(s.bid);
         if (!b) { b = { id: s.bid, x: s.b[0], y: s.b[1], z: s.b[2], yaw: s.b[3], pieces: new Map() }; this.buildings.set(s.bid, b); }

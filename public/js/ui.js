@@ -458,7 +458,7 @@ export class UI {
   // No Man's Sky-style build menu: a tab per building material, then Furniture, Base Items and Large Electronics.
   // Cards show what each costs (red where you're short); Q / E switch tabs, click a card to build it.
   buildTabs() {
-    return [...TIERS.map((t, i) => ({ k: 't' + i, label: t.name, sw: t.color })), { k: 'raft', label: '🛟 Rafts' }, { k: 'furniture', label: '🪑 Furniture' }, { k: 'base', label: '🧰 Base Items' }, { k: 'tech', label: '⚡ Large Electronics' }];
+    return [...TIERS.map((t, i) => ({ k: 't' + i, label: t.name, sw: t.color })), { k: 'raft', label: '🛟 Rafts & Docks' }, { k: 'furniture', label: '🪑 Furniture' }, { k: 'base', label: '🧰 Base Items' }, { k: 'tech', label: '⚡ Large Electronics' }];
   }
   renderBuildMenu(hoverKey = null) {
     const g = this.game, b = g.building;
@@ -473,8 +473,8 @@ export class UI {
       const tier = +b.tab.slice(1);
       cards = PIECE_ORDER.map((t) => { const c = pieceCost(t, tier); return { key: t, piece: true, name: PIECES[t].name, icon: PIECES[t].icon, ok: Object.entries(c).every(([k, v]) => have(k) >= v), cost: c, sel: !b.furn && b.piece === t && b.tier === tier, desc: `${TIERS[tier].name} ${PIECES[t].name}` }; });
     } else if (b.tab === 'raft') {
-      const c = pieceCost('raft', 1);
-      cards = [{ key: 'raft', piece: true, name: PIECES.raft.name, icon: PIECES.raft.icon, ok: Object.entries(c).every(([k, v]) => have(k) >= v), cost: c, sel: !b.furn && b.piece === 'raft', desc: 'Compact Raft — a floating foundation. Place it on open water and build walls, floors and more on it.' }];
+      const DESC = { raft: 'Compact Raft — a floating foundation. Place it on open water (or snap it next to a foundation on the shore) and build on it.', dock: 'Boat Dock — a pier that snaps to foundations and rafts. Get out of a boat next to it to moor it.', moonpool: 'Moonpool — snaps into a foundation/raft base over water 3 m deep. Drive a Mini Sub up under it to dock; it charges from the base power.', sub_dock: 'Pacific Docking Arm — goes on an outer edge of the base, facing deep water. Leave the Pacific\'s helm with its side near it: the arm extends and clamps on.' };
+      cards = ['raft', 'dock', 'moonpool', 'sub_dock'].map((k) => { const c = pieceCost(k, PIECES[k].tier); return { key: k, piece: true, name: PIECES[k].name, icon: PIECES[k].icon, ok: Object.entries(c).every(([i, v]) => have(i) >= v), cost: c, sel: !b.furn && b.piece === k, desc: DESC[k] }; });
     } else {
       const ids = Object.keys(ITEMS).filter((id) => { const d = ITEMS[id], dp = d.deploy; if (!dp && !d.door) return false; if (b.tab === 'tech') return !!dp?.tech; if (b.tab === 'furniture') return !!dp?.furniture; return !dp?.tech && !dp?.furniture; });
       cards = ids.map((id) => { const n = have(id), r = RECIPES.find((x) => x.out === id); return { key: id, name: ITEMS[id].name, img: icons.get(id), icon: ITEMS[id].icon, n, ok: n > 0, recipe: r, sel: b.furn === id }; });
@@ -505,7 +505,7 @@ export class UI {
       el.addEventListener('click', () => {
         if (!c.piece && !c.ok) { this.toast(`Craft a ${c.name} first`); return; }
         audio.click();
-        if (c.piece) { b.piece = c.key; b.tier = c.key === 'raft' ? 1 : +b.tab.slice(1); b.furn = null; b.cat = 'construction'; } else { b.furn = c.key; b.cat = 'furniture'; }
+        if (c.piece) { b.piece = c.key; b.tier = PIECES[c.key].tier ?? +b.tab.slice(1); b.furn = null; b.cat = 'construction'; } else { b.furn = c.key; b.cat = 'furniture'; }
         this.close();
       });
     });

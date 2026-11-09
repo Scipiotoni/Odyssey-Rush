@@ -236,6 +236,30 @@ export function pieceGeometry(type, tier = 1) {
       for (const [x, z] of [[-1.45, -1.45], [1.45, -1.45], [-1.45, 1.45], [1.45, 1.45]]) parts.push(part(cyl(0.05, 0.05, 0.12, 6), 0xb89a62, { x, y: -0.05, z }));
       return merge(parts);
     }
+    if (type === 'dock') {
+      // a wooden pier: plank deck, stringers, four pilings down into the water, cleats at the corners
+      for (let k = 0; k < 7; k++) parts.push(part(box(0.4, 0.06, 2.96), k % 2 ? 0x9a6a3c : 0x8a5c32, { x: -1.29 + k * 0.43, y: -0.03 }, 0.15));
+      for (const z of [-1.3, 1.3]) parts.push(part(box(3.0, 0.14, 0.16), 0x5e3c22, { y: -0.13, z }));
+      for (const [x, z] of [[-1.35, -1.35], [1.35, -1.35], [-1.35, 1.35], [1.35, 1.35]]) { parts.push(part(cyl(0.12, 0.14, 6, 8), 0x4a3020, { x, y: -3.0, z })); parts.push(part(box(0.18, 0.06, 0.08), 0x2a2a2a, { x: x * 0.9, y: 0.04, z: z * 0.9 })); }
+      return merge(parts);
+    }
+    if (type === 'moonpool') {
+      // a moonpool: steel deck with hazard-ringed bay doors (a Mini Sub comes up through them), a cradle and a console
+      parts.push(part(box(3.0, 0.2, 3.0), 0x6a7078, { y: -0.1 }));
+      parts.push(part(box(2.2, 0.03, 2.6), 0x3a4048, { y: 0.01 }));
+      for (const sx of [-1, 1]) { parts.push(part(box(0.08, 0.035, 2.7), 0xe8b020, { x: sx * 1.12, y: 0.02 })); parts.push(part(box(2.3, 0.035, 0.08), 0xe8b020, { y: 0.02, z: sx * 1.33 })); }
+      parts.push(part(box(0.03, 0.04, 2.5), 0x40c0ff, { y: 0.03 }));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(part(box(0.16, 0.5, 0.16), 0x3a3e44, { x: sx * 0.75, y: 0.25, z: sz * 0.9 }), part(box(0.5, 0.08, 0.2), 0x8a9096, { x: sx * 0.55, y: 0.5, z: sz * 0.9 }));
+      parts.push(part(box(0.32, 1.1, 0.32), 0x2a2e33, { x: 1.25, y: 0.55, z: -1.25 }), part(box(0.28, 0.24, 0.04), 0x2ad0ff, { x: 1.25, y: 0.95, z: -1.08, rx: -0.3 }));
+      for (const [x, z] of [[-1.35, -1.35], [1.35, -1.35], [-1.35, 1.35], [1.35, 1.35]]) parts.push(part(cyl(0.16, 0.18, 5, 8), 0x5a6068, { x, y: -2.7, z }));
+      return merge(parts);
+    }
+    if (type === 'sub_dock') {
+      // the Pacific docking arm's base: a housing on the edge with a hydraulic drum (the arm itself is added per piece)
+      parts.push(part(box(1.5, 1.1, 0.9), 0x8a9096, { y: 0.55 }), part(box(1.52, 0.12, 0.92), 0xe8b020, { y: 1.1 }));
+      parts.push(part(cyl(0.3, 0.3, 1.3, 12), 0x3a3e44, { y: 0.75, rz: Math.PI / 2 }), part(box(0.5, 0.3, 0.04), 0x40e070, { y: 0.55, z: 0.46 }));
+      return merge(parts);
+    }
     const col = TIERS[tier].color;
     const dk = new THREE.Color(col).multiplyScalar(0.7).getHex(), lt = new THREE.Color(col).multiplyScalar(1.15).getHex();
     for (const [cx, cy, cz, hx, hy, hz] of pieceBoxes(type)) {

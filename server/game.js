@@ -3,7 +3,7 @@
 import crypto from 'crypto';
 import { World, CHUNK, GRID, POI_FLAT, HALF, BIOME, chunkKey } from '../shared/worldgen.js';
 import { BAY_BUILDS, STATION_KINDS, STATION_OUTPUT_SLOTS, stationRecipes, FIST, DIG, ITEMS, RECIPES, NODES, NODE_RESPAWN, rollLoot, STATION_PROVIDERS, STATION_RANGE, ANIMALS, INV_SIZE, HOTBAR, newStack, ARMOR_SLOTS, backpackRows } from '../shared/items.js';
-import { RAFT_Y, isBase, G, LEVEL_H, slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
+import { RAFT_Y, isBase, edgeCells, G, LEVEL_H, slotKey, pieceMaxHp, REINFORCE, reinforceCost, TIERS, PIECES, pieceCost, pieceTransform, canPlaceAny, buildIndex, unsupportedPieces, worldBoxes, BUILD_REACH, PRIV_RADIUS, rotY, invRotY } from '../shared/building.js';
 import { VEHICLES, VEHICLE_ENTER_RANGE, SPAWNABLE, restHeight, quatRotate, quatYaw, subStats } from '../shared/vehicles.js';
 import { hash3, mulberry32 } from '../shared/noise.js';
 import * as Inv from './inv.js';
@@ -331,7 +331,9 @@ export class Game {
       case 'icebreak': return this.onIceBreak(p, m);
       case 'repair_leak': return this.onRepairLeak(p, m);
       case 'undock': return this.onUndock(p, m);
-      case 'dock': return this.onDock(p, m);
+      case 'dock': return m.mp ? this.onMoonpoolDock(p, m) : this.onDock(p, m);
+      case 'mplaunch': return this.onMoonpoolLaunch(p, m);
+      case 'armboard': return this.onArmBoard(p, m);
       case 'fishcast': return this.onFishCast(p, m);
       case 'fishreel': return this.onFishReel(p, m);
       case 'throwrock': return this.onThrowRock(p, m);
@@ -612,6 +614,7 @@ export class Game {
     if (s.kind === 'door') { o.dt = s.doorTier; o.open = !!s.open; o.parent = s.parent; }
     if (s.type === 'tool_cupboard') o.auth = s.auth;
     if (s.off) o.off = 1;
+    if (s.out) { o.out = s.out; o.ext = s.ext || 0; o.tgt = s.tgt || 0; o.side = s.side || 1; o.lz = s.lz || 0; }
     if (s.build) o.bb = [s.build.v, r2(Math.max(0, s.build.until - now())), BAY_BUILDS[s.build.v].time, r2(s.build.spot.x), r2(s.build.spot.z), r2(s.build.spot.yaw || 0)];
     if (s.pw) o.pw = 1;
     if (MACHINES[s.type]?.store) o.ch = Math.round(((s.charge || 0) / MACHINES[s.type].store) * 100);
@@ -1022,11 +1025,34 @@ export class Game {
   checkRaftWater(b, gx, gz) {
     if (Math.abs(b.y - RAFT_Y) > 0.3) return 'Rafts float at sea level — start a separate raft base on the water';
     const t = pieceTransform(b, { type: 'raft', gx, gz, level: 0 });
-    for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 0]]) {
-      const [dx, dz] = rotY(cx, cz, t.yaw);
-      if (this.world.ground(t.x + dx, t.z + dz) > -1.2) return 'Rafts need open water (1.2 m deep) under them';
-    }
+    // afloat: water at least 0.5 m deep in the middle and under at least two corners (the side against the shore can
+    // rest on the beach, so rafts snap onto foundations at the water's edge)
+    let wet = 0;
+    for (const [cx, cz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) { const [dx, dz] = rotY(cx, cz, t.yaw); if (this.world.ground(t.x + dx, t.z + dz) < -0.25) wet++; }
+    if (this.world.ground(t.x, t.z) > -0.5 || wet < 2) return 'Rafts need open water under them (at least 0.5 m deep)';
     if (this.caves.inVolume(t.x, 0, t.z)) return 'Rafts need open water';
+    return null;
+  }
+  // which way a docking arm on this edge faces: from the base cell beside it out over the water (world x, z)
+  dockOut(b, gx, gz) {
+    const idx = buildIndex(this.piecesOf(b.id));
+    const [c1, c2] = edgeCells(gx, gz), base = isBase(idx.get(slotKey(c1[0], c1[1], 0, 'cell'))?.type) ? c1 : c2, open = base === c1 ? c2 : c1;
+    const a = pieceTransform(b, { type: 'foundation', gx: base[0], gz: base[1], level: 0 }), o = pieceTransform(b, { type: 'foundation', gx: open[0], gz: open[1], level: 0 });
+    const l = Math.hypot(o.x - a.x, o.z - a.z) || 1;
+    return [r2((o.x - a.x) / l), r2((o.z - a.z) / l)];
+  }
+  checkDockPiece(type, b, gx, gz, level) {
+    if (!['dock', 'moonpool', 'sub_dock'].includes(type)) return null;
+    const t = pieceTransform(b, { type, gx, gz, level });
+    if (type === 'dock' && this.world.ground(t.x, t.z) > b.y - 0.4) return 'The dock has to stick out over the water';
+    if (type === 'moonpool' && this.world.ground(t.x, t.z) > -3) return 'A moonpool needs water at least 3 m deep under it';
+    if (type === 'sub_dock') {
+      const idx = buildIndex(this.piecesOf(b.id)), [c1, c2] = edgeCells(gx, gz);
+      const base = isBase(idx.get(slotKey(c1[0], c1[1], 0, 'cell'))?.type) ? c1 : c2, open = base === c1 ? c2 : c1;
+      const o = pieceTransform(b, { type: 'foundation', gx: open[0], gz: open[1], level: 0 }), a = pieceTransform(b, { type: 'foundation', gx: base[0], gz: base[1], level: 0 });
+      const ox = (o.x - a.x) / 3, oz = (o.z - a.z) / 3;
+      for (const d of [4, 8, 12]) if (this.world.ground(t.x + ox * d, t.z + oz * d) > -8) return 'The docking arm needs deep water (8 m) in front of it for the Pacific';
+    }
     return null;
   }
   piecesOf(bid) { const out = []; for (const s of this.structs.values()) if (s.bid === bid && s.kind === 'piece') out.push(s); return out; }
@@ -1037,20 +1063,29 @@ export class Game {
     if (!PIECES[type]) return;
     const plan = p.inv[p.sel];
     if (!plan || plan.id !== 'building_plan') return this.toast(p, 'Equip a building plan');
-    const tier = type === 'raft' ? 1 : Math.max(0, Math.min(TIERS.length - 1, num(m.tier, 0) | 0)); // rafts are wood
+    const tier = PIECES[type].tier ?? Math.max(0, Math.min(TIERS.length - 1, num(m.tier, 0) | 0)); // rafts and docks come in one material
     const cost = pieceCost(type, tier);
     if (!this.settings.creative && !Inv.hasAll(p.inv, cost)) return this.toast(p, `Need ${Object.entries(cost).map(([k, v]) => `${v} ${ITEMS[k].name}`).join(', ')}`);
     let b, gx = num(m.gx) | 0, gz = num(m.gz) | 0, level = num(m.level) | 0;
     let isNew = false;
     if (m.veh) return this.onDeckBuild(p, m, type, tier, cost, gx, gz, level);
     if (m.bid && this.buildings.has(String(m.bid))) b = this.buildings.get(String(m.bid));
-    else {
+    else if (type === 'raft' && m.align && this.buildings.has(String(m.align))) {
+      // a raft snapped to a foundation on the shore: it starts its own floating base at sea level, lined up with the
+      // foundation's grid right next to it
+      const b0 = this.buildings.get(String(m.align));
+      if (!isBase(type) || canPlaceAny('raft', gx, gz, 0, buildIndex(this.piecesOf(b0.id)), false)) return this.toast(p, 'Snap it right next to a foundation');
+      const t0 = pieceTransform(b0, { type: 'raft', gx, gz, level: 0 });
+      for (const s2 of this.structsNear(t0.x, t0.z)) if (s2.kind === 'piece' && Math.hypot(s2.x - t0.x, s2.z - t0.z) < 2.2) return this.toast(p, 'Occupied');
+      b = { id: this.id('B'), x: t0.x, y: RAFT_Y, z: t0.z, yaw: b0.yaw, owner: p.pid };
+      gx = 0; gz = 0; level = 0; isNew = true;
+    } else {
       if (!isBase(type)) return this.toast(p, 'Start with a foundation (or a raft on water)');
       const x = num(m.x), y = type === 'raft' ? RAFT_Y : num(m.y), z = num(m.z);
       b = { id: this.id('B'), x, y, z, yaw: num(m.yaw), owner: p.pid };
       gx = 0; gz = 0; level = 0; isNew = true;
       // keep new buildings from overlapping others
-      for (const s of this.structsNear(x, z)) if (s.kind === 'piece' && Math.hypot(s.x - x, s.z - z) < 4.5) return this.toast(p, 'Too close to another building');
+      for (const s of this.structsNear(x, z)) if (s.kind === 'piece' && Math.hypot(s.x - x, s.z - z) < 4.5) return this.toast(p, type === 'raft' ? 'Too close to another building — aim next to a foundation to snap the raft to it' : 'Too close to another building');
     }
     const t = pieceTransform(b, { type, gx, gz, level, rot: m.rot | 0 });
     if (dist3(t, p) > BUILD_REACH + 4) return this.toast(p, 'Too far away');
@@ -1060,12 +1095,18 @@ export class Game {
     if (err) return this.toast(p, err);
     if (type === 'foundation') { const ge = this.checkFoundationGround(b, gx, gz, tier); if (ge) return this.toast(p, ge); }
     if (type === 'raft') { const re = this.checkRaftWater(b, gx, gz); if (re) return this.toast(p, re); }
+    const dockErr = this.checkDockPiece(type, b, gx, gz, level);
+    if (dockErr) return this.toast(p, dockErr);
     if (isNew) this.buildings.set(b.id, b);
     if (!this.settings.creative) Inv.removeAll(p.inv, cost);
     const s = { id: this.id('S'), created: now(), kind: 'piece', type, tier, reinf: 0, hp: pieceMaxHp(tier), mhp: pieceMaxHp(tier), bid: b.id, gx, gz, level, rot: (m.rot | 0) & 3, owner: p.pid, ...t };
+    if (type === 'sub_dock') s.out = this.dockOut(b, gx, gz);
     this.addStruct(s);
     this.sendInv(p);
     this.addXp(p, 1);
+    if (type === 'dock') this.toast(p, '⚓ Boat dock built — get out of a boat next to it to moor it');
+    if (type === 'moonpool') this.toast(p, '🌀 Moonpool built — drive a Mini Sub up under it to dock (it charges from the base power)');
+    if (type === 'sub_dock') this.toast(p, '🔗 Docking arm built — leave the Pacific\'s helm with its side near the arm to dock it');
   }
 
   onDeckBuild(p, m, type, tier, cost, gx, gz, level) {
@@ -1093,7 +1134,7 @@ export class Game {
     const ham = p.inv[p.sel];
     if (!ham || ham.id !== 'hammer') return;
     const tier = num(m.tier, s.tier + 1) | 0;
-    if (s.type === 'raft') return this.toast(p, 'Rafts stay wooden — reinforce them with R instead');
+    if (PIECES[s.type]?.tier !== undefined) return this.toast(p, `${PIECES[s.type].name}s can't change material — reinforce them with R instead`);
     if (tier <= s.tier || tier >= TIERS.length) return;
     if (dist3(s, p) > BUILD_REACH + 3) return;
     if (this.privBlocked(p, s.x, s.z, s)) return this.toast(p, 'Building blocked');
@@ -1624,6 +1665,100 @@ export class Game {
     this.sendInv(p);
   }
 
+  // ------------------------------------------------------------ docks: boat docks, moonpools, the Pacific docking arm
+  piecesNear(x, z, r, type) { const out = []; for (const s of this.structsNear(x, z)) if (s.kind === 'piece' && s.type === type && Math.hypot(s.x - x, s.z - z) < r) out.push(s); return out; }
+  basePowered(bid) { const g = this.gridPower?.get(bid); return !!g && (g.gen > 0 || g.stored > 1); }
+  // a boat left next to a dock moors alongside it: parallel to the side nearest the boat that isn't against more base
+  mooreBoat(v) {
+    const def = VEHICLES[v.type];
+    let best = null, bd = Infinity;
+    for (const d of this.piecesNear(v.x, v.z, 10, 'dock')) {
+      const b = this.buildings.get(d.bid), idx = b ? buildIndex(this.piecesOf(b.id)) : new Map();
+      for (const [sx, sz, ngx, ngz] of [[1, 0, 2, 0], [-1, 0, -2, 0], [0, 1, 0, 2], [0, -1, 0, -2]]) {
+        if (idx.get(slotKey(d.gx + ngx, d.gz + ngz, 0, 'cell'))) continue; // that side is more base, not water
+        const [wx, wz] = rotY(sx, sz, d.yaw), off = 1.5 + def.half[0] + 0.3;
+        const bx = d.x + wx * off, bz = d.z + wz * off, dist = Math.hypot(v.x - bx, v.z - bz);
+        if (dist < bd && this.world.ground(bx, bz) < -0.6) { bd = dist; best = { d, bx, bz, yaw: Math.atan2(wz, -wx) /* along the side */ }; }
+      }
+    }
+    if (!best || bd > 9) return null;
+    // keep the boat's heading (or its reverse) closest to the side's direction
+    let yaw = best.yaw; const cur = quatYaw(v.q); if (Math.cos(cur - yaw) < 0) yaw += Math.PI;
+    v.x = best.bx; v.z = best.bz; v.y = def.float ?? 0.1; v.q = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)]; v.vel = [0, 0, 0]; v.mooredAt = best.d.id;
+    return best.d;
+  }
+  dockStep(d, v) { const dx = d.x - v.x, dz = d.z - v.z, l = Math.hypot(dx, dz) || 1; return { x: d.x - (dx / l) * 0.6, y: d.y + 0.1, z: d.z - (dz / l) * 0.6 }; }
+  // drive a Mini Sub up under a moonpool: it's lifted onto the cradle, you climb out on the deck
+  onMoonpoolDock(p, m) {
+    const c = p.vehicle && this.vehicles.get(p.vehicle.id), s = this.structs.get(String(m.mp));
+    if (!c || p.vehicle.seat !== 0 || c.type !== 'minisub' || !s || s.type !== 'moonpool') return;
+    if (Math.hypot(c.x - s.x, c.z - s.z) > 4.5 || c.y > s.y - 1 || c.y < s.y - 9) return;
+    for (const o of this.vehicles.values()) if (o.dockedAt === s.id) return this.toast(p, 'The moonpool is taken');
+    c.dockedAt = s.id; c.vel = [0, 0, 0]; c.x = s.x; c.y = s.y + 0.95; c.z = s.z; c.q = [0, Math.sin(s.yaw / 2), 0, Math.cos(s.yaw / 2)];
+    c.seats[0] = 0; p.vehicle = null;
+    this.send(p, { t: 'v_seat', id: null });
+    const [ox, oz] = rotY(1.9, 0, s.yaw);
+    this.teleport(p, s.x + ox, s.y + 0.1, s.z + oz);
+    this.toast(p, '🌀 Docked in the moonpool' + (this.basePowered(s.bid) ? ' — charging from the base' : ' (build power in the base to charge it)'));
+  }
+  onMoonpoolLaunch(p, m) {
+    const s = this.structs.get(String(m.id));
+    if (!s || s.type !== 'moonpool' || !p.alive || p.vehicle || dist3(s, p) > 5) return;
+    const c = [...this.vehicles.values()].find((o) => o.dockedAt === s.id);
+    if (!c) return this.toast(p, 'The moonpool is empty — drive a Mini Sub up under it to dock');
+    c.dockedAt = null; c.x = s.x; c.y = Math.min(s.y - 2.6, -1.6); c.z = s.z;
+    c.seats[0] = p.pid; p.vehicle = { id: c.id, seat: 0 }; p.x = c.x; p.y = c.y; p.z = c.z;
+    this.send(p, { t: 'v_seat', id: c.id, seat: 0, v: this.sVehicleFull(c) });
+    this.toast(p, '🌀 Launched from the moonpool');
+  }
+  // the Pacific docking arm: reaches out from the base edge and clamps to the hull side of a Pacific alongside
+  armDock(v) {
+    const D = VEHICLES[v.type], [hx, , hz] = D.half;
+    for (const a of this.piecesNear(v.x, v.z, hz + 16, 'sub_dock')) {
+      if (!a.out || a.tgt) continue;
+      // march out from the arm until we touch the hull's side
+      const [qx, qy, qz, qw] = v.q, inv = [-qx, -qy, -qz, qw];
+      for (let d = 1.5; d <= 14; d += 0.25) {
+        const wx = a.x + a.out[0] * d, wz = a.z + a.out[1] * d, l = quatRotate(inv, [wx - v.x, a.y + 0.8 - v.y, wz - v.z]);
+        if (Math.abs(l[0]) < hx + 0.1 && Math.abs(l[2]) < hz - 3 && Math.abs(l[1]) < D.half[1] + 1.5) {
+          a.ext = r2(d); a.tgt = v.id; v.moored = a.id; v.vel = [0, 0, 0];
+          a.side = Math.sign(l[0]) || 1; a.lz = r2(l[2]);
+          this.updStruct(a);
+          return a;
+        }
+      }
+    }
+    return null;
+  }
+  unmoor(v) {
+    const a = this.structs.get(v.moored);
+    v.moored = null;
+    if (a) { a.ext = 0; a.tgt = null; this.updStruct(a); }
+    const p = this.byPid.get(v.seats[0]); if (p) this.toast(p, '🔗 Cast off from the docking arm');
+  }
+  // walk the docking arm into the Pacific (and back out)
+  onArmBoard(p, m) {
+    const a = this.structs.get(String(m.id));
+    if (!a || a.type !== 'sub_dock' || !a.tgt || !p.alive || p.vehicle) return;
+    const v = this.vehicles.get(a.tgt);
+    if (!v) { a.tgt = null; a.ext = 0; this.updStruct(a); return; }
+    const I = VEHICLES[v.type].interior, w = (l) => { const q = quatRotate(v.q, l); return { x: v.x + q[0], y: v.y + q[1], z: v.z + q[2] }; };
+    if (m.out) { if (!this.inSubInterior(v, p)) return; this.teleport(p, a.x + a.out[0] * 0.4, a.y + 0.05, a.z + a.out[1] * 0.4); return; }
+    if (dist3(a, p) > 4) return;
+    const t = w([a.side * (I.hx - 0.7), I.y0 + 0.05, Math.max(-I.hz + 1.5, Math.min(I.hz - 1.5, a.lz))]);
+    this.teleport(p, t.x, t.y, t.z);
+  }
+  tickDocks(dt) {
+    // charge docked subs from their base's power
+    for (const v of this.vehicles.values()) {
+      const s = v.moored ? this.structs.get(v.moored) : v.dockedAt ? this.structs.get(v.dockedAt) : null;
+      if (!s) { if (v.moored) v.moored = null; if (v.dockedAt) v.dockedAt = null; continue; }
+      const cap = VEHICLES[v.type].fuelCap;
+      if (this.basePowered(s.bid) && (v.fuel || 0) < cap) { v.fuel = Math.min(cap, (v.fuel || 0) + (v.type === 'cyclops' ? 6 : 2) * dt); const g = this.gridPower.get(s.bid); if (g) g.draw = (g.draw || 0) + 1; }
+      if (v.moored && !v.seats[0]) { const a = s; if (!a.tgt) v.moored = null; }
+    }
+  }
+
   // ------------------------------------------------------------ Mobile Vehicle Bay (Subnautica style)
   bayFor(p, id) {
     const s = this.structs.get(String(id));
@@ -1781,6 +1916,7 @@ export class Game {
       else { let need = -net; for (const b of banks) { const take = Math.min(b.charge, need); b.charge -= take; need -= take; } }
       stored = banks.reduce((a, b) => a + b.charge, 0);
       const grid = { gen: Math.round(gen), demand: Math.round(demand), stored, cap, powered };
+      (this.gridPower = this.gridPower || new Map()).set(list[0].bid, grid);
       for (const s of list) {
         const M = MACHINES[s.type];
         s._grid = grid;
@@ -2649,6 +2785,7 @@ export class Game {
     if (dist3(v, p) > VEHICLE_ENTER_RANGE + 2.5 + Math.max(0, VEHICLES[v.type].half[2] - 2)) return;
     if (v.broken) return this.toast(p, 'This vehicle is broken — repair it first');
     if (v.dockedIn) return this.toast(p, 'Docked — release it from the docking console inside the Pacific');
+    if (v.dockedAt) return this.toast(p, 'Docked in a moonpool — launch it from the moonpool (press E on the moonpool)');
     let seat = v.seats.indexOf(0);
     if (m.seat !== undefined && v.seats[num(m.seat) | 0] === 0) seat = num(m.seat) | 0;
     if (seat < 0) return this.toast(p, 'No free seats');
@@ -2659,8 +2796,11 @@ export class Game {
   exitVehicle(p, pos) {
     if (!p.vehicle) return;
     const v = this.vehicles.get(p.vehicle.id);
-    if (v) { const i = v.seats.indexOf(p.pid); if (i >= 0) v.seats[i] = 0; if (i === 0) { v.vel = [0, 0, 0]; } }
+    let wasDriver = false;
+    if (v) { const i = v.seats.indexOf(p.pid); if (i >= 0) v.seats[i] = 0; if (i === 0) { v.vel = [0, 0, 0]; wasDriver = true; } }
     p.vehicle = null;
+    if (v && wasDriver && VEHICLES[v.type].boat && VEHICLES[v.type].fuelCap !== undefined) { const d = this.mooreBoat(v); if (d) { this.toast(p, '⚓ Moored at the dock'); this.send(p, { t: 'v_seat', id: null }); const w = this.dockStep(d, v); p.x = w.x; p.y = w.y; p.z = w.z; this.teleport(p, w.x, w.y, w.z); return; } }
+    if (v && wasDriver && v.type === 'cyclops' && !v.moored) { const a = this.armDock(v); if (a) this.toast(p, '🔗 The docking arm clamps on — the Pacific is moored' + (this.basePowered(a.bid) ? ' and charging from the base' : ' (build power in the base to charge it)')); }
     if (Array.isArray(pos) && v) {
       const x = num(pos[0], p.x), y = num(pos[1], p.y), z = num(pos[2], p.z);
       if (Math.hypot(x - v.x, z - v.z) < Math.max(8, VEHICLES[v.type].half[2] + 3)) { p.x = x; p.y = y; p.z = z; }
@@ -2674,6 +2814,10 @@ export class Game {
     const nx = num(m.p[0], v.x), ny = num(m.p[1], v.y), nz = num(m.p[2], v.z);
     const t = now(), dt = Math.max(0.03, t - (v.lastSt || t));
     if (Math.hypot(nx - v.x, nz - v.z) > 60 * dt + 5) return; // reject teleports
+    if (v.moored) {
+      // held by a docking arm: throttle (or rise / dive) to cast off; until then it stays put
+      if (Math.abs(num(m.th)) > 0.1 || Math.abs(num(m.vt)) > 0.1) this.unmoor(v); else { v.lastSt = t; return; }
+    }
     v.lastSt = t;
     v.x = nx; v.y = ny; v.z = nz;
     v.q = m.q.slice(0, 4).map((x) => num(x));
@@ -3029,7 +3173,7 @@ export class Game {
     this.tickAnimals(dt);
     this.tickWeather(dt);
     this.acc.stats += dt; this.acc.save += dt; this.acc.slow += dt;
-    if (this.acc.stats >= 1) { this.tickBays(); this.tickMachines(this.acc.stats); this.tickFlashlights(this.acc.stats); this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
+    if (this.acc.stats >= 1) { this.tickBays(); this.tickDocks(this.acc.stats); this.tickMachines(this.acc.stats); this.tickFlashlights(this.acc.stats); this.tickStats(this.acc.stats); this.tickSubs(this.acc.stats); this.tickFlood(this.acc.stats); this.acc.stats = 0; }
     if (this.acc.slow >= 15) { this.tickSlow(); this.acc.slow = 0; }
     if (this.acc.save >= 60 && this.onSave) { this.acc.save = 0; this.onSave(); }
     this.flushPrints();
