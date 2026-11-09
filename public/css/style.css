@@ -465,3 +465,7 @@ body.dragging .gtile { pointer-events: none; opacity: .55; }
 #baybox .bcost .short { color: #ff8a7a; } #baybox .bcost .ok { color: #b8e8a0; } #baybox .bcost .cico { width: 20px; height: 20px; }
 #baybox .baycard button { margin-top: auto; padding: 7px; font: inherit; font-weight: 700; border-radius: 6px; border: 0; background: #f0a030; color: #1a1a1a; cursor: pointer; }
 #baybox .baycard button:disabled { background: #444; color: #999; cursor: default; }
+
+/* mash-E bar for pushing a tipped vehicle back over */
+.flipbar { width: 180px; height: 7px; margin: 5px auto 0; border-radius: 4px; background: rgba(255,255,255,0.18); overflow: hidden; }
+.flipbar i { display: block; height: 100%; background: #f0a030; transition: width 0.08s; }

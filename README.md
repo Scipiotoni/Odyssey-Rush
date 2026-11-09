@@ -20,6 +20,9 @@ take about a minute to load.)
 The home screen has a **server browser**:
 
 - **Browse**: the official world and every public server, with player counts and rule tags (PvP, difficulty, creative, day length…).
+- **The official server** is pure survival: no chat commands (no `/spawn`, `/give`, `/tp`… only `/help`, `/password`
+  and `/c` clan chat) and no vehicle spawning: find, build or salvage your rides. Its world was wiped fresh (accounts
+  and passwords were kept). Your own servers keep the commands and the vehicle picker.
 - **Join with code**: private servers aren't listed. Type the 6-letter **invite code** (plus the password, if the owner set one).
 - **Create**: make your own server (up to 3 per device). Pick a name, public or private, an optional password, a world seed
   (or a random island), max players, **difficulty** (🕊️ Peaceful: animals and sharks don't hurt you and you can't starve ·
@@ -174,6 +177,8 @@ defaults* puts everything back). The on-screen hints follow your keys. The table
 
 ### Chat commands
 
+(Not on the official server, see above.)
+
 | Command | What it does |
 |---|---|
 | `/spawn` | Opens the vehicle picker (also in the pause menu: **🚙 Spawn a vehicle / submarine**) |
@@ -205,6 +210,10 @@ torque curve. Grip and rolling resistance depend on the surface under each wheel
 rock, building floors); the jeeps' long-travel suspension, all-wheel drive and offroad tyres grip extra well off the road. Water adds buoyancy, drag and can flood the engine. The chassis collides with terrain,
 trees, rocks, buildings and other vehicles; hard impacts damage the vehicle and its passengers, and you can run
 over animals and players. Wheels kick up dust, mud, snow or spray depending on the ground.
+
+**Tipped over?** You can't get into a car lying on its side or roof. Walk up to it and **mash E**: every push fills
+the bar (friends can push too; it slowly settles back if you stop). An ATV takes about 8 pushes, the 4x4s about 14 and
+the hauler about 24, then it rocks back onto its wheels.
 
 ### A living world
 

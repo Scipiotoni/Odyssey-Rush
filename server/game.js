@@ -63,7 +63,8 @@ export function cleanSettings(x = {}, base = DEFAULT_SETTINGS) {
 }
 
 export class Game {
-  constructor({ seed = 1337, saved = null, settings = null, ownerHash = null }) {
+  constructor({ seed = 1337, saved = null, settings = null, ownerHash = null, official = false }) {
+    this.official = !!official; // the official server: no commands, no spawning (only the password-protected admin ones)
     this.seed = seed;
     this.settings = cleanSettings(settings || {});
     this.ownerHash = ownerHash; // the server owner (hash of their device token) is its admin
@@ -312,6 +313,7 @@ export class Game {
       case 'v_exit': return this.exitVehicle(p, m.p);
       case 'v_state': return this.onVehicleState(p, m);
       case 'v_repair': return this.onVehicleRepair(p, m);
+      case 'v_flip': return this.onVehicleFlip(p, m);
       case 'v_crash': return this.onVehicleCrash(p, m);
       case 'v_hit': return this.onVehicleHit(p, m);
       case 'demolish': return this.onDemolish(p, m);
@@ -2497,6 +2499,8 @@ export class Game {
   onChat(p, m) {
     const msg = String(m.m || '').replace(/[<>]/g, '').slice(0, 200).trim();
     if (!msg) return;
+    // the official server: no commands that change the game (only /help, /password, /c clan chat, and /admin for the owner)
+    if (this.official && msg.startsWith('/') && !msg.startsWith('/c ') && !/^\/(help|admin|password)\b/.test(msg) && !this.isAdmin(p)) return this.toast(p, '🚫 Commands are turned off on the official server');
     if (/^\/(spawn|unstuck|help|admin|password)\b/.test(msg)) return this.publicCommand(p, msg.slice(1).split(/\s+/));
     if (this.settings.creative && /^\/(items|give|kit|heal|day|tp)\b/.test(msg)) return this.devCommand(p, msg.slice(1).split(/\s+/)); // creative servers: the item spawner for everyone
     if (msg.startsWith('/') && !msg.startsWith('/c ')) {
@@ -2577,6 +2581,7 @@ export class Game {
   isAdmin(p) { return !!(process.env.DEV || p.admin || (this.ownerHash && p.tokenHash === this.ownerHash)); }
   publicCommand(p, [cmd, a]) {
     if (cmd === 'help') {
+      if (this.official && !this.isAdmin(p)) return this.send(p, { t: 'chat', from: '', m: 'The official server has no commands for spawning or cheats. You can use: /c message — clan chat · /password new — protect your name with a password so you can sign in on other devices' });
       this.send(p, { t: 'chat', from: '', m: 'Commands: /spawn — pick a vehicle to spawn (or /spawn atv|jeep|jeep4|pickup|hauler|rowboat|motorboat|minisub|pacific) — land vehicles appear in a clear spot in front of you, boats on the nearest water, submarines in the nearest water deep enough (or right beside you when you dive) · /unstuck — free the vehicle you are in or next to · /c message — clan chat · /password new — protect your name with a password so you can sign in on other devices · /admin password — unlock admin commands' });
       if (this.isAdmin(p)) this.send(p, { t: 'chat', from: '', m: ADMIN_HELP });
       return;
@@ -2793,12 +2798,43 @@ export class Game {
     if (v.broken) return this.toast(p, 'This vehicle is broken — repair it first');
     if (v.dockedIn) return this.toast(p, 'Docked — release it from the docking console inside the Pacific');
     if (v.dockedAt) return this.toast(p, 'Docked in a moonpool — launch it from the moonpool (press E on the moonpool)');
+    if (this.tipped(v)) return this.toast(p, "It's tipped over — mash E to push it back onto its wheels");
+    if (now() - (p.flippedAt || 0) < 0.8) return; // still mashing E from pushing it over: don't jump straight in
     let seat = v.seats.indexOf(0);
     if (m.seat !== undefined && v.seats[num(m.seat) | 0] === 0) seat = num(m.seat) | 0;
     if (seat < 0) return this.toast(p, 'No free seats');
     v.seats[seat] = p.pid;
     p.vehicle = { id: v.id, seat };
     this.send(p, { t: 'v_seat', id: v.id, seat, v: this.sVehicleFull(v) });
+  }
+  // a land vehicle lying on its side or roof (boats and subs right themselves)
+  tipped(v) {
+    const D = VEHICLES[v.type];
+    if (!D || D.boat || D.sub || !v.q) return false;
+    return 1 - 2 * (v.q[0] * v.q[0] + v.q[2] * v.q[2]) < 0.45;
+  }
+  // mash E at a tipped vehicle: every push adds up (others can help), and it slowly settles back if you stop
+  onVehicleFlip(p, m) {
+    const v = this.vehicles.get(String(m.id));
+    if (!v || !p.alive || p.vehicle || !this.tipped(v) || v.seats.some(Boolean)) return;
+    if (dist3(v, p) > VEHICLE_ENTER_RANGE + 3 + Math.max(0, VEHICLES[v.type].half[2] - 2)) return;
+    const t = now();
+    if (t - (p.lastPush || 0) < 0.07) return;
+    p.lastPush = t;
+    const mass = VEHICLES[v.type].mass, need = mass < 600 ? 8 : mass < 2500 ? 14 : 24; // ATV quick, 4x4s more, the hauler a lot
+    const f = v.flip || { n: 0, t };
+    f.n = Math.max(0, f.n - (t - f.t) * 3) + 1; f.t = t; v.flip = f;
+    if (f.n < need) { this.send(p, { t: 'flip', id: v.id, p: f.n / need }); return; }
+    // back on its wheels, facing the way it was, on a clear spot right there
+    v.flip = null;
+    const yaw = quatYaw(v.q), spot = this.findClearSpot(v.type, v.x, v.z, yaw, [0, 2, 4, 7, 10], v.id);
+    if (spot) { v.x = spot.x; v.y = spot.y; v.z = spot.z; } else v.y = this.world.ground(v.x, v.z) + restHeight(VEHICLES[v.type]) + 0.3;
+    v.q = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)]; v.vel = [0, 0, 0];
+    this.refreshAttached(v);
+    this.send(p, { t: 'flip', id: v.id, p: 1 });
+    for (const o of this.players.values()) if (o.online && dist3(o, v) < 12) o.flippedAt = t;
+    this.toNear(v.x, v.z, 40, { t: 'fx', k: 'flip', p: [v.x, v.y, v.z] });
+    this.toast(p, `💪 The ${VEHICLES[v.type].name} is back on its wheels`);
   }
   exitVehicle(p, pos) {
     if (!p.vehicle) return;

@@ -6,6 +6,7 @@ import { Game, DEFAULT_SETTINGS, cleanSettings } from './game.js';
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const MAIN_RESET = 1; // bump to wipe the official world once on the next start
 const MAX_SERVERS = 60, MAX_PER_OWNER = 3, MAX_LOADED = 6, IDLE_UNLOAD = 10 * 60;
 const now = () => Date.now() / 1000;
 function hashPw(pw) { const salt = crypto.randomBytes(8).toString('hex'); return salt + ':' + crypto.scryptSync(pw, salt, 32).toString('hex'); }
@@ -23,6 +24,15 @@ export class Hub {
     for (const m of reg?.servers || []) this.servers.set(m.id, m);
     if (!this.servers.has('main')) this.servers.set('main', { id: 'main', name: 'Odyssey Rush — Official', code: 'OFFICIAL', public: true, pw: null, owner: null, settings: { ...DEFAULT_SETTINGS }, created: now(), official: true });
     await this.game('main');
+    // a one-time wipe of the official world, rolled out with a deploy: bump MAIN_RESET to wipe it again
+    // (same island; accounts and their passwords are kept, everything else starts over)
+    const main = this.servers.get('main');
+    if ((main.resetEpoch || 0) < MAIN_RESET) {
+      main.resetEpoch = MAIN_RESET;
+      await this.saveRegistry();
+      await this.resetWorld('main', { newIsland: false });
+      console.log(`[hub] official world wiped (reset ${MAIN_RESET})`);
+    }
     await this.saveRegistry();
   }
   async saveRegistry() { try { await this.store.save({ servers: [...this.servers.values()] }, 'servers'); } catch (e) { console.error('[hub] registry save failed', e.message); } }
@@ -44,7 +54,7 @@ export class Hub {
       let saved = null;
       try { saved = await this.store.load(id); } catch (e) { console.error('[hub] load failed', id, e.message); }
       const seed = id === 'main' ? (saved?.customSeed ? saved.seed : this.seed) : saved?.seed ?? meta.seed;
-      const game = new Game({ seed, saved, settings: meta.settings, ownerHash: meta.owner });
+      const game = new Game({ seed, saved, settings: meta.settings, ownerHash: meta.owner, official: !!meta.official });
       game.onSave = () => this.saveGame(id);
       game.onReset = (o) => this.resetWorld(id, o);
       this.loaded.set(id, { game, idleSince: now() });
@@ -77,7 +87,7 @@ export class Hub {
     const seed = newIsland ? 1 + Math.floor(Math.random() * 2 ** 30) : old.seed;
     const keep = { seed, customSeed: newIsland || !!old.customSeed, accounts: [...old.accounts.values()] };
     for (const p of old.players.values()) { try { p.ws?.close(4002, 'reset'); } catch {} }
-    const game = new Game({ seed, saved: keep, settings: meta.settings, ownerHash: meta.owner });
+    const game = new Game({ seed, saved: keep, settings: meta.settings, ownerHash: meta.owner, official: !!meta.official });
     game.onSave = () => this.saveGame(id); game.onReset = (o) => this.resetWorld(id, o);
     L.game = game; meta.seed = seed;
     await this.saveGame(id); await this.saveRegistry();
@@ -146,7 +156,7 @@ export class Hub {
     const already = [...game.players.values()].some((p) => p.token === String(msg.token) && p.online);
     if (!already && game.onlineCount() >= meta.settings.maxPlayers) return fail(`${meta.name} is full (${meta.settings.maxPlayers} players)`);
     ws.serverId = meta.id;
-    try { ws.send(JSON.stringify({ t: 'server', id: meta.id, name: meta.name, code: meta.code, owner: !!owner, settings: meta.settings })); } catch {}
+    try { ws.send(JSON.stringify({ t: 'server', id: meta.id, name: meta.name, code: meta.code, owner: !!owner, official: !!meta.official, settings: meta.settings })); } catch {}
     game.connect(ws, msg);
   }
 }

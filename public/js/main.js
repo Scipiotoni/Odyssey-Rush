@@ -212,7 +212,8 @@ class Game {
       this.accountProtected = m.protected;
       if (m.created) this.pendingNote = `🔐 Account created — sign in as "${m.name}" with your password on any device.`;
     });
-    n.on('server', (m) => { this.serverInfo = m; this.rules = m.settings; });
+    n.on('server', (m) => { this.serverInfo = m; this.rules = m.settings; $('spawnveh').classList.toggle('hidden', !!m.official); }); // no spawning on the official server
+    n.on('flip', (m) => { this.flipProg = { id: m.id, p: m.p, t: performance.now() }; });
     n.on('rules', (m) => { this.rules = { ...this.rules, ...m.rules }; if (m.dayLen) this.dayLen = m.dayLen; if (m.yearLen) this.yearLen = m.yearLen; if (m.day !== undefined) this.day = m.day; if (m.year !== undefined) this.year = m.year; this.ui.toast('⚙️ Server settings changed'); });
     n.on('authfail', (m) => {
       this.authFailed = true;
@@ -476,6 +477,7 @@ class Game {
       if (m.id) this.entities.removeExplosive(m.id);
     } else if (m.k === 'upgrade') this.effects.burst(new THREE.Vector3(...m.p), { count: 25, color: TIERS[m.tier]?.color ?? 0xaaaaaa, speed: 3, size: 0.12, life: 0.9, jitter: 2 });
     else if (m.k === 'door') audio.door();
+    else if (m.k === 'flip') { const p = new THREE.Vector3(...m.p); this.effects.burst(p, { count: 18, color: this.world.surface(p.x, p.z).dust, speed: 3, up: 1.4, size: 0.18, life: 1.1, gravity: 8 }); audio.dig(cam.distanceTo(p)); }
     else if (m.k === 'dig') {
       const p = new THREE.Vector3(...m.p);
       this.effects.burst(p, { count: 14, color: m.up ? 0x7a6040 : this.world.surface(p.x, p.z).dust, speed: 3.5, up: 1.6, size: 0.12, life: 0.9, gravity: 12 });
@@ -753,7 +755,14 @@ class Game {
             // aiming at the fuel cap / battery hatch opens it; anywhere else gets you in
             const lp = cam.clone().addScaledVector(dir, hit.t).sub(v.pos).applyQuaternion(_rq.copy(v.q).invert());
             const sv = def.service && !def.interior ? Math.hypot(lp.x - def.service[0], lp.y - def.service[1], lp.z - def.service[2]) : 99;
+            const tipped = !def.boat && !def.sub && 1 - 2 * (v.q.x * v.q.x + v.q.z * v.q.z) < 0.45;
             if (v.dockedIn && sv >= 0.75) { text = `<b>${def.name}</b> — docked in the vehicle bay. Launch it from the bay console.`; }
+            else if (tipped) {
+              // can't get into a car on its side or roof: mash E to rock it back onto its wheels (others can help push)
+              const fp = this.flipProg && this.flipProg.id === v.id ? Math.max(0, this.flipProg.p - (performance.now() - this.flipProg.t) / 1000 * 0.2) : 0;
+              text = `<b>${def.name}</b> — tipped over<br>Mash <kbd>E</kbd> to push it back onto its wheels<div class="flipbar"><i style="width:${Math.round(fp * 100)}%"></i></div>`;
+              if (E) { this.net.send({ t: 'v_flip', id: v.id }); audio.click?.(); }
+            }
             else if (sv < (def.half[2] > 4 ? 1.3 : 0.75)) {
               text = def.power ? `<b>${def.name} — battery hatch</b> 🔋 ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open — put Batteries or Power Cells in` : `<b>${def.name} — fuel cap</b> ⛽ ${v.fuel}/${def.fuelCap}<br><kbd>E</kbd> Open the tank — put Low Grade Fuel in <small>(you have ${countItem(this.inv, 'fuel')})</small>`;
               if (E) this.net.send({ t: 'open', id: 'vf:' + v.id });
