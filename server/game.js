@@ -93,7 +93,7 @@ export class Game {
     this.newPrints = new Map();
     this.ice = new IceField(this.world); // frozen lakes in winter; holes: {id, x, z, r, born}
     this.caves.seaAbove = (x, z) => this.world.ground(x, z) < -8 && !this.ice.inland(x, z); // caves under the sea are flooded
-    this.caves.surface = (x, z) => this.world.ground(x, z);
+    this.caves.surface = (x, z) => this.world.ground(x, z); this.caves.surface0 = (x, z) => this.world.ground0(x, z);
     this.chunkCache = new Map();
     this.load(saved);
     this.ice.setFrozen(iceFrozen(seasonInfo(this.year)));

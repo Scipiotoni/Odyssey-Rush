@@ -4,24 +4,26 @@ import { World } from '/shared/worldgen.js';
 import { Caves } from '/shared/caves.js';
 import { IceField } from '/shared/ice.js';
 import { meshChunkData } from './caveMesh.js';
+import { terrainTriColor, forgetGroundColors } from './chunkgen.js';
 
 let world = null, caves = null;
 self.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init') {
     world = new World(m.seed); for (const [ix, iz, v] of m.tmods || []) world.setMod(ix, iz, v);
-    caves = new Caves(m.seed); caves.surface = (x, z) => world.ground(x, z); caves.setMods(m.cmods || []);
+    caves = new Caves(m.seed); caves.surface = (x, z) => world.ground(x, z); caves.surface0 = (x, z) => world.ground0(x, z); caves.groundColor = (x, z, o) => terrainTriColor(world, x, z, o); caves.setMods(m.cmods || []);
     const ice = new IceField(world);
     caves.seaAbove = (x, z) => world.ground(x, z) < -8 && !ice.inland(x, z); // same as the main thread
     return;
   }
   if (!caves) return;
-  if (m.type === 'tmods') { for (const [ix, iz, v] of m.list) world.setMod(ix, iz, v); caves.openCache.clear(); return; }
+  if (m.type === 'tmods') { for (const [ix, iz, v] of m.list) world.setMod(ix, iz, v); caves.openCache.clear(); forgetGroundColors(); return; }
   if (m.type === 'cmod') { caves.addMod(...m.m); return; }
   if (m.type === 'mesh') {
     const d = meshChunkData(caves, m.cx, m.cy, m.cz);
     if (!d) return self.postMessage({ type: 'mesh', k: m.k, ver: m.ver, empty: true });
     const tr = d.pos ? [d.pos.buffer, d.col.buffer, d.nrm.buffer] : [];
+    if (d.spos) tr.push(d.spos.buffer, d.scol.buffer, d.snrm.buffer);
     self.postMessage({ type: 'mesh', k: m.k, ver: m.ver, ...d }, tr);
   }
 };

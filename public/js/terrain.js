@@ -6,7 +6,7 @@ import { NODES } from '/shared/items.js';
 import { MAT, MAT_DS, nodeGeometry, poiGeometry, detailGeometry } from './models.js';
 import { BIOME } from '/shared/worldgen.js';
 import { hashRng } from '/shared/noise.js';
-import { buildChunkData } from './chunkgen.js';
+import { buildChunkData, holeSkirts } from './chunkgen.js';
 import { windMaterial } from './nature.js';
 import { applySeason, WORLD_MAT } from './season.js';
 
@@ -29,7 +29,7 @@ const DETAIL_MATS = {
 const FLOWER_COLS = [0xf2d23a, 0xe2485e, 0xf4f0ea, 0x9a62d8, 0xf08a2a, 0x5aa0f0, 0xf07ab8];
 const _tc = new THREE.Color();
 
-const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+export const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 let NODE_RADIUS = 3;     // chunks around player with resource nodes (2 on low detail)
 const DETAIL_RADIUS = 1; // chunks around player with grass / flowers / pebbles
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
@@ -82,7 +82,11 @@ export class Terrain {
       const x = ix * GRID, z = iz * GRID;
       for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) dirty.add(chunkKey(Math.floor((x + dx * GRID) / CHUNK), Math.floor((z + dz * GRID) / CHUNK)));
     }
-    for (const w of this.workers) w.postMessage({ type: 'mods', list });
+    // the open-ground squares around the edits may have changed: forget them here (the workers clear theirs)
+    this.tmv = (this.tmv || 0) + 1;
+    const C = this.caves;
+    if (C) for (const [ix, iz] of list) for (let a = ix - 2; a <= ix + 1; a++) for (let b = iz - 2; b <= iz + 1; b++) C.openCache.delete(a * 100003 + b);
+    for (const w of this.workers) w.postMessage({ type: 'mods', list, v: this.tmv });
     for (const k of dirty) {
       this.ver.set(k, (this.ver.get(k) || 0) + 1);
       const lod = this.wantT.get(k);
@@ -147,7 +151,7 @@ export class Terrain {
     if (m.type === 'chunk') {
       // the worker worked out which ground squares are open: remember them so nothing here recomputes them
       const C = this.caves;
-      if (m.quads && C && C.mods.length === m.quads.nm) { if (C.openCache.size > 250000) C.openCache.clear(); const { i0, j0, n, mask } = m.quads; for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) C.openCache.set((i0 + a) * 100003 + (j0 + b), !!mask[b * n + a]); }
+      if (m.quads && C && C.mods.length === m.quads.nm && m.quads.tv === (this.tmv || 0)) { if (C.openCache.size > 250000) C.openCache.clear(); const { i0, j0, n, mask } = m.quads; for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) C.openCache.set((i0 + a) * 100003 + (j0 + b), !!mask[b * n + a]); }
       if (this.wantT.get(m.k) !== m.lod || (this.ver.get(m.k) || 0) !== m.ver) return;
       this.installChunk(m.k, m.lod, m.ver, m);
     } else if (m.type === 'nodes') {
@@ -203,9 +207,13 @@ export class Terrain {
       if (!caves.quadOpen(Math.floor(mx / 4), Math.floor(mz / 4))) { keep[t] = 1; n++; }
     }
     if (n === keep.length) return d;
-    const out = { pos: new Float32Array(n * 9), col: new Float32Array(n * 9), nrm: new Float32Array(n * 9) };
+    const N = CHUNK / 4;
+    const sk = holeSkirts(this.world, (qi, qj) => caves.quadOpen(qi, qj), Math.floor(Math.min(...[d.pos[0], d.pos[3], d.pos[6]]) / CHUNK) * N, Math.floor(Math.min(d.pos[2], d.pos[5], d.pos[8]) / CHUNK) * N, N);
+    const m = n * 9 + sk.pos.length;
+    const out = { pos: new Float32Array(m), col: new Float32Array(m), nrm: new Float32Array(m) };
     let w = 0;
     for (let t = 0; t < keep.length; t++) if (keep[t]) { out.pos.set(d.pos.subarray(t * 9, t * 9 + 9), w); out.col.set(d.col.subarray(t * 9, t * 9 + 9), w); out.nrm.set(d.nrm.subarray(t * 9, t * 9 + 9), w); w += 9; }
+    out.pos.set(sk.pos, w); out.col.set(sk.col, w); out.nrm.set(sk.nrm, w);
     return { ...d, ...out };
   }
   installChunk(k, lod, ver, d) {

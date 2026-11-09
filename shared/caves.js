@@ -49,6 +49,8 @@ export class Caves {
     this.nA = makeNoise3(seed * 7 + 11); this.nB = makeNoise3(seed * 13 + 5); this.nC = makeNoise3(seed * 3 + 29); this.nO = makeNoise3(seed * 17 + 3);
     this.nM = makeNoise3(seed * 19 + 7); this.nK = makeNoise3(seed * 23 + 13); this.nR = makeNoise3(seed * 29 + 1);
     this.surface = null;  // (x, z) => ground height (set by client/server: world.ground)
+    this.surface0 = null; // (x, z) => the ground as generated (world.ground0): tunnels and crust are measured from it, so
+                          // digging the ground with a shovel only takes dirt away and never moves the caves underneath
     this.openCache = new Map();
     this.seaAbove = null; // (x, z) => true where the sea lies above: those caves are flooded
     this.mods = [];                // [x, y, z, r]
@@ -81,11 +83,12 @@ export class Caves {
     return Math.min(tunnel * 0.6, cavern * 0.35) + pen * 0.1;
   }
   // natural field (no player edits)
-  natural(x, y, z, s) {
+  natural(x, y, z, s, s0 = s) {
     if (y < CAVE_BOTTOM - 6) return 1;
-    const depth = s - y;
-    if (depth < -2) return -1;                  // open air above the ground
-    let d = depth * 0.12;
+    const top = s - y;
+    if (top < -2) return -1;                    // open air above the ground
+    let d = top * 0.12;
+    const depth = s0 - y;                       // the cave layout goes by the ground as generated
     if (y > CAVE_TOP - 4) {
       // spaghetti tunnels at every depth, a little wider the deeper you go
       const yy = y * 1.4;
@@ -110,7 +113,7 @@ export class Caves {
   rock(x, y, z) {
     const s = this.surface ? this.surface(x, z) : 1e9;
     if (!this.surface && (y > CAVE_TOP + 6 || y < CAVE_BOTTOM - 6)) return 1;
-    let d = this.natural(x, y, z, s);
+    let d = this.natural(x, y, z, s, this.surface0 ? this.surface0(x, z) : s);
     const l = this.modGrid.get(Math.floor(x / CAVE_CELL) * 100003 + Math.floor(z / CAVE_CELL));
     if (l) for (const i of l) {
       const m = this.mods[i], dd = (Math.hypot(x - m[0], y - m[1], z - m[2]) - Math.abs(m[3])) * 0.03;
@@ -140,7 +143,7 @@ export class Caves {
             const ms = this.surface(mx, mz);
             if (my + r < ms - 0.5 || my - r > ms + 0.5) continue; // doesn't break the surface
             const dx = Math.max(x0 - mx, 0, mx - (x0 + QUAD)), dz = Math.max(z0 - mz, 0, mz - (z0 + QUAD));
-            if (Math.hypot(dx, dz) < r * 0.85) { v = true; break; }
+            if (Math.hypot(dx, dz) < r + 0.1) { v = true; break; } // every square the hole reaches (the ground there is drawn to match)
           }
           if (v) break;
         }

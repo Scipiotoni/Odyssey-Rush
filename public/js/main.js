@@ -1,6 +1,7 @@
 // Odyssey Rush client entry point: wires networking, world streaming, player, vehicles and UI.
 import * as THREE from 'three';
-import { World, BIOME_NAMES, chunkKey, CHUNK } from '/shared/worldgen.js';
+import { World, BIOME_NAMES, chunkKey, CHUNK, GRID } from '/shared/worldgen.js';
+import { terrainTriColor, forgetGroundColors } from './chunkgen.js';
 import { ITEMS, NODES, ANIMALS, INV_SIZE } from '/shared/items.js';
 import { MACHINES } from '/shared/machines.js';
 import { makeVehicle } from './models.js';
@@ -105,7 +106,7 @@ class Game {
     this.physics = new Physics(this.world);
     this.caves = new Caves(seed); this.caves.setMods(this.pendingCaveMods || []);
     this.physics.caves = this.caves;
-    this.caves.surface = (x, z) => this.world.ground(x, z);
+    this.caves.surface = (x, z) => this.world.ground(x, z); this.caves.surface0 = (x, z) => this.world.ground0(x, z); this.caves.groundColor = (x, z, o) => terrainTriColor(this.world, x, z, o);
     this.caves.seaAbove = (x, z) => this.world.ground(x, z) < -8 && !(this.iceField && this.iceField.inland(x, z));
     this.sky = new Sky(this.scene);
     this.sky.sun.castShadow = this.settings.shadows;
@@ -147,6 +148,15 @@ class Game {
       e.stopPropagation();
     });
     $('resume').onclick = () => this.ui.close();
+    // back to the home screen (server browser): disconnect cleanly (your character stays in the world, asleep) and reload
+    $('leavebtn').onclick = () => {
+      if ($('leavebtn').dataset.sure !== '1') { $('leavebtn').dataset.sure = '1'; $('leavebtn').textContent = '🏠 Click again to leave'; setTimeout(() => { $('leavebtn').dataset.sure = ''; $('leavebtn').textContent = '🏠 Leave to home screen'; }, 3000); return; }
+      this.leaving = true;
+      sessionStorage.removeItem('or_autoplay');
+      $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'Leaving…';
+      try { this.net.ws?.close(1000, 'leave'); } catch {}
+      setTimeout(() => location.reload(), 300);
+    };
     $('spawnveh').onclick = () => this.ui.showSpawn();
     $('keysbtn').onclick = () => this.ui.showKeys();
   }
@@ -226,6 +236,7 @@ class Game {
       requestAnimationFrame(() => this.loop());
     });
     n.on('close', (ev) => {
+      if (this.leaving) return; // left on purpose: no reconnecting
       if (this.authFailed || (ev && ev.code === 4001)) { this.authFailed = false; return; }
       if (ev && ev.code === 4003) { this.input.unlock(); $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'This server was deleted by its owner.'; return; }
       if (ev && ev.code === 4000) { this.input.unlock(); $('loading').classList.remove('hidden'); $('loading').firstElementChild.textContent = 'You joined from another tab or device. Close this one.'; return; }
@@ -317,7 +328,11 @@ class Game {
       this.terrain.center = [NaN, NaN];
     });
     n.on('snap', (m) => this.onSnap(m));
-    n.on('terr', (m) => { this.terrain.applyMods(m.m); this.caveWorld?.syncTerrain(m.m); this.iceField?.cache.clear(); });
+    n.on('terr', (m) => {
+      this.terrain.applyMods(m.m); this.caveWorld?.syncTerrain(m.m); this.iceField?.cache.clear(); forgetGroundColors();
+      // re-mesh the cave chunks at the edited ground, so where it opens (or closes) the cave mesh matches the terrain's hole
+      if (this.caveWorld && m.m.length < 64) { for (const [ix, iz] of m.m) { const x = ix * GRID, z = iz * GRID; this.caveWorld.dirty(x, this.world.ground(x, z), z, GRID); } this.caveWorld.planT = 0; }
+    });
     n.on('ice', (m) => this.applyIce(m));
     n.on('flood', (m) => { this.structures.flood.set(m.bid, m.f || {}); this.hullHI.set(m.bid, m.hi); });
     n.on('fishbite', (m) => this.fishing?.onBite(m));

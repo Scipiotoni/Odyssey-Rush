@@ -125,6 +125,16 @@ export class World {
     }
     return v;
   }
+  // the ground as generated, before anyone dug or piled up dirt (the caves are laid out from this)
+  gridH0(ix, iz) { return this.gridH(ix, iz) - (this.mods.get((ix + 4096) * 8192 + (iz + 4096)) || 0); }
+  ground0(x, z) {
+    if (!this.mods.size) return this.ground(x, z);
+    const gx = x / GRID, gz = z / GRID, ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
+    const hb = this.gridH0(ix + 1, iz), hc = this.gridH0(ix, iz + 1);
+    if (fx + fz < 1) { const ha = this.gridH0(ix, iz); return ha + (hb - ha) * fx + (hc - ha) * fz; }
+    const hd = this.gridH0(ix + 1, iz + 1);
+    return hd + (hc - hd) * (1 - fx) + (hb - hd) * (1 - fz);
+  }
   ground(x, z) {
     const gx = x / GRID, gz = z / GRID;
     const ix = Math.floor(gx), iz = Math.floor(gz);

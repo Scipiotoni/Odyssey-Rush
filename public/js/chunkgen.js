@@ -55,3 +55,56 @@ export function buildChunkData(w, cx, cz, lod) {
   for (let i = 0; i < seg; i++) { edge(i, 0, i + 1, 0); edge(i, seg, i + 1, seg); edge(0, i, 0, i + 1); edge(seg, i, seg, i + 1); }
   return { pos: pos.slice(0, o), col: cols.slice(0, o), nrm: nrm.slice(0, o) };
 }
+
+// The colour the terrain mesh (LOD 1) gives the ground triangle under (x, z): the cave mesh uses it for the untouched
+// ground inside an opened square, so a dug hole doesn't change the look of the grass around it.
+const _vc = new Map(), _col = [0, 0, 0];
+function vertexColor(w, ix, iz) {
+  const key = (ix + 4096) * 8192 + (iz + 4096);
+  let c = _vc.get(key);
+  if (c) return c;
+  if (_vc.size > 60000) _vc.clear();
+  const h = w.gridH(ix, iz), hx = w.gridH(ix + 1, iz) - w.gridH(ix - 1, iz), hz = w.gridH(ix, iz + 1) - w.gridH(ix, iz - 1);
+  w.color(ix * GRID, iz * GRID, h, Math.min(1, Math.hypot(hx, hz) / (2 * GRID)), _col);
+  const m = w.getMod(ix, iz);
+  if (m) { const t = Math.min(1, Math.abs(m) / 1.2) * 0.75; _col[0] += (0.42 - _col[0]) * t; _col[1] += (0.32 - _col[1]) * t; _col[2] += (0.2 - _col[2]) * t; }
+  c = [_col[0], _col[1], _col[2]];
+  _vc.set(key, c);
+  return c;
+}
+export function forgetGroundColors() { _vc.clear(); }
+export function terrainTriColor(w, x, z, out) {
+  const gx = x / GRID, gz = z / GRID, ix = Math.floor(gx), iz = Math.floor(gz);
+  const tri = gx - ix + (gz - iz) < 1 ? [[ix, iz], [ix, iz + 1], [ix + 1, iz]] : [[ix + 1, iz], [ix, iz + 1], [ix + 1, iz + 1]];
+  out[0] = out[1] = out[2] = 0;
+  for (const [a, b] of tri) { const c = vertexColor(w, a, b); out[0] += c[0] / 3; out[1] += c[1] / 3; out[2] += c[2] / 3; }
+  return out;
+}
+
+// Where the ground has a hole (open squares), the cave mesh draws the ground; along the edge where an open square meets
+// intact terrain the two can differ by a few centimetres (more near natural cave mouths). A short dirt skirt hanging from
+// the terrain's cut edge closes that step, so you never see through it.
+const SKIRT = 0.8;
+export function holeSkirts(w, isOpen, i0, j0, n) {
+  const pos = [], col = [], nrm = [];
+  const gc = [0, 0, 0];
+  const add = (x0, z0, x1, z1, nx, nz) => {
+    const h0 = w.ground(x0, z0), h1 = w.ground(x1, z1);
+    const v = [[x0, h0 - 0.03, z0], [x1, h1 - 0.03, z1], [x1, h1 - SKIRT, z1], [x0, h0 - SKIRT, z0]]; // (just under the seam, so it never shows on it)
+    // coloured and lit like the ground at the edge, so the seam doesn't show; both faces (the terrain material is one-sided)
+    terrainTriColor(w, (x0 + x1) / 2 + nx * 0.5, (z0 + z1) / 2 + nz * 0.5, gc);
+    for (const [a, b, c] of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) {
+      for (const k of [a, b, c]) { pos.push(...v[k]); col.push(gc[0], gc[1], gc[2]); nrm.push(0, 1, 0); }
+    }
+  };
+  for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) {
+    const qi = i0 + a, qj = j0 + b;
+    if (!isOpen(qi, qj)) continue;
+    const x0 = qi * GRID, x1 = x0 + GRID, z0 = qj * GRID, z1 = z0 + GRID;
+    if (!isOpen(qi - 1, qj)) add(x0, z0, x0, z1, 1, 0);
+    if (!isOpen(qi + 1, qj)) add(x1, z0, x1, z1, -1, 0);
+    if (!isOpen(qi, qj - 1)) add(x0, z0, x1, z0, 0, 1);
+    if (!isOpen(qi, qj + 1)) add(x0, z1, x1, z1, 0, -1);
+  }
+  return { pos: new Float32Array(pos), col: new Float32Array(col), nrm: new Float32Array(nrm) };
+}

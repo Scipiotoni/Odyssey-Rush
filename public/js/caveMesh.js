@@ -39,37 +39,89 @@ export function meshChunkData(caves, cx, cy, cz) {
     vIndex[cidx(i, j, k)] = vp.length / 3;
     vp.push(x0 + i + sx / n, y0 + j + sy / n, z0 + k + sz / n);
   }
-  const pos = [], col = [];
+  // vertices on the untouched ground sit exactly on the terrain's surface, so the two meshes meet without cracks
+  for (let v = 0; v < vp.length; v += 3) { const sy = caves.surface(vp[v], vp[v + 2]); if (Math.abs(sy - vp[v + 1]) < 0.2) vp[v + 1] = sy; }
+  const pos = [], col = [], spos = [], scol = [], _g = [0, 0, 0];
   const V = (c) => [vp[c * 3], vp[c * 3 + 1], vp[c * 3 + 2]];
+  // clip a triangle (or polygon) to one ground square [x0,x1]x[z0,z1] (Sutherland-Hodgman in x/z)
+  const clipQ = (poly, qi, qj) => {
+    const x0 = qi * QUAD, x1 = x0 + QUAD, z0 = qj * QUAD, z1 = z0 + QUAD;
+    for (const [ax, lim, sg, ni, nj] of [[0, x0, 1, qi - 1, qj], [0, x1, -1, qi + 1, qj], [2, z0, 1, qi, qj - 1], [2, z1, -1, qi, qj + 1]]) {
+      const edge = !caves.quadOpen(ni, nj); // this side meets the terrain heightfield
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const P = poly[i], Q = poly[(i + 1) % poly.length], pin = (P[ax] - lim) * sg >= 0, qin = (Q[ax] - lim) * sg >= 0;
+        if (pin) out.push(P);
+        if (pin !== qin) {
+          // a new point where the square meets the terrain: on the untouched ground it sits exactly on the terrain's edge
+          // (between two open squares it stays on the original edge, so it lines up with the unclipped neighbour)
+          const t = (lim - P[ax]) / (Q[ax] - P[ax]), x = P[0] + (Q[0] - P[0]) * t, z = P[2] + (Q[2] - P[2]) * t;
+          let y = P[1] + (Q[1] - P[1]) * t;
+          if (edge) { const sy = caves.surface(x, z); if (Math.abs(sy - y) < 0.2) y = sy; }
+          out.push([x, y, z]);
+        }
+      }
+      poly = out;
+      if (poly.length < 3) return null;
+    }
+    return poly;
+  };
+  const emit = (A, Bv, Cv, ground) => {
+    if (ground && caves.groundColor) {
+      if ((Bv[2] - A[2]) * (Cv[0] - A[0]) - (Bv[0] - A[0]) * (Cv[2] - A[2]) < 0) { const t = Bv; Bv = Cv; Cv = t; } // face up (the terrain material is one-sided)
+      caves.groundColor((A[0] + Bv[0] + Cv[0]) / 3, (A[2] + Bv[2] + Cv[2]) / 3, _g); spos.push(...A, ...Bv, ...Cv); for (let q = 0; q < 3; q++) scol.push(_g[0], _g[1], _g[2]); return; }
+    pos.push(...A, ...Bv, ...Cv); for (let q = 0; q < 3; q++) col.push(_c.r, _c.g, _c.b);
+  };
   const tri = (a, b, c) => {
     const A = V(a), Bv = V(b), Cv = V(c);
     const mx = (A[0] + Bv[0] + Cv[0]) / 3, my = (A[1] + Bv[1] + Cv[1]) / 3, mz = (A[2] + Bv[2] + Cv[2]) / 3;
     const s = caves.surface(mx, mz), depth = s - my;
-    // the ground itself is drawn by the terrain heightfield, except where it has a hole
-    if (depth < 1.3 && !caves.quadOpen(Math.floor(mx / QUAD), Math.floor(mz / QUAD))) return;
-    pos.push(...A, ...Bv, ...Cv);
+    // the ground itself is drawn by the terrain heightfield, except in the squares where it has a hole: near the surface
+    // keep exactly the parts of the triangle inside open squares (no gaps or overlaps along the squares' edges)
+    let pieces = null;
+    if (depth < 1.3) {
+      const qx0 = Math.floor(Math.min(A[0], Bv[0], Cv[0]) / QUAD), qx1 = Math.floor(Math.max(A[0], Bv[0], Cv[0]) / QUAD);
+      const qz0 = Math.floor(Math.min(A[2], Bv[2], Cv[2]) / QUAD), qz1 = Math.floor(Math.max(A[2], Bv[2], Cv[2]) / QUAD);
+      let all = true, any = false;
+      for (let qi = qx0; qi <= qx1; qi++) for (let qj = qz0; qj <= qz1; qj++) if (caves.quadOpen(qi, qj)) any = true; else all = false;
+      if (!any) return;
+      if (!all) {
+        pieces = [];
+        for (let qi = qx0; qi <= qx1; qi++) for (let qj = qz0; qj <= qz1; qj++) {
+          if (!caves.quadOpen(qi, qj)) continue;
+          const p = clipQ([A, Bv, Cv], qi, qj);
+          if (p) for (let k = 1; k < p.length - 1; k++) pieces.push([p[0], p[k], p[k + 1]]);
+        }
+        if (!pieces.length) return;
+      }
+    }
     const nx = (Bv[1] - A[1]) * (Cv[2] - A[2]) - (Bv[2] - A[2]) * (Cv[1] - A[1]), ny = (Bv[2] - A[2]) * (Cv[0] - A[0]) - (Bv[0] - A[0]) * (Cv[2] - A[2]), nz = (Bv[0] - A[0]) * (Cv[1] - A[1]) - (Bv[1] - A[1]) * (Cv[0] - A[0]);
     const up = ny / (Math.hypot(nx, ny, nz) || 1);
-    const ore = caves.ore(mx, my, mz), v = 0.85 + Math.sin(mx * 1.7 + mz * 1.3 + my * 2.1) * 0.08;
-    const min = ore > 0.5 || ore < -0.5 ? null : caves.mineral(mx, my, mz);
-    if (depth < 0.6 && up > 0.5) _c.setRGB(0.36 * v, 0.5 * v, 0.24 * v);                    // grass at the rim of a hole
-    else if (ore > 0.5 && depth > 8) _c.setRGB(0.62 * v, 0.38 * v, 0.2 * v);
-    else if (ore < -0.5 && depth > 8) _c.setRGB(0.72 * v, 0.66 * v, 0.24 * v);
-    else if (min === 'copper_ore' && depth > 12) _c.setRGB(0.22 * v, 0.52 * v, 0.42 * v);
-    else if (min === 'lithium_ore' && depth > 12) _c.setRGB(0.78 * v, 0.56 * v, 0.66 * v);
-    else if (min === 'titanium_ore' && depth > 12) _c.setRGB(0.74 * v, 0.76 * v, 0.8 * v);
-    else if (min === 'quartz' && depth > 12) _c.setRGB(0.9 * v, 0.9 * v, 0.92 * v);
-    else if (min === 'kyanite') _c.setRGB(0.22 * v, 0.38 * v, 0.9 * v);
-    else if (wet) _c.setRGB((up > 0.6 ? 0.2 : 0.28) * v, (up > 0.6 ? 0.34 : 0.33) * v, (up > 0.6 ? 0.36 : 0.4) * v);
-    else {
-      // dug layers: topsoil, clay, stone, deepstone (blended), mossy cave floors
-      const L = layerAt(depth), Ln = layerAt(depth + 2.5);
-      const f = L === Ln ? 0 : smooth(0, 2.5, Ln[1] - depth);
-      const c0 = L[3], c1 = Ln[3];
-      _c.setRGB((c0[0] + (c1[0] - c0[0]) * (1 - f)) * v, (c0[1] + (c1[1] - c0[1]) * (1 - f)) * v, (c0[2] + (c1[2] - c0[2]) * (1 - f)) * v);
-      if (up > 0.6 && depth > 25) _c.setRGB((_c.r + 0.3 * v) * 0.5, (_c.g + 0.34 * v) * 0.5, (_c.b + 0.24 * v) * 0.5);
+    // untouched ground in an opened square: coloured (and lit with the seasons) exactly like the terrain around it
+    const ground = depth < 0.3 && depth > -0.3 && up > 0.75;
+    if (!ground) {
+      const ore = caves.ore(mx, my, mz), v = 0.85 + Math.sin(mx * 1.7 + mz * 1.3 + my * 2.1) * 0.08;
+      const min = ore > 0.5 || ore < -0.5 ? null : caves.mineral(mx, my, mz);
+      if (depth < 0.6 && up > 0.5) _c.setRGB(0.36 * v, 0.5 * v, 0.24 * v);                    // grass at the rim of a hole
+      else if (ore > 0.5 && depth > 8) _c.setRGB(0.62 * v, 0.38 * v, 0.2 * v);
+      else if (ore < -0.5 && depth > 8) _c.setRGB(0.72 * v, 0.66 * v, 0.24 * v);
+      else if (min === 'copper_ore' && depth > 12) _c.setRGB(0.22 * v, 0.52 * v, 0.42 * v);
+      else if (min === 'lithium_ore' && depth > 12) _c.setRGB(0.78 * v, 0.56 * v, 0.66 * v);
+      else if (min === 'titanium_ore' && depth > 12) _c.setRGB(0.74 * v, 0.76 * v, 0.8 * v);
+      else if (min === 'quartz' && depth > 12) _c.setRGB(0.9 * v, 0.9 * v, 0.92 * v);
+      else if (min === 'kyanite') _c.setRGB(0.22 * v, 0.38 * v, 0.9 * v);
+      else if (wet) _c.setRGB((up > 0.6 ? 0.2 : 0.28) * v, (up > 0.6 ? 0.34 : 0.33) * v, (up > 0.6 ? 0.36 : 0.4) * v);
+      else {
+        // dug layers: topsoil, clay, stone, deepstone (blended), mossy cave floors
+        const L = layerAt(depth), Ln = layerAt(depth + 2.5);
+        const f = L === Ln ? 0 : smooth(0, 2.5, Ln[1] - depth);
+        const c0 = L[3], c1 = Ln[3];
+        _c.setRGB((c0[0] + (c1[0] - c0[0]) * (1 - f)) * v, (c0[1] + (c1[1] - c0[1]) * (1 - f)) * v, (c0[2] + (c1[2] - c0[2]) * (1 - f)) * v);
+        if (up > 0.6 && depth > 25) _c.setRGB((_c.r + 0.3 * v) * 0.5, (_c.g + 0.34 * v) * 0.5, (_c.b + 0.24 * v) * 0.5);
+      }
     }
-    for (let q = 0; q < 3; q++) col.push(_c.r, _c.g, _c.b);
+    if (pieces) for (const [p, q, r] of pieces) emit(p, q, r, ground);
+    else emit(A, Bv, Cv, ground);
   };
   const crystals = [], glows = [];
   for (let j = 1; j < N - 1; j++) for (let k = 1; k < N - 1; k++) for (let i = 1; i < N - 1; i++) {
@@ -92,14 +144,17 @@ export function meshChunkData(caves, cx, cy, cz) {
       if (c0 >= 0 && c1 >= 0 && c2 >= 0 && c3 >= 0) { if (a) { tri(c0, c2, c1); tri(c0, c3, c2); } else { tri(c0, c1, c2); tri(c0, c2, c3); } }
     }
   }
-  if (!pos.length && !crystals.length) return { pos: null, crystals, glows };
+  if (!pos.length && !spos.length && !crystals.length) return { pos: null, crystals, glows };
   // flat normals (one per triangle, like computeVertexNormals on an unindexed mesh)
-  const P = new Float32Array(pos), nrm = new Float32Array(P.length);
-  for (let o = 0; o < P.length; o += 9) {
-    const ux = P[o + 3] - P[o], uy = P[o + 4] - P[o + 1], uz = P[o + 5] - P[o + 2], vx = P[o + 6] - P[o], vy = P[o + 7] - P[o + 1], vz = P[o + 8] - P[o + 2];
-    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
-    for (let q = 0; q < 9; q += 3) { nrm[o + q] = nx; nrm[o + q + 1] = ny; nrm[o + q + 2] = nz; }
-  }
-  return { pos: P, col: new Float32Array(col), nrm, crystals, glows };
+  const flat = (P) => {
+    const nrm = new Float32Array(P.length);
+    for (let o = 0; o < P.length; o += 9) {
+      const ux = P[o + 3] - P[o], uy = P[o + 4] - P[o + 1], uz = P[o + 5] - P[o + 2], vx = P[o + 6] - P[o], vy = P[o + 7] - P[o + 1], vz = P[o + 8] - P[o + 2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+      for (let q = 0; q < 9; q += 3) { nrm[o + q] = nx; nrm[o + q + 1] = ny; nrm[o + q + 2] = nz; }
+    }
+    return nrm;
+  };
+  const P = pos.length ? new Float32Array(pos) : null, S = spos.length ? new Float32Array(spos) : null;
+  return { pos: P, col: P && new Float32Array(col), nrm: P && flat(P), spos: S, scol: S && new Float32Array(scol), snrm: S && flat(S), crystals, glows };
 }
-

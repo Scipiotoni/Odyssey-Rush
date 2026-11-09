@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { CAVE_TOP, CAVE_BOTTOM, CAVE_ZONE, CAVE_CELL, CAVE_ARRIVE, LAVA_Y, QUAD, layerAt } from '/shared/caves.js';
 import { meshChunkData } from './caveMesh.js';
+import { TERRAIN_MAT } from './terrain.js';
 
 const MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide });
 const CRYSTAL = new THREE.MeshLambertMaterial({ color: 0x7fe8ff, emissive: 0x3ab8e8, emissiveIntensity: 1.4, flatShading: true });
@@ -68,6 +69,15 @@ export class CaveWorld {
       geo.setAttribute('normal', new THREE.BufferAttribute(res.nrm, 3));
       geo.computeBoundingSphere();
       const m = new THREE.Mesh(geo, MAT); this.scene.add(m); meshes.push(m);
+    }
+    if (res.spos) {
+      // untouched ground inside an opened square: the terrain's own material, so it matches the grass around it
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(res.spos, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(res.scol, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(res.snrm, 3));
+      geo.computeBoundingSphere();
+      const m = new THREE.Mesh(geo, TERRAIN_MAT); m.receiveShadow = true; this.scene.add(m); meshes.push(m);
     }
     if (res.crystals.length) {
       const im = new THREE.InstancedMesh(this.crystalGeo, res.crystals.length % 2 ? CRYSTAL : CRYSTAL2, res.crystals.length);
@@ -142,9 +152,11 @@ export class CaveWorld {
       const x = (cx + i) * C, z = (cz + k) * C;
       // is the ground open anywhere in this column?
       let open = false, sMin = Infinity, sMax = -Infinity;
-      for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) {
+      // (the squares just beyond its edges count too: the last half metre of an opened square is drawn by the next cube)
+      for (let a = -1; a < 5; a++) for (let b = -1; b < 5; b++) {
         const qx = Math.floor(x / QUAD) + a, qz = Math.floor(z / QUAD) + b;
         if (caves.quadOpen(qx, qz)) open = true;
+        if (a < 0 || b < 0 || a > 3 || b > 3) continue;
         const s = caves.surface((qx + 0.5) * QUAD, (qz + 0.5) * QUAD); sMin = Math.min(sMin, s); sMax = Math.max(sMax, s);
       }
       const top = Math.floor((sMax + 2) / C), bot = Math.floor((sMin - 4) / C);

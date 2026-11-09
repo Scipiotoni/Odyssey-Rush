@@ -88,7 +88,7 @@ defaults* puts everything back). The on-screen hints follow your keys. The table
 | H | Patch up a vehicle you're looking at |
 | V | Toggle first / third person while in a vehicle |
 | RMB with a rock | Throw it (hurts players & animals, pick it up again with E) |
-| T or Enter | Chat (`/help` lists commands). While it's open, scroll back through the last 200 messages with the mouse wheel or PgUp / PgDn · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume, controls) |
+| T or Enter | Chat (`/help` lists commands). While it's open, scroll back through the last 200 messages with the mouse wheel or PgUp / PgDn · **Esc** pause & settings (view distance, FOV, sensitivity, shadows, volume, controls), and **🏠 Leave to home screen** (click twice) to go back to the server browser — your character stays in the world, asleep |
 
 ## How to play
 
@@ -149,6 +149,8 @@ defaults* puts everything back). The on-screen hints follow your keys. The table
      the land, **caverns** open up from about 40 m down, and the deepest caverns, ~200 m below, floor out in **lava** (it burns).
      Some caves hold **underground lakes**.
    - **Dig anywhere** with a shovel: every scoop carves a smooth hole, and you can tunnel straight down, sideways or stairs.
+     The grass around a hole looks just like the ground around it (no see-through gaps at its edges), and digging never
+     moves the caves underneath: tunnels are laid out from the ground as it was generated.
      The deeper you go, the harder the ground: **Topsoil → Clay (5 m) → Stone (18 m) → Deepstone (60 m)**. Better tools scoop
      more (Shovel → **Steel Shovel** at Workbench 1 → **Power Drill** at Workbench 2, made with titanium and batteries).
      The dirt turns up **finds** that get better with depth: bones, cloth and scrap near the top, gears, pipes and ore lower

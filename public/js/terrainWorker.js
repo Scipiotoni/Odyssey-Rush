@@ -3,15 +3,15 @@
 // squares are open (so the main thread never has to work that out itself).
 import { World, CHUNK } from '/shared/worldgen.js';
 import { Caves, QUAD } from '/shared/caves.js';
-import { buildChunkData } from './chunkgen.js';
+import { buildChunkData, holeSkirts } from './chunkgen.js';
 
-let world = null, caves = null;
+let world = null, caves = null, tmv = 0; // tmv: how many terrain edits we've had (the main thread checks it)
 function cutHoles(d, cx, cz) {
   const n = CHUNK / QUAD, i0 = Math.floor((cx * CHUNK) / QUAD), j0 = Math.floor((cz * CHUNK) / QUAD);
   const mask = new Uint8Array(n * n);
   let any = false;
   for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) if (caves.quadOpen(i0 + a, j0 + b)) { mask[b * n + a] = 1; any = true; }
-  const quads = { i0, j0, n, mask, nm: caves.mods.length };
+  const quads = { i0, j0, n, mask, nm: caves.mods.length, tv: tmv };
   if (!any) return { d, quads };
   const P = d.pos, keep = new Uint8Array(P.length / 9);
   let k = 0;
@@ -21,19 +21,23 @@ function cutHoles(d, cx, cz) {
     const open = qi >= 0 && qj >= 0 && qi < n && qj < n ? mask[qj * n + qi] : caves.quadOpen(Math.floor(mx / QUAD), Math.floor(mz / QUAD));
     if (!open) { keep[t] = 1; k++; }
   }
-  const out = { pos: new Float32Array(k * 9), col: new Float32Array(k * 9), nrm: new Float32Array(k * 9) };
+  const isOpen = (qi, qj) => { const a = qi - i0, b = qj - j0; return a >= 0 && b >= 0 && a < n && b < n ? !!mask[b * n + a] : caves.quadOpen(qi, qj); };
+  const sk = holeSkirts(world, isOpen, i0, j0, n);
+  const m = k * 9 + sk.pos.length;
+  const out = { pos: new Float32Array(m), col: new Float32Array(m), nrm: new Float32Array(m) };
   let w = 0;
   for (let t = 0; t < keep.length; t++) if (keep[t]) { out.pos.set(P.subarray(t * 9, t * 9 + 9), w); out.col.set(d.col.subarray(t * 9, t * 9 + 9), w); out.nrm.set(d.nrm.subarray(t * 9, t * 9 + 9), w); w += 9; }
+  out.pos.set(sk.pos, w); out.col.set(sk.col, w); out.nrm.set(sk.nrm, w);
   return { d: { ...d, ...out }, quads };
 }
 self.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init') {
     world = new World(m.seed); for (const [ix, iz, v] of m.mods || []) world.setMod(ix, iz, v);
-    caves = new Caves(m.seed); caves.surface = (x, z) => world.ground(x, z); caves.setMods(m.cmods || []);
+    caves = new Caves(m.seed); caves.surface = (x, z) => world.ground(x, z); caves.surface0 = (x, z) => world.ground0(x, z); caves.setMods(m.cmods || []);
     return;
   }
-  if (m.type === 'mods') { for (const [ix, iz, v] of m.list) world.setMod(ix, iz, v); caves?.openCache.clear(); return; }
+  if (m.type === 'mods') { for (const [ix, iz, v] of m.list) world.setMod(ix, iz, v); caves?.openCache.clear(); tmv = m.v ?? tmv + 1; return; }
   if (m.type === 'cmod') { caves?.addMod(...m.m); return; }
   if (!world) return;
   if (m.type === 'chunk') {
